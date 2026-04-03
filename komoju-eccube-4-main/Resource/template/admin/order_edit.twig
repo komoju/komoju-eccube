@@ -1,0 +1,146 @@
+{% if komoju_order is defined %}
+<script type="text/javascript">
+    const formatter = new Intl.NumberFormat('ja-JP', {
+        style: 'currency',
+        currency: 'JPY',
+        minimumFractionDigits: 0
+    });
+    function post_to_url(path, params) {
+        method = "post";
+
+        var form = document.createElement("form");
+        form.setAttribute("method", method);
+        form.setAttribute("action", path);
+
+        for(var key in params) {
+            if(params.hasOwnProperty(key)) {
+                var hiddenField = document.createElement("input");
+                hiddenField.setAttribute("type", "hidden");
+                hiddenField.setAttribute("name", key);
+                hiddenField.setAttribute("value", params[key]);
+
+                form.appendChild(hiddenField);
+            }
+        }
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+    function isNumeric(value) {
+        return /^-{0,1}\d+$/.test(value);
+    }
+    function refundConfirmDialog(){
+        var refund_option_val=$("#refund_option").val();
+        var refund_amount_val=$("#refund_amount").val();
+        if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && !isNumeric(refund_amount_val)){
+            alert('{{ 'komoju_multipay.admin.order.refund_amount.error.invalid'|trans }}');
+            $("#refund_amount").focus();
+            return false;
+        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && refund_amount_val>{{ Order.payment_total }}){
+            alert('{{ 'komoju_multipay.admin.order.refund_amount.error.exceeded'|trans }}');
+            $("#refund_amount").focus();
+            return false;
+        }
+        var amount_to_display=formatter.format(refund_amount_val);        
+        if(refund_option_val=={{ REFUND_FULL_OPTION }}) {
+            amount_to_display ='{{ Order.getPaymentTotal|round(0, 'floor')|price }}';
+        }
+
+        if(confirm(amount_to_display+'{{ 'komoju_multipay.admin.order.refund_action_confirm'|trans }}')){
+            post_to_url('{{ url('komoju_refund_transaction', { id : Order.id }) }}', {refund_option: refund_option_val, refund_amount: refund_amount_val});
+        } else {
+            return false;
+        }
+    }
+    $(function () {
+        $(".c-primaryCol div:first").after($('#komoju-details'));
+        $("#refund_option").on("change",function(){
+            if($(this).val()== {{ REFUND_PARTIAL_OPTION }}){
+                $("#refund_amount_contained").slideDown();
+            } else {
+                $("#refund_amount_contained").slideUp();
+            }
+        });
+    });
+</script>
+<style type="text/css">.ml-n-15 {margin-left: -15px;}</style>
+<div style="display: none;">
+    <div id="komoju-details" class="card rounded border-0 mb-4">
+        <div class="card-header">
+            <div class="row">
+                <div class="col-8">
+                    <div class="d-inline-block" data-tooltip="true" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.section_title_tooltip'|trans }}">
+                        <span class="card-title">{{ 'komoju_multipay.admin.order.section_title'|trans }}</span>
+                        <i class="fa fa-question-circle fa-lg ml-1"></i>
+                    </div>
+                </div>
+                <div class="col-4 text-right">
+                    <a data-toggle="collapse" href="#komojuPaymentOverview" aria-expanded="false" aria-controls="komojuPaymentOverview">
+                        <i class="fa fa-angle-up fa-lg"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="collapse show ec-cardCollapse" id="komojuPaymentOverview">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3" data-tooltip="true" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.charge_id_tooltip'|trans}}">{{ 'komoju_multipay.admin.order.charge_id'|trans}}<i class="fa fa-question-circle fa-lg ml-1"></i></div>
+                            <div class="col"> <a class="komojuPaymentID" href="{{ komoju_dashboard_link }}" target="_blank">{{ komoju_order.KomojuPaymentId }}</a></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3">{{ 'admin.order.payment_total'|trans }}</div>
+                            <div class="col">{{ Order.payment_total|price }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% if order_canceled == false %}
+                <div class="row">
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3">{{ 'komoju_multipay.admin.order.actions'|trans }}</div>
+                            <div class="col row ml-0">
+                                {% if komoju_order.CreditType==true and komoju_order.Captured==false %}
+                                    <a href="{{ url('komoju_capture_transaction', { id : Order.id }) }}"  
+                                        class="btn btn-ec-regular stripe_txn_action_btn" 
+                                        onclick="return confirm('{{ 'komoju_multipay.admin.order.capture_action_confirm'|trans({'%charge_amount%':Order.getPaymentTotal|price })}}');">
+                                            {{ 'komoju_multipay.admin.order.capture_action'|trans }}
+                                    </a>
+                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.IsChargeRefunded==false %}
+                                    <div class="col-6 ml-n-15">
+                                        <select id="refund_option" class="form-control">
+                                            <option value="{{ REFUND_FULL_OPTION }}">{{ 'komoju_multipay.admin.order.refund_option.full_refund'|trans }}</option>                                            
+                                            <option value="{{ REFUND_PARTIAL_OPTION }}">{{ 'komoju_multipay.admin.order.refund_option.partial_refund'|trans }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <div id="refund_amount_contained" style="display: none;">
+                                            <input type="text" id="refund_amount" placeholder="払い戻し額" class="form-control" />
+                                            <br/>
+                                        </div>
+                                        <a id="refund_btn" href="javascript:void(0);"  class="btn btn-ec-regular komoju_txn_action_btn" onclick="refundConfirmDialog();">{{ 'komoju_multipay.admin.order.refund_action'|trans }}</a>
+                                    </div>
+                                {% elseif komoju_order.IsChargeRefunded %}
+                                    <span style="background-color: #fff; color: #C04949; border-color: #C04949">{{ 'komoju_multipay.admin.order.status.refunded'|trans }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% if komoju_order.getIsChargeRefunded and komoju_order.getRefundedAmount>0 %}
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3">{{ 'komoju_multipay.admin.order.refunded_amount'|trans }}</div>
+                            <div class="col">{{ komoju_order.getRefundedAmount|price }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

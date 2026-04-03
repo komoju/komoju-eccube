@@ -1,0 +1,163 @@
+{% extends '@admin/default_frame.twig' %}
+
+{% set menus = ['komoju', 'komoju_config'] %}
+
+{% block title %}{{ 'komoju_multipay.admin.config.title'|trans }}{% endblock %}
+{% block sub_title %}{{ 'komoju_multipay.admin.config.subtitle'|trans }}{% endblock %}
+
+
+{% block stylesheet %}
+
+{% endblock stylesheet %}
+
+{% block main %}
+
+{% form_theme form '@admin/Form/bootstrap_4_horizontal_layout.html.twig' %}
+
+    <form role="form" method="post">
+    {{ form_widget(form._token) }}
+        <div class="c-contentsArea__cols">
+            <div class="c-contentsArea__primaryCol">
+                <div class="c-primaryCol">
+                    <div class="card rounded border-0 mb-4">
+                        <div class="card-header"><span>{{ 'komoju_multipay.admin.config.header'|trans }}</span></div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:secret_key'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.secret_key) }}
+                                    {{ form_errors(form.secret_key) }}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:publishable_key'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.publishable_key) }}
+                                    {{ form_errors(form.publishable_key) }}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.capture_on'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.capture_on) }}
+                                    {{ form_errors(form.capture_on) }}
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:merchant_uuid'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.merchant_uuid) }}
+                                    {{ form_errors(form.merchant_uuid) }}
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.komoju_pay_type'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {% set komoju_pays_form = form.komoju_pays %}
+                                    {% for id, child in komoju_pays_form %}
+                                        <div class="form-check form-check-inline">
+                                            <input type="checkbox"
+                                                id="{{ child.vars.id}}"
+                                                name="{{ child.vars.full_name}}"
+                                                class="form-check-input"
+                                                value="{{ child.vars.value }}" {{ komoju_pays_form.vars.checked[child.vars.value] ? "checked" : "" }}>
+                                            <label class="form-check-label" for="{{ child.vars.id }}">{{ komoju_pays_form.vars.disp_name[child.vars.value] }}</label>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="row mt-4">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:webhook_secret'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {# <span>{{ form.webhook_secret.vars.value }}</span> #}
+                                    {{ form_widget(form.webhook_secret, { 'attr' : { 'readonly' : true , 'style' : 'width:30%; display: inline;' } }) }}
+                                    {{ form_errors(form.webhook_secret) }}                                    
+                                    <span class="clip-board-btn"><i class="fas fa-copy"></i></span>
+                                    
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3"><span>{{ 'komoju_multipay.admin.config.label.webhook_url'|trans }}</span></div>
+                                <div class="col mb-2">
+                                    {{ url('komoju_webhook') }}
+                                    <div class="mt-2">
+                                    {{ 'komoju_multipay.admin.config.webhook_check_notice'|trans }}<br>
+                                    <a href="https://komoju.com/admin/webhooks" target="_blank">{{ 'komoju_multipay.admin.config.webhook_dashboard'|trans }}</a><br><br>
+                                    {{ 'komoju_multipay.admin.config.webhook_events'|trans }}<br><br>
+                                    payment.refunded<br>
+                                    payment.captured<br>
+                                    payment.expired<br>
+                                    payment.failed<br>
+                                    payment.cancelled<br>
+                                    payment.updated
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="c-conversionArea">
+            <div class="c-conversionArea__container">
+                <div class="row justify-content-between align-items-center">
+                    <div class="col-6">
+                        <div class="c-conversionArea__leftBlockItem">
+                            <a class="c-beseLink"
+                                href="{{ url('admin_store_plugin') }}">
+                                <i class="fa fa-backward" aria-hidden="true"></i>
+                                <span>プラグイン一覧</span>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="row align-items-center justify-content-end">
+                            <div class="col-auto">
+                                <button class="btn btn-ec-conversion px-5"
+                                        type="submit">登録</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+<style>
+.clip-board-btn{
+    color: #53aee0
+}
+.clip-board-btn:hover{
+    color: #185d82
+}
+</style>
+<script>
+    $(function(){
+        {% if form.webhook_secret is defined %}
+        $(".clip-board-btn").click(function(){
+            var secret_box = document.getElementById("{{ form.webhook_secret.vars.id }}");
+            secret_box.select();
+            document.execCommand('Copy');            
+        })
+        {% endif %}
+    });
+</script>
+{% endblock %}

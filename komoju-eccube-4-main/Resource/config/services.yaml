@@ -1,0 +1,35 @@
+services:
+    plg_komoju.service.config:
+        public: true
+        class: Plugin\komoju\Service\ConfigService
+        arguments:
+            - '@service_container'
+            - '@Eccube\Common\EccubeConfig'
+    plg_komoju.service.komoju_log:
+        public: true
+        class: Plugin\komoju\Service\LogService
+        arguments:
+            - '@service_container'
+    plg_komoju.service.komoju_webhook:
+        public: true
+        class: Plugin\komoju\Service\WebhookService
+        arguments:
+            - '@service_container'
+            - '@Eccube\Service\OrderStateMachine'
+    plg_komoju.service.komoju_mail_service:
+        public: true
+        class: Plugin\komoju\Service\MailExService        
+        arguments:
+            - '@service_container'
+            - '@swiftmailer.mailer.default'
+            - '@Eccube\Repository\MailTemplateRepository'
+            - '@Eccube\Repository\MailHistoryRepository'
+            - '@Eccube\Repository\BaseInfoRepository'
+            - '@Symfony\Component\EventDispatcher\EventDispatcherInterface'
+            - '@twig'
+            - '@Eccube\Common\EccubeConfig'
+    plg_komoju.service.komoju_service:
+        public: true
+        class: Plugin\komoju\Service\KomojuService
+        arguments:
+            - '@service_container'

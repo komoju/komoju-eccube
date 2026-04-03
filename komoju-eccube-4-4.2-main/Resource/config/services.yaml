@@ -1,0 +1,85 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+    plg_komoju.service.config:
+        public: true
+        class: Plugin\komoju42\Service\ConfigService
+        arguments:
+            - '@service_container'
+            - '@Eccube\Common\EccubeConfig'
+    plg_komoju.service.komoju_log:
+        public: true
+        class: Plugin\komoju42\Service\LogService
+        arguments:
+            - '@service_container'
+    plg_komoju.service.komoju_webhook:
+        public: true
+        class: Plugin\komoju42\Service\WebhookService
+        arguments:
+            - '@service_container'
+    plg_komoju.service.komoju_mail_service:
+        public: true
+        class: Plugin\komoju42\Service\MailExService
+        arguments:
+            - '@service_container'
+            - '@mailer'
+            - '@Eccube\Repository\MailTemplateRepository'
+            - '@Eccube\Repository\MailHistoryRepository'
+            - '@Eccube\Repository\BaseInfoRepository'
+            - '@Symfony\Component\EventDispatcher\EventDispatcherInterface'
+            - '@twig'
+            - '@Eccube\Common\EccubeConfig'
+    plg_komoju.service.komoju_service:
+        public: true
+        class: Plugin\komoju42\Service\KomojuService
+        arguments:
+            - '@service_container'
+    Plugin\komoju42\Doctrine\EventSubscriber\OrderEventSubscriber:
+        class: Plugin\komoju42\Doctrine\EventSubscriber\OrderEventSubscriber
+        arguments:
+            - '@service_container'
+    Plugin\komoju42\Service\Method\KomojuMultiPay:
+        public: true
+        class: Plugin\komoju42\Service\Method\KomojuMultiPay
+        tags:
+            - { name: eccube.payment.method }
+        arguments:
+            $container: !service_locator
+                Eccube\Common\EccubeConfig: '@Eccube\Common\EccubeConfig'
+                doctrine.orm.entity_manager: '@doctrine.orm.entity_manager'
+                router: '@router'
+                eccube.purchase.flow.shopping: '@eccube.purchase.flow.shopping'
+                plg_komoju.service.config: '@plg_komoju.service.config'
+                plg_komoju.service.komoju_log: '@plg_komoju.service.komoju_log'
+                plg_komoju.service.komoju_webhook: '@plg_komoju.service.komoju_webhook'
+                plg_komoju.service.komoju_mail_service: '@plg_komoju.service.komoju_mail_service'
+                plg_komoju.service.komoju_service: '@plg_komoju.service.komoju_service'
+                request_stack: '@request_stack'
+    Plugin\komoju42\KomojuEvent:
+        class: Plugin\komoju42\KomojuEvent
+        arguments:
+            $container: !service_locator
+                Eccube\Common\EccubeConfig: '@Eccube\Common\EccubeConfig'
+                doctrine.orm.entity_manager: '@doctrine.orm.entity_manager'
+                router: '@router'
+                plg_komoju.service.config: '@plg_komoju.service.config'
+                plg_komoju.service.komoju_log: '@plg_komoju.service.komoju_log'
+                plg_komoju.service.komoju_webhook: '@plg_komoju.service.komoju_webhook'
+                plg_komoju.service.komoju_mail_service: '@plg_komoju.service.komoju_mail_service'
+                plg_komoju.service.komoju_service: '@plg_komoju.service.komoju_service'
+    Plugin\komoju42\Controller\:
+        resource: '../../Controller/*'
+        tags: ['controller.service_arguments']
+        arguments:
+            $container: !service_locator
+                Eccube\Common\EccubeConfig: '@Eccube\Common\EccubeConfig'
+                doctrine.orm.entity_manager: '@doctrine.orm.entity_manager'
+                router: '@router'
+                Eccube\Service\CartService: '@Eccube\Service\CartService'
+                Eccube\Service\OrderHelper: '@Eccube\Service\OrderHelper'
+                plg_komoju.service.config: '@plg_komoju.service.config'
+                plg_komoju.service.komoju_log: '@plg_komoju.service.komoju_log'
+                plg_komoju.service.komoju_webhook: '@plg_komoju.service.komoju_webhook'
+                plg_komoju.service.komoju_mail_service: '@plg_komoju.service.komoju_mail_service'
+                plg_komoju.service.komoju_service: '@plg_komoju.service.komoju_service'

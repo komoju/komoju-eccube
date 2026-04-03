@@ -1,0 +1,35 @@
+<script src="https://multipay.komoju.com"></script>
+<script>    
+    var shopping_form = $("#shopping-form");        
+    shopping_form.append($("<input type=\"hidden\" name=\"komojuToken\"/>"));
+    shopping_form.append($("<input type=\"hidden\" name=\"payment_type\"/>"));
+
+    var handler = Komoju.multipay.configure({
+        key: "{{ publishable_key }}",
+        token: function (token){
+            loadingOverlay();
+            $("input[name='komojuToken']").val(token.id);
+            $("input[name='payment_type']").val(token.payment_details.type);
+            shopping_form.submit();
+        }
+    })    
+    var submit_btn = $("#shopping-form button[type='submit']");
+    
+    $('input[type="submit"], button[type="submit"]').off('click').on('click', function(e){
+        e.preventDefault();
+        $(this).attr("type", "button")
+        handler.open({
+            amount: {{ total_amount }},
+            endpoint: "https://komoju.com",
+            locale: "{{ app.request.locale|default('ja') }}",
+            currency: "{{ currency }}",
+            title: "{{ title }}",
+            description: "{{ description }}",
+            methods: [
+                {% for method in methods %}
+                "{{method}}",
+                {% endfor %}
+            ]
+        });        
+    })
+</script>

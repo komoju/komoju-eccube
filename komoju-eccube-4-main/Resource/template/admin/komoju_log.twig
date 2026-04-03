@@ -1,0 +1,61 @@
+{% extends '@admin/default_frame.twig' %}
+{% set menus = ['komoju', 'komoju_log'] %}
+
+{% block title %}{{ 'komoju_multipay.admin.log.title'|trans }}{% endblock %}
+{% block sub_title %}{{ 'komoju_multipay.admin.log.sub_title'|trans }}{% endblock %}
+
+{% block main %}
+    <div class="c-contentsArea__cols">
+        <div class="c-contentsArea__primaryCol">
+            <div class="c-primaryCol">
+                {% if pagination and pagination.totalItemCount %}
+                    <div class="card rounded border-0 mb-4 d-block">
+                            <div class="card-body p-0">
+                                <table class="table table-sm" id="search_result">
+                                    <thead>
+                                    <tr>
+                                        <th class="border-top-0 pt-2 pb-2">{{ 'komoju_multipay.admin.log.label.create_at'|trans }}</th>
+                                        <th class="border-top-0 pt-2 pb-2">{{ 'komoju_multipay.admin.log.label.api'|trans }}</th>
+                                        <th class="border-top-0 pt-2 pb-2">{{ 'komoju_multipay.admin.log.label.order_id'|trans }}</th>
+                                        <th class="border-top-0 pt-2 pb-2">{{ 'komoju_multipay.admin.log.label.msg'|trans }}</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {% for komoju_log in pagination %}
+                                        <tr>
+                                            <td class="align-middle">
+                                                {{ komoju_log.getCreatedAt|date('Y-m-d H:i:s') }}
+                                            </td>
+                                            <td class="align-middle">
+                                                {{ komoju_log.Api }}
+                                            </td>
+                                            <td class="align-middle">
+                                                {{ komoju_log.OrderId }}
+                                            </td>
+                                            <td class="align-left">
+                                                {{ komoju_log.Msg }}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                                <div class="row justify-content-md-center mb-4"></div>
+                            </div>
+                            <div class="row justify-content-md-center mb-4">
+                                {% if pagination.totalItemCount > 0 %}
+                                    {% include "@admin/pager.twig" with { 'pages' : pagination.paginationData, 'routes' : 'komoju_admin_log_page' } %}
+                                {% endif %}
+                            </div>
+                        <div class="row justify-content-md-center mb-4"></div>
+                        </div>
+                {% else %}
+                    <div class="card rounded border-0">
+                        <div class="card-body p-4">
+                            <div class="text-center text-muted mb-4 h5">{{ 'komoju_multipay.admin.log.no_log'|trans }}</div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+{% endblock %}
