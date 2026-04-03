@@ -99,11 +99,10 @@ class ConfigService{
         $template_list = [
             [
                 'name'      =>  self::MAIL_TEMPLATE_REFUND_REDIRECT,
-                'file_name' =>  'komoju42\Resource\template\mail\refund_redirect.twig',
-                'mail_subject'  => 'Komoju返金メール',                
-            ],            
+                'file_name' =>  'komoju42/Resource/template/mail/refund_redirect.twig',
+                'mail_subject'  => 'Komoju返金メール',
+            ],
         ];
-        //TODO: file name must update
 
     $em = $this->container->get('doctrine.orm.entity_manager');
     foreach($template_list as $template){

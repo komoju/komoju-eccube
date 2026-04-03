@@ -16,6 +16,7 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Doctrine\DBAL\LockMode;
 
 class OrderController extends AbstractController{
 
@@ -152,12 +153,15 @@ class OrderController extends AbstractController{
         if($request->getMethod() == "POST"){
             $komoju_order = $this->komoju_order_repo->findOneBy(['Order'    =>  $Order]);
 
-
             if(empty($komoju_order) || empty($komoju_order->getKomojuPaymentId())){
                 $this->log_service->writeLog("refund", $Order->getId(), "refund invalid request, komoju order is empty");
                 $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
-                return $this->redirectToRoute('admin_order');    
+                return $this->redirectToRoute('admin_order');
             }
+
+            // Lock the row to prevent concurrent refund attempts
+            $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
+
             // check if already refunded
             if ($komoju_order->getIsChargeRefunded()) {
                 $this->log_service->writeLog("refund", $Order->getId(), "refund invalid request, komoju order is already refunded");

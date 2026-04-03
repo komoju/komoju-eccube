@@ -107,7 +107,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $config_data = $this->config_service->getConfigData($this->Order);
         $komoju_client = new KomojuClient($config_data['secret_key']);
 
-        $this->log_service->writeLog("createPayment", $this->Order->getId(), "request payments with token : $payment_token");
+        $this->log_service->writeLog("createPayment", $this->Order->getId(), "request payments");
         $total_amount = $this->Order->getPaymentTotal();
 
         $currency_code = $this->Order->getCurrencyCode();
@@ -121,7 +121,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
             'payment_details'=> $payment_token,
             'capture'   =>  $config_data['capture_on'],
             'fraud_details'=>[
-                'customer_ip' => $_SERVER['REMOTE_ADDR'],
+                'customer_ip' => $this->requestStack->getCurrentRequest()->getClientIp(),
                 'customer_email'=> $this->Order->getEmail(),
             ],
             'return_url'=> $this->container->get('router')->generate('shopping_complete', [], UrlGeneratorInterface::ABSOLUTE_URL),

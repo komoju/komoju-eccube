@@ -27,6 +27,7 @@ class PluginManager extends AbstractPluginManager{
             $this->registerMethods($container);
         }catch(\Exception $e){
             log_error('KOMOJU plugin update failed: ' . $e->getMessage());
+            throw $e;
         }
     }
 
@@ -134,9 +135,9 @@ class PluginManager extends AbstractPluginManager{
             return;
         }
         $config = new KomojuConfig();
-        $config->setPublishableKey('パブリックAPIキー');
-        $config->setSecretKey('秘密キー');
-        $config->setMerchantUuid("クライアント UUID");
+        $config->setPublishableKey('');
+        $config->setSecretKey('');
+        $config->setMerchantUuid('');
         $config->setWebhookSecret(bin2hex(random_bytes(32)));
 
         $entityManager->persist($config);

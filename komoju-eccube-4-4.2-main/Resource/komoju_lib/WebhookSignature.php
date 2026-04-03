@@ -5,7 +5,7 @@ namespace Komoju;
 abstract class WebhookSignature
 {
     /**
-     * @return book
+     * @return bool
      */
     public static function verifyHeader($payload, $sig_header, $secret)
     {

@@ -111,7 +111,7 @@ class MailExService extends MailService{
         return $message;
     }
     protected function isHtml($template_path){
-        $fileName = explode('.', $templateName);
+        $fileName = explode('.', $template_path);
         return in_array("html", $fileName);
     }
 }

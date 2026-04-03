@@ -69,6 +69,9 @@ class WebhookService{
         if(empty($komoju_order)){
             return;
         }
+        if($komoju_order->isCaptured()){
+            return;
+        }
         $captured_at = new \DateTime($object->data->captured_at);
         $komoju_order->setCapturedAt($captured_at);
         $this->entityManager->persist($komoju_order);
