@@ -67,7 +67,7 @@ class KomojuOrder
     /**
      * @var int
      *
-     * @ORM\Column(name="selected_refund_option", type="integer", options={"unsigned":true,"default":0,"comment":"1=full_refund, 2=refund_full_amount_minus_stripe_fee, 3=partial_refund"}, nullable=true)
+     * @ORM\Column(name="selected_refund_option", type="integer", options={"unsigned":true,"default":0,"comment":"1=full_refund, 2=full_amount_minus_fee, 3=partial_refund"}, nullable=true)
      */
     private $selected_refund_option;
 

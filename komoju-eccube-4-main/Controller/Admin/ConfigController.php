@@ -1,6 +1,6 @@
 <?php
 /*
-* Plugin Name : StripePaymentGateway
+* Plugin Name : KomojuPaymentGateway
 *
 * Copyright (C) 2018 Subspire Inc. All Rights Reserved.
 * http://www.subspire.co.jp/
