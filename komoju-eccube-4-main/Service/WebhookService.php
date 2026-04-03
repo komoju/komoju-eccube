@@ -40,6 +40,7 @@ class WebhookService{
     public function paymentRefunded($object){
         $refunds = $object->data->refunds;
         if(empty($refunds)){
+            $this->log_service->writeLog("webhook[refund]", 0, "no refunds found in webhook payload for payment: {$object->data->id}");
             return;
         }
         $refund_id = $refunds[0]->id;
@@ -50,8 +51,9 @@ class WebhookService{
             ->getQuery()
             ->getResult();
         if(empty($komoju_orders)){
+            $this->log_service->writeLog("webhook[refund]", 0, "no matching order found for refund_id: $refund_id");
             return;
-        }                    
+        }
         $komoju_order = $komoju_orders[0];
         $Order = $komoju_order->getOrder();
         if($Order){
@@ -67,6 +69,7 @@ class WebhookService{
         $komoju_payment_id = $object->data->id;
         $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
         if(empty($komoju_order)){
+            $this->log_service->writeLog("webhook[captured]", 0, "no komoju_order found for payment: $komoju_payment_id");
             return;
         }
         if($komoju_order->isCaptured()){
@@ -79,6 +82,7 @@ class WebhookService{
 
         $order = $komoju_order->getOrder();
         if(empty($order)){
+            $this->log_service->writeLog("webhook[captured]", 0, "no EC-CUBE order linked to komoju_order for payment: $komoju_payment_id");
             return ;
         }        
         $order->setPaymentDate($captured_at);
@@ -91,10 +95,12 @@ class WebhookService{
         $komoju_payment_id = $object->data->id;
         $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
         if(empty($komoju_order)){
+            $this->log_service->writeLog("webhook[canceled]", 0, "no komoju_order found for payment: $komoju_payment_id");
             return;
         }
         $order = $komoju_order->getOrder();
         if(empty($order)){
+            $this->log_service->writeLog("webhook[canceled]", 0, "no EC-CUBE order linked to komoju_order for payment: $komoju_payment_id");
             return;
         }
         $this->cancelOrder($komoju_order);
@@ -103,10 +109,12 @@ class WebhookService{
         $komoju_payment_id = $object->data->id;
         $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
         if(empty($komoju_order)){
+            $this->log_service->writeLog("webhook[expired]", 0, "no komoju_order found for payment: $komoju_payment_id");
             return;
         }
         $order = $komoju_order->getOrder();
         if(empty($order)){
+            $this->log_service->writeLog("webhook[expired]", 0, "no EC-CUBE order linked to komoju_order for payment: $komoju_payment_id");
             return;
         }
         $this->cancelOrder($komoju_order);
@@ -115,10 +123,12 @@ class WebhookService{
         $komoju_payment_id = $object->data->id;
         $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
         if(empty($komoju_order)){
+            $this->log_service->writeLog("webhook[failed]", 0, "no komoju_order found for payment: $komoju_payment_id");
             return;
         }
         $order = $komoju_order->getOrder();
         if(empty($order)){
+            $this->log_service->writeLog("webhook[failed]", 0, "no EC-CUBE order linked to komoju_order for payment: $komoju_payment_id");
             return;
         }
         $this->cancelOrder($komoju_order);
@@ -127,6 +137,7 @@ class WebhookService{
         $komoju_payment_id = $object->data->id;
         $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
         if(empty($komoju_order)){
+            $this->log_service->writeLog("webhook[updated]", 0, "no komoju_order found for payment: $komoju_payment_id");
             return;
         }
         $status = $object->data->status;
@@ -150,6 +161,7 @@ class WebhookService{
 
         $Order = $komoju_order->getOrder();
         if(empty($Order)){
+            $this->log_service->writeLog("webhook[cancel]", 0, "no EC-CUBE order linked to komoju_order for payment: {$komoju_order->getKomojuPaymentId()}");
             return;
         }
 

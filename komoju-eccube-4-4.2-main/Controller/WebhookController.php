@@ -48,27 +48,31 @@ class WebhookController extends AbstractController
         log_info("type : $type");
 
         $this->log_service->writeLog("webhook[$type]", "", "");
-        switch($type){
-            case "payment.refunded":
-                $this->webhook_service->paymentRefunded($data);
+        try {
+            switch($type){
+                case "payment.refunded":
+                    $this->webhook_service->paymentRefunded($data);
+                    break;
+                case "payment.captured":
+                    $this->webhook_service->paymentCaptured($data);
                 break;
-            case "payment.captured":
-                $this->webhook_service->paymentCaptured($data);
-            break;
-            case "payment.expired":
-                $this->webhook_service->paymentExpired($data);
-            break;
-            case "payment.failed":
-                $this->webhook_service->paymentFailed($data);
-            break;
-            case "payment.cancelled":
-                $this->webhook_service->paymentCanceled($data);
-            break;
-            case "payment.updated":
-                $this->webhook_service->paymentUpdated($data);
-            break;
-
+                case "payment.expired":
+                    $this->webhook_service->paymentExpired($data);
+                break;
+                case "payment.failed":
+                    $this->webhook_service->paymentFailed($data);
+                break;
+                case "payment.cancelled":
+                    $this->webhook_service->paymentCanceled($data);
+                break;
+                case "payment.updated":
+                    $this->webhook_service->paymentUpdated($data);
+                break;
+            }
+        } catch (\Exception $ex) {
+            $this->log_service->writeLog("webhook[$type]", "", "processing failed: " . $ex->getMessage());
+            return $this->json(['status' => 'error', 'message' => 'processing failed'], 500);
         }
-        return $this->json(['status'    =>  'success']);
+        return $this->json(['status' => 'success']);
     }
 }

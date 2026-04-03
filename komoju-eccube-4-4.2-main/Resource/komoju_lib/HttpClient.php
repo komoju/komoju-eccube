@@ -17,7 +17,6 @@ class HttpClient{
     public function __construct($username, $password = ""){
         $this->username = $username;
         $this->password = $password;
-        $this->curl_hdl = curl_init();
     }
     public function getLastError(){
         return $this->last_error;
@@ -26,6 +25,7 @@ class HttpClient{
         return $this->last_status_code;
     }
     public function get($url, $data = null){
+        $this->curl_hdl = \curl_init();
         if($data){
             $query = \http_build_query($data);
             $tar_url = self::BASE_URL . $url . "?" . $query;
@@ -53,13 +53,14 @@ class HttpClient{
 
         $this->last_status_code = \curl_getinfo($this->curl_hdl, CURLINFO_HTTP_CODE);
         if($this->last_status_code >= 300){
-            $this->last_error = $resp['error']['code'];
+            $this->last_error = isset($resp['error']['code']) ? $resp['error']['code'] : 'unknown_error';
         }
 
         \curl_close($this->curl_hdl);
         return $resp;
     }
     public function post($url, $data = null){
+        $this->curl_hdl = \curl_init();
         \curl_setopt($this->curl_hdl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
         \curl_setopt($this->curl_hdl, CURLOPT_USERPWD, $this->username . ":" . $this->password);
 
@@ -100,7 +101,7 @@ class HttpClient{
         \curl_close($this->curl_hdl);
         $resp = \json_decode($body, true);
         if($this->last_status_code >= 300){
-            $this->last_error = $resp['error']['code'];
+            $this->last_error = isset($resp['error']['code']) ? $resp['error']['code'] : 'unknown_error';
         }
 
         return $resp;

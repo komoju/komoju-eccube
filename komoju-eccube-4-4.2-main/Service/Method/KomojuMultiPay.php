@@ -120,6 +120,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
             'currency'  =>  $currency_code,
             'payment_details'=> $payment_token,
             'capture'   =>  $config_data['capture_on'],
+            'via'       =>  'ec_cube',
             'fraud_details'=>[
                 'customer_ip' => $this->requestStack->getCurrentRequest()->getClientIp(),
                 'customer_email'=> $this->Order->getEmail(),

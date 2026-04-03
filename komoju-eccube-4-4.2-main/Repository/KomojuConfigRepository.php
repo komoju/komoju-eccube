@@ -31,6 +31,9 @@ class KomojuConfigRepository extends AbstractRepository{
     }
     public function getConfigByOrder($Order = null){
         $config_data = $this->get();
+        if($config_data === null){
+            throw new \RuntimeException('KOMOJU plugin configuration not found. Please configure the plugin in the admin panel.');
+        }
 
         $komoju_config = [
             'publishable_key'   =>  $config_data->getPublishableKey(),
