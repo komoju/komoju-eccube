@@ -17,6 +17,7 @@ use Symfony\Component\Routing\Annotation\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Psr\Container\ContainerInterface;
 use Plugin\komoju42\Repository\KomojuConfigRepository;
@@ -53,6 +54,22 @@ class ConfigController extends AbstractController
             'form' => $form->createView(),
         ];
     }
+    /**
+     * @Route("/%eccube_admin_route%/komoju42/config/sync", name="komoju42_admin_sync_methods", methods={"POST"})
+     */
+    public function syncPaymentMethods(Request $request){
+        $config_data = $this->config_service->getConfigData();
+        if(empty($config_data) || empty($config_data['publishable_key'])){
+            return new JsonResponse(['success' => false, 'message' => 'Publishable key is not configured.'], 400);
+        }
+
+        $result = $this->config_service->syncPaymentMethods($config_data['publishable_key']);
+        if($result){
+            return new JsonResponse(['success' => true, 'message' => 'Payment methods synced successfully.']);
+        }
+        return new JsonResponse(['success' => false, 'message' => 'Failed to sync payment methods. Please check your API key.'], 400);
+    }
+
     private function getErrorMessages(\Symfony\Component\Form\Form $form) {
         $errors = array();
 

@@ -206,6 +206,6 @@ class KomojuEvent implements EventSubscriberInterface{
     }
 
     private function getKomojuDashboardLink($komoju_payment_id){
-        return "https://komoju.com/admin/payments/$komoju_payment_id";
+        return "https://app.komoju.com/merchant/payments/$komoju_payment_id";
     }
 }

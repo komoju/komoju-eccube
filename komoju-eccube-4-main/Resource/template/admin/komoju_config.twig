@@ -69,17 +69,25 @@
                                     <span>{{ 'komoju_multipay.admin.config.label.komoju_pay_type'|trans }}</span>
                                 </div>
                                 <div class="col mb-2">
-                                    {% set komoju_pays_form = form.komoju_pays %}
-                                    {% for id, child in komoju_pays_form %}
-                                        <div class="form-check form-check-inline">
-                                            <input type="checkbox"
-                                                id="{{ child.vars.id}}"
-                                                name="{{ child.vars.full_name}}"
-                                                class="form-check-input"
-                                                value="{{ child.vars.value }}" {{ komoju_pays_form.vars.checked[child.vars.value] ? "checked" : "" }}>
-                                            <label class="form-check-label" for="{{ child.vars.id }}">{{ komoju_pays_form.vars.disp_name[child.vars.value] }}</label>
-                                        </div>
-                                    {% endfor %}
+                                    <div id="komoju-pay-methods">
+                                        {% set komoju_pays_form = form.komoju_pays %}
+                                        {% for id, child in komoju_pays_form %}
+                                            <div class="form-check form-check-inline">
+                                                <input type="checkbox"
+                                                    id="{{ child.vars.id}}"
+                                                    name="{{ child.vars.full_name}}"
+                                                    class="form-check-input"
+                                                    value="{{ child.vars.value }}" {{ komoju_pays_form.vars.checked[child.vars.value] ? "checked" : "" }}>
+                                                <label class="form-check-label" for="{{ child.vars.id }}">{{ komoju_pays_form.vars.disp_name[child.vars.value] }}</label>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="mt-2">
+                                        <button type="button" id="btn-sync-methods" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-sync-alt"></i> 決済方法を同期
+                                        </button>
+                                        <span id="sync-status" class="ml-2" style="display:none;"></span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="row mt-4">
@@ -101,7 +109,7 @@
                                     {{ url('komoju_webhook') }}
                                     <div class="mt-2">
                                     {{ 'komoju_multipay.admin.config.webhook_check_notice'|trans }}<br>
-                                    <a href="https://komoju.com/admin/webhooks" target="_blank">{{ 'komoju_multipay.admin.config.webhook_dashboard'|trans }}</a><br><br>
+                                    <a href="https://komoju.com/merchant/webhooks" target="_blank">{{ 'komoju_multipay.admin.config.webhook_dashboard'|trans }}</a><br><br>
                                     {{ 'komoju_multipay.admin.config.webhook_events'|trans }}<br><br>
                                     payment.refunded<br>
                                     payment.captured<br>
@@ -155,9 +163,36 @@
         $(".clip-board-btn").click(function(){
             var secret_box = document.getElementById("{{ form.webhook_secret.vars.id }}");
             secret_box.select();
-            document.execCommand('Copy');            
+            document.execCommand('Copy');
         })
         {% endif %}
+
+        $("#btn-sync-methods").click(function(){
+            var btn = $(this);
+            var status = $("#sync-status");
+            btn.prop("disabled", true);
+            btn.find("i").addClass("fa-spin");
+            status.text("同期中...").show();
+
+            $.ajax({
+                url: "{{ url('komoju_admin_sync_methods') }}",
+                type: "POST",
+                dataType: "json",
+                success: function(data){
+                    status.text("同期完了。ページを再読み込みします...").css("color", "green");
+                    setTimeout(function(){ location.reload(); }, 1000);
+                },
+                error: function(xhr){
+                    var msg = "同期に失敗しました。";
+                    if(xhr.responseJSON && xhr.responseJSON.message){
+                        msg = xhr.responseJSON.message;
+                    }
+                    status.text(msg).css("color", "red");
+                    btn.prop("disabled", false);
+                    btn.find("i").removeClass("fa-spin");
+                }
+            });
+        });
     });
 </script>
 {% endblock %}
