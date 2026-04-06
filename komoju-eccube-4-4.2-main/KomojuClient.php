@@ -6,7 +6,6 @@ require_once __DIR__ . '/Resource/komoju_lib/init.php';
 
 use Komoju\KomojuApi;
 use Komoju\Payments;
-use Komoju\PaymentMethods;
 
 class KomojuClient{
 
@@ -79,10 +78,6 @@ class KomojuClient{
     public function cancelPayment($payment_id){
         $this->api_obj = new Payments($this->secret_key);
         return $this->api_obj->cancel($payment_id);
-    }
-    public function getPaymentMethods(){
-        $this->api_obj = new PaymentMethods($this->secret_key);
-        return $this->api_obj->get();
     }
 
 
