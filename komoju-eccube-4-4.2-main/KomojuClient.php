@@ -47,6 +47,9 @@ class KomojuClient{
         "other_error"   =>  "ja.errors.bad_gateway.other_error",
         "invalid_user_key"  =>  "ja.errors.bad_gateway.invalid_user_key",
         "other_invalid" =>  "Invalid card",
+        "too_many_requests" => "リクエストが多すぎます。しばらくしてからもう一度実行してください。",
+        "conflict" => "リクエストが現在の状態と競合しています。",
+        "payment_type_under_maintenance" => "この決済方法は現在メンテナンス中です。",
     ];
 
     public function __construct($secret_key){
@@ -95,7 +98,10 @@ class KomojuClient{
             if(isset(self::$error_msg[$error_code])){
                 return self::$error_msg[$error_code];
             }
-            return null;
+            if(!empty($error_code)){
+                return "エラーが発生しました ($error_code)";
+            }
+            return "不明なエラーが発生しました。";
         }
         return null;
     }
