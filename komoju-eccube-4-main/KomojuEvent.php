@@ -90,12 +90,17 @@ class KomojuEvent implements EventSubscriberInterface{
                     $currency = "JPY";
                 }
 
+                $komoju_api_url = getenv('KOMOJU_API_URL') ?: 'https://komoju.com';
+                $komoju_multipay_url = getenv('KOMOJU_MULTIPAY_URL') ?: 'https://multipay.komoju.com';
+
                 $event->setParameter("publishable_key", $config['publishable_key']);
                 $event->setParameter("total_amount", $total_amount);
                 $event->setParameter("title", $title);
                 $event->setParameter("description", $description);
                 $event->setParameter("methods", $methods);
                 $event->setParameter("currency", $currency);
+                $event->setParameter("komoju_api_url", $komoju_api_url);
+                $event->setParameter("komoju_multipay_url", $komoju_multipay_url);
                 $event->addSnippet('@komoju/default/shopping/komoju_multipay.twig');
             }
         }

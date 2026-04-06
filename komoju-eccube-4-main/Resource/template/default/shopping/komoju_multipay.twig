@@ -1,4 +1,4 @@
-<script src="https://multipay.komoju.com"></script>
+<script src="{{ komoju_multipay_url }}"></script>
 <script>    
     var shopping_form = $("#shopping-form");        
     shopping_form.append($("<input type=\"hidden\" name=\"komojuToken\"/>"));
@@ -20,7 +20,7 @@
         $(this).attr("type", "button")
         handler.open({
             amount: {{ total_amount }},
-            endpoint: "https://komoju.com",
+            endpoint: "{{ komoju_api_url }}",
             locale: "{{ app.request.locale|default('ja') }}",
             currency: "{{ currency }}",
             title: "{{ title }}",

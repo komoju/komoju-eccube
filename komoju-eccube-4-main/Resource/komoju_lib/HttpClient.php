@@ -8,15 +8,21 @@ class HttpClient{
     protected $password;
     protected $curl_hdl;
 
-    const BASE_URL = "https://komoju.com";
+    const DEFAULT_BASE_URL = "https://komoju.com";
 
     //---http error------
     protected $last_error;
     protected $last_status_code;
+    protected $base_url;
 
     public function __construct($username, $password = ""){
         $this->username = $username;
         $this->password = $password;
+        $this->base_url = getenv('KOMOJU_API_URL') ?: self::DEFAULT_BASE_URL;
+    }
+
+    protected function isSSL(){
+        return strpos($this->base_url, 'https://') === 0;
     }
     public function getLastError(){
         return $this->last_error;
@@ -28,9 +34,9 @@ class HttpClient{
         $this->curl_hdl = \curl_init();
         if($data){
             $query = \http_build_query($data);
-            $tar_url = self::BASE_URL . $url . "?" . $query;
+            $tar_url = $this->base_url . $url . "?" . $query;
         }else{
-            $tar_url = self::BASE_URL . $url;
+            $tar_url = $this->base_url . $url;
         }
         \curl_setopt($this->curl_hdl, CURLOPT_USERPWD, $this->username . ":" . $this->password);
         \curl_setopt($this->curl_hdl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
@@ -42,8 +48,8 @@ class HttpClient{
         \curl_setopt($this->curl_hdl, CURLOPT_HTTPHEADER, array('Accept: application/json', 'Content-Type: application/json'));
         \curl_setopt($this->curl_hdl, CURLOPT_VERBOSE, false);
 
-        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYHOST, 2);
-        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYPEER, true);
+        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYHOST, $this->isSSL() ? 2 : 0);
+        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYPEER, $this->isSSL());
 
         \curl_setopt($this->curl_hdl, CURLOPT_CONNECTTIMEOUT, 10);
         \curl_setopt($this->curl_hdl, CURLOPT_TIMEOUT, 30);
@@ -65,7 +71,7 @@ class HttpClient{
         \curl_setopt($this->curl_hdl, CURLOPT_USERPWD, $this->username . ":" . $this->password);
 
         \curl_setopt($this->curl_hdl, CURLOPT_RETURNTRANSFER, true);
-        \curl_setopt($this->curl_hdl, CURLOPT_URL, self::BASE_URL . $url);
+        \curl_setopt($this->curl_hdl, CURLOPT_URL, $this->base_url . $url);
 
         // post_data
         \curl_setopt($this->curl_hdl, CURLOPT_POST, true);
@@ -77,8 +83,8 @@ class HttpClient{
 
         \curl_setopt($this->curl_hdl, CURLOPT_VERBOSE, false);
 
-        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYHOST, 2);
-        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYPEER, true);
+        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYHOST, $this->isSSL() ? 2 : 0);
+        \curl_setopt($this->curl_hdl, CURLOPT_SSL_VERIFYPEER, $this->isSSL());
 
         \curl_setopt($this->curl_hdl, CURLOPT_CONNECTTIMEOUT, 10);
         \curl_setopt($this->curl_hdl, CURLOPT_TIMEOUT, 30);
