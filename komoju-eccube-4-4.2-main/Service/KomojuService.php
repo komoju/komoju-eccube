@@ -27,7 +27,7 @@ class KomojuService{
         }
 
         $payment_id = $komoju_order->getKomojuPaymentId();
-        $config_service = $this->container->get("plg_komoju.service.config");
+        $config_service = $this->container->get("plg_komoju42.service.config");
         $config_data = $config_service->getConfigData($Order);
         $komoju_client = new KomojuClient($config_data['secret_key']);
         $payment_obj = $komoju_client->getPayment($payment_id);

@@ -47,7 +47,7 @@
         }
 
         if(confirm(amount_to_display+'{{ 'komoju_multipay.admin.order.refund_action_confirm'|trans }}')){
-            post_to_url('{{ url('komoju_refund_transaction', { id : Order.id }) }}', {refund_option: refund_option_val, refund_amount: refund_amount_val});
+            post_to_url('{{ url('komoju42_refund_transaction', { id : Order.id }) }}', {refund_option: refund_option_val, refund_amount: refund_amount_val});
         } else {
             return false;
         }
@@ -104,7 +104,7 @@
                             <div class="col-3">{{ 'komoju_multipay.admin.order.actions'|trans }}</div>
                             <div class="col row ml-0">
                                 {% if komoju_order.CreditType==true and komoju_order.Captured==false %}
-                                    <a href="{{ url('komoju_capture_transaction', { id : Order.id }) }}"  
+                                    <a href="{{ url('komoju42_capture_transaction', { id : Order.id }) }}"  
                                         class="btn btn-ec-regular komoju_txn_action_btn" 
                                         onclick="return confirm('{{ 'komoju_multipay.admin.order.capture_action_confirm'|trans({'%charge_amount%':Order.getPaymentTotal|price })}}');">
                                             {{ 'komoju_multipay.admin.order.capture_action'|trans }}
@@ -118,7 +118,7 @@
                                     </div>
                                     <div class="col-6">
                                         <div id="refund_amount_contained" style="display: none;">
-                                            <input type="text" id="refund_amount" placeholder="払い戻し額" class="form-control" />
+                                            <input type="text" id="refund_amount" placeholder="{{ 'komoju_multipay.admin.order.refund_amount_placeholder'|trans }}" class="form-control" />
                                             <br/>
                                         </div>
                                         <a id="refund_btn" href="javascript:void(0);"  class="btn btn-ec-regular komoju_txn_action_btn" onclick="refundConfirmDialog();">{{ 'komoju_multipay.admin.order.refund_action'|trans }}</a>

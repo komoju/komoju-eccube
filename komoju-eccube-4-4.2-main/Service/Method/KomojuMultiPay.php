@@ -48,8 +48,8 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $this->purchase_flow = $this->container->get('eccube.purchase.flow.shopping');
         $this->order_status_repo = $this->entityManager->getRepository(OrderStatus::class);;
         $this->requestStack = $this->container->get('request_stack');
-        $this->config_service = $this->container->get("plg_komoju.service.config");
-        $this->log_service = $this->container->get("plg_komoju.service.komoju_log");
+        $this->config_service = $this->container->get("plg_komoju42.service.config");
+        $this->log_service = $this->container->get("plg_komoju42.service.komoju_log");
     }
     /**
      * @return PaymentResult
@@ -92,7 +92,6 @@ class KomojuMultiPay implements PaymentMethodInterface{
      * @return PaymentResult
      */
     public function checkout(){
-        log_info("KomojuMultiPay---checkout");
         $payment_token = $this->requestStack->getCurrentRequest()->request->get('komojuToken');
         $payment_type = $this->checkPaymentType();
 
@@ -130,7 +129,6 @@ class KomojuMultiPay implements PaymentMethodInterface{
         
         $this->log_service->writeLog("createPayment", $this->Order->getId(), "response with status_code: {$komoju_client->getStatusCode()}");
         if($komoju_client->getStatusCode() != 200){
-            log_info("KomojuMultiPay----");            
             $error = $komoju_client->getLastError();
             if($komoju_client->getStatusCode() == 202){
                 $error = trans("komoju_multipay.shopping.not_enough_error");

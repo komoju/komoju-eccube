@@ -23,16 +23,15 @@ class WebhookController extends AbstractController
 
     public function __construct(ContainerInterface $container){
         $this->container = $container;
-        $this->log_service = $this->container->get("plg_komoju.service.komoju_log");
-        $this->config_service = $this->container->get("plg_komoju.service.config");        
-        $this->webhook_service = $this->container->get("plg_komoju.service.komoju_webhook");
+        $this->log_service = $this->container->get("plg_komoju42.service.komoju_log");
+        $this->config_service = $this->container->get("plg_komoju42.service.config");        
+        $this->webhook_service = $this->container->get("plg_komoju42.service.komoju_webhook");
     }
 
     /**
-     * @Route("/plugin/komoju42/webhook", name="komoju_webhook")
+     * @Route("/plugin/komoju42/webhook", name="komoju42_webhook")
      */
     public function webhook(Request $request){
-        log_info("===========webhook is called=======");
         try{
             $config_data = $this->config_service->getConfigData();
             $webhook_secret = $config_data['webhook_secret'];
@@ -45,8 +44,6 @@ class WebhookController extends AbstractController
             return $this->json(['status' => 'error'], 400);
         }
         $type = $data->type;
-        log_info("type : $type");
-
         $this->log_service->writeLog("webhook[$type]", "", "");
         try {
             switch($type){

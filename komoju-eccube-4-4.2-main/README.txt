@@ -1,6 +1,6 @@
 # komoju-eccube-4.2-v1
 
-Copyright Subspire Inc. 2020
+Copyright (C) 2026 KOMOJU Co., Ltd.
 
 [EC-CUBE](http://www.ec-cube.net)用の[KOMOJU](https://komoju.com/)の決済プラグインです。
 

@@ -20,7 +20,7 @@ class OrderEventSubscriber implements EventSubscriber{
 
     public function __construct(ContainerInterface $container){
         $this->container = $container;
-        $this->komoju_service = $container->get('plg_komoju.service.komoju_service');
+        $this->komoju_service = $container->get('plg_komoju42.service.komoju_service');
         $this->entityManager = $container->get('doctrine.orm.entity_manager');
     }
 

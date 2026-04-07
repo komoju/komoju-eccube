@@ -18,7 +18,7 @@ class ConfigService{
     protected $eccubeConfig;
     protected $entityManager;
 
-    const MAIL_TEMPLATE_REFUND_REDIRECT = "Komoju返金メール";
+    const MAIL_TEMPLATE_REFUND_REDIRECT = "KOMOJU Refund Notification";
 
     public function __construct(ContainerInterface $container, EccubeConfig $eccubeConfig){
         $this->container = $container;
@@ -153,7 +153,7 @@ class ConfigService{
         $Payment->setCharge(0);
         $Payment->setSortNo($sortNo);
         $Payment->setVisible(true);
-        $Payment->setMethod('マルチ決済');
+        $Payment->setMethod(trans('komoju_multipay.shopping.komoju_method_label'));
         $Payment->setMethodClass(KomojuMultiPay::class);
         $this->entityManager->persist($Payment);
         $this->entityManager->flush();
@@ -163,7 +163,7 @@ class ConfigService{
             [
                 'name'      =>  self::MAIL_TEMPLATE_REFUND_REDIRECT,
                 'file_name' =>  'komoju/Resource/template/mail/refund_redirect.twig',
-                'mail_subject'  => 'Komoju返金メール',
+                'mail_subject'  => trans('komoju_multipay.mail.refund_subject'),
             ],
         ];
 

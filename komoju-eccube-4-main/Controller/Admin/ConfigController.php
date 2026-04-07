@@ -2,8 +2,8 @@
 /*
 * Plugin Name : KomojuPaymentGateway
 *
-* Copyright (C) 2018 Subspire Inc. All Rights Reserved.
-* http://www.subspire.co.jp/
+* Copyright (C) 2026 KOMOJU Co., Ltd. All Rights Reserved.
+* https://ja.komoju.com/
 *
 * For the full copyright and license information, please view the LICENSE
 * file that was distributed with this source code.

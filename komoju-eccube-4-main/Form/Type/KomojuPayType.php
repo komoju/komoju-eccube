@@ -32,9 +32,7 @@ class KomojuPayType extends AbstractType
             $id = $komoju_pay->getId();            
             $view->vars['checked'][$id] = $komoju_pay->isEnabled();
             $view->vars['disp_name'][$id] = $komoju_pay->getDispName();
-            // echo "{$komoju_pay->getDispName()} : {$komoju_pay->isEnabled()} <br>";
         }
-        // die();
     }
 
     /**

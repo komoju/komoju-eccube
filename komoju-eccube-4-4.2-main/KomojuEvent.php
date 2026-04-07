@@ -69,7 +69,7 @@ class KomojuEvent implements EventSubscriberInterface{
         $Order = $event->getParameter("Order");
         if($Order){
             if($Order->getPayment()->getMethodClass() === KomojuMultiPay::class){
-                $config_service = $this->container->get("plg_komoju.service.config");
+                $config_service = $this->container->get("plg_komoju42.service.config");
                 $config = $config_service->getConfigData($Order);
                 $total_amount = $Order->getPaymentTotal();
                 
@@ -147,7 +147,7 @@ class KomojuEvent implements EventSubscriberInterface{
             return;
         }
 
-        $config_service = $this->container->get("plg_komoju.service.config");
+        $config_service = $this->container->get("plg_komoju42.service.config");
 
         $komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
         $komoju_orders = $komoju_order_repo->findBy(['Order'    =>  $OrderToSearch]);

@@ -32,7 +32,6 @@ class WebhookController extends AbstractController
      * @Route("/plugin/komoju/webhook", name="komoju_webhook")    
      */
     public function webhook(Request $request){
-        log_info("===========webhook is called=======");
         try{
             $config_data = $this->config_service->getConfigData();
             $webhook_secret = $config_data['webhook_secret'];
@@ -45,7 +44,6 @@ class WebhookController extends AbstractController
             return $this->json(['status' => 'error'], 400);
         }
         $type = $data->type;
-        log_info("type : $type");
 
         $this->log_service->writeLog("webhook[$type]", "", "");
         try {

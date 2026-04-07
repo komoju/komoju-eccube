@@ -51,83 +51,55 @@ class OrderController extends AbstractController{
         }
         $config = $this->config_service->getConfigData($Order);
         $komoju_order = $this->komoju_order_repo->findOneBy(['Order'    =>  $Order]);
-        log_info("charge payment");
-        log_info(__FUNCTION__ . "---" . __LINE__);
-        // BOC check if komoju order
         if(empty($komoju_order)){
-            log_info(__FUNCTION__ . "---" . __LINE__);
             $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
             return $this->redirectToRoute('admin_order');
         }
-        // EOC check if komoju order
 
-        // BOC check if credit card type
         if($komoju_order->getType() !== KomojuPay::TYPE_CREDIT_CARD){
-            log_info(__FUNCTION__ . "---" . __LINE__);
             $this->addError('komoju_multipay.admin.order.error.not_credit_card', 'admin');
             return $this->redirectToRoute('admin_order');
         }
-        // EOC check if credit card type
 
-        // BOC check if refunded
         if($komoju_order->getIsChargeRefunded()){
-            log_info(__FUNCTION__ . "---" . __LINE__);
             $this->addError('komoju_multipay.admin.order.error.refunded', 'admin');
             return $this->redirectToRoute('admin_order');
         }
-        // EOC check if refunded
-        
-        // BOC check if already captured
+
         if($komoju_order->isCaptured()){
-            log_info(__FUNCTION__ . "---" . __LINE__);
             $this->addError('komoju_multipay.admin.order.error.already_captured', 'admin');
             return $this->redirectToRoute('admin_order');
         }
-        // EOC check if already captured
-        log_info(__FUNCTION__ . "---" . __LINE__);
         $komoju_client = new KomojuClient($config['secret_key']);
         $payment_obj = $komoju_client->getPayment($komoju_order->getKomojuPaymentId());
         $this->log_service->writeLog("retrieve", $Order->getId(), "result status_code : " . $komoju_client->getStatusCode());
-        if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){              
-            log_info(__FUNCTION__ . "---" . __LINE__);
+        if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
             $this->addError($komoju_client->getLastError(), 'admin');
             $this->log_service->writeLog("retrieve", $Order->getId(), "retrieve failed, code=" . $komoju_client->getStatusCode());
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);                
         }
-        log_info(__FUNCTION__ . "---" . __LINE__);
 
-        // BOC check if captured using api
         if($payment_obj['status'] === "captured"){
-            log_info(__FUNCTION__ . "---" . __LINE__);
-
             $komoju_order->setCapturedAt(new \DateTime($payment_obj['captured_at']));
             $this->entityManager->persist($komoju_order);
             $this->entityManager->flush();
             $this->setOrderStatus($Order, OrderStatus::PAID);
             $this->addError('komoju_multipay.admin.order.error.already_captured', 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
-        }                
-        // EOC check if captured using api
-        log_info(__FUNCTION__ . "---" . __LINE__);
+        }
         
-        // BOC capture through api
         $this->log_service->writeLog("capture", $Order->getId(), "capture start");
         $payment_obj = $komoju_client->capturePayment($komoju_order->getKomojuPaymentId());
-        if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){                
-        log_info(__FUNCTION__ . "---" . __LINE__);
-
+        if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
             $this->addError($komoju_client->getLastError(), 'admin');
             $this->log_service->writeLog("capture", $Order->getId(), "capture failed : " . $komoju_client->getLastError());            
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);                
         }
         
         if(isset($payment_obj['status']) && $payment_obj['status'] != "captured"){
-        log_info(__FUNCTION__ . "---" . __LINE__);
-
             $this->addError('komoju_multipay.admin.order.error.capture_failed', 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);          
         }
-        log_info(__FUNCTION__ . "---" . __LINE__);
 
         $komoju_order->setCapturedAt(new \DateTime($payment_obj['captured_at']));
         $this->entityManager->persist($komoju_order);
@@ -173,7 +145,6 @@ class OrderController extends AbstractController{
             $this->log_service->writeLog("retrieve", $Order->getId(), "retrieve payment to check whether already refunded");
             
             
-            //BOC check if it has already refunded
             $payment_obj = $komoju_client->getPayment($komoju_order->getKomojuPaymentId());
             $this->log_service->writeLog("retrieve", $Order->getId(), "result status_code : " . $komoju_client->getStatusCode());
             if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){                
@@ -203,10 +174,8 @@ class OrderController extends AbstractController{
                 $this->addError('komoju_multipay.admin.order.error.refunded', 'admin');
                 $this->log_service->writeLog("refund", $Order->getId(), "already refunded");
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
-            }            
-            //EOC check if it has already refunded
+            }
 
-            //BOC refund api
             $refund_option = $request->request->get('refund_option');
             $refund_amount = 0;
 
@@ -245,19 +214,15 @@ class OrderController extends AbstractController{
                 $this->entityManager->persist($komoju_order);
                 $this->entityManager->flush();
 
-                //BOC update Order Status
                 $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
                 $Order->setOrderStatus($OrderStatus);
                 $this->entityManager->persist($Order);
                 $this->entityManager->flush($Order);
-                //EOC update Order Status
 
-                //BOC check if redirect url exist and send redirect url
                 if(isset($refund['redirect_url'])){
                     $mail_ex_service = $this->container->get("plg_komoju.service.komoju_mail_service");
                     $mail_ex_service->sendRefundRedirectMail($Order, $refund['redirect_url']);
                 }
-                //EOC
                 $this->addSuccess('komoju_multipay.admin.order.refund.success', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }else{

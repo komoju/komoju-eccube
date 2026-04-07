@@ -31,7 +31,7 @@ class KomojuNav implements EccubeNav
                     ],
                     'komoju_log' => [
                         'name' => 'komoju_multipay.admin.nav.log',
-                        'url' => 'komoju_admin_log',
+                        'url' => 'komoju42_admin_log',
                     ]
                 ],
             ],

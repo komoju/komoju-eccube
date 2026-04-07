@@ -2,23 +2,23 @@ services:
     _defaults:
         autowire: true
         autoconfigure: true
-    plg_komoju.service.config:
+    plg_komoju42.service.config:
         public: true
         class: Plugin\komoju42\Service\ConfigService
         arguments:
             - '@service_container'
             - '@Eccube\Common\EccubeConfig'
-    plg_komoju.service.komoju_log:
+    plg_komoju42.service.komoju_log:
         public: true
         class: Plugin\komoju42\Service\LogService
         arguments:
             - '@service_container'
-    plg_komoju.service.komoju_webhook:
+    plg_komoju42.service.komoju_webhook:
         public: true
         class: Plugin\komoju42\Service\WebhookService
         arguments:
             - '@service_container'
-    plg_komoju.service.komoju_mail_service:
+    plg_komoju42.service.komoju_mail_service:
         public: true
         class: Plugin\komoju42\Service\MailExService
         arguments:
@@ -30,7 +30,7 @@ services:
             - '@Symfony\Component\EventDispatcher\EventDispatcherInterface'
             - '@twig'
             - '@Eccube\Common\EccubeConfig'
-    plg_komoju.service.komoju_service:
+    plg_komoju42.service.komoju_service:
         public: true
         class: Plugin\komoju42\Service\KomojuService
         arguments:
@@ -50,11 +50,11 @@ services:
                 doctrine.orm.entity_manager: '@doctrine.orm.entity_manager'
                 router: '@router'
                 eccube.purchase.flow.shopping: '@eccube.purchase.flow.shopping'
-                plg_komoju.service.config: '@plg_komoju.service.config'
-                plg_komoju.service.komoju_log: '@plg_komoju.service.komoju_log'
-                plg_komoju.service.komoju_webhook: '@plg_komoju.service.komoju_webhook'
-                plg_komoju.service.komoju_mail_service: '@plg_komoju.service.komoju_mail_service'
-                plg_komoju.service.komoju_service: '@plg_komoju.service.komoju_service'
+                plg_komoju42.service.config: '@plg_komoju42.service.config'
+                plg_komoju42.service.komoju_log: '@plg_komoju42.service.komoju_log'
+                plg_komoju42.service.komoju_webhook: '@plg_komoju42.service.komoju_webhook'
+                plg_komoju42.service.komoju_mail_service: '@plg_komoju42.service.komoju_mail_service'
+                plg_komoju42.service.komoju_service: '@plg_komoju42.service.komoju_service'
                 request_stack: '@request_stack'
     Plugin\komoju42\KomojuEvent:
         class: Plugin\komoju42\KomojuEvent
@@ -63,11 +63,11 @@ services:
                 Eccube\Common\EccubeConfig: '@Eccube\Common\EccubeConfig'
                 doctrine.orm.entity_manager: '@doctrine.orm.entity_manager'
                 router: '@router'
-                plg_komoju.service.config: '@plg_komoju.service.config'
-                plg_komoju.service.komoju_log: '@plg_komoju.service.komoju_log'
-                plg_komoju.service.komoju_webhook: '@plg_komoju.service.komoju_webhook'
-                plg_komoju.service.komoju_mail_service: '@plg_komoju.service.komoju_mail_service'
-                plg_komoju.service.komoju_service: '@plg_komoju.service.komoju_service'
+                plg_komoju42.service.config: '@plg_komoju42.service.config'
+                plg_komoju42.service.komoju_log: '@plg_komoju42.service.komoju_log'
+                plg_komoju42.service.komoju_webhook: '@plg_komoju42.service.komoju_webhook'
+                plg_komoju42.service.komoju_mail_service: '@plg_komoju42.service.komoju_mail_service'
+                plg_komoju42.service.komoju_service: '@plg_komoju42.service.komoju_service'
     Plugin\komoju42\Controller\:
         resource: '../../Controller/*'
         tags: ['controller.service_arguments']
@@ -78,8 +78,8 @@ services:
                 router: '@router'
                 Eccube\Service\CartService: '@Eccube\Service\CartService'
                 Eccube\Service\OrderHelper: '@Eccube\Service\OrderHelper'
-                plg_komoju.service.config: '@plg_komoju.service.config'
-                plg_komoju.service.komoju_log: '@plg_komoju.service.komoju_log'
-                plg_komoju.service.komoju_webhook: '@plg_komoju.service.komoju_webhook'
-                plg_komoju.service.komoju_mail_service: '@plg_komoju.service.komoju_mail_service'
-                plg_komoju.service.komoju_service: '@plg_komoju.service.komoju_service'
+                plg_komoju42.service.config: '@plg_komoju42.service.config'
+                plg_komoju42.service.komoju_log: '@plg_komoju42.service.komoju_log'
+                plg_komoju42.service.komoju_webhook: '@plg_komoju42.service.komoju_webhook'
+                plg_komoju42.service.komoju_mail_service: '@plg_komoju42.service.komoju_mail_service'
+                plg_komoju42.service.komoju_service: '@plg_komoju42.service.komoju_service'

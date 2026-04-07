@@ -33,7 +33,7 @@ class WebhookService{
         $this->container = $container;
         $this->entityManager = $container->get('doctrine.orm.entity_manager');
         $this->komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
-        $this->log_service = $container->get("plg_komoju.service.komoju_log");
+        $this->log_service = $container->get("plg_komoju42.service.komoju_log");
         $this->order_state_machine = $orderStateMachine;
         $this->productStockRepository = $this->entityManager->getRepository(ProductStock::class);
     }

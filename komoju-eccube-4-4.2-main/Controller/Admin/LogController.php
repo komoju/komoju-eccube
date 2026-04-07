@@ -2,13 +2,12 @@
 /*
 * Plugin Name : KomojuPaymentGateway
 *
-* Copyright (C) 2018 Subspire Inc. All Rights Reserved.
-* http://www.subspire.co.jp/
+* Copyright (C) 2026 KOMOJU Co., Ltd. All Rights Reserved.
+* https://ja.komoju.com/
 *
 * For the full copyright and license information, please view the LICENSE
 * file that was distributed with this source code.
 */
-
 
 namespace Plugin\komoju42\Controller\Admin;
 
@@ -42,8 +41,8 @@ class LogController extends AbstractController
     }
 
     /**
-     * @Route("/%eccube_admin_route%/komoju42/log", name="komoju_admin_log")
-     * @Route("/%eccube_admin_route%/komoju42/log/page/{page_no}", requirements={"page_no" = "\d+"}, name="komoju_admin_log_page")
+     * @Route("/%eccube_admin_route%/komoju42/log", name="komoju42_admin_log")
+     * @Route("/%eccube_admin_route%/komoju42/log/page/{page_no}", requirements={"page_no" = "\d+"}, name="komoju42_admin_log_page")
      * @Template("@komoju42/admin/komoju_log.twig")
      */
     public function index(Request $request, PaginatorInterface $paginator, $page_no = null)
