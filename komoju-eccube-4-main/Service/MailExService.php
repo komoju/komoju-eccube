@@ -10,7 +10,7 @@
 
 namespace Plugin\komoju\Service;
 
-use Symfony\Component\DependencyInjection\ContainerInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Entity\BaseInfo;
 use Eccube\Entity\MailTemplate;
 use Eccube\Entity\MailHistory;
@@ -24,15 +24,13 @@ use Eccube\Common\EccubeConfig;
 use Plugin\komoju\Service\ConfigService;
 
 class MailExService extends MailService{
-    
-    protected $container;
-    protected $rec_order_repo;
+
     protected $em;
     protected $mailHistoryRepository;
-    
+
 
     public function __construct(
-        ContainerInterface $container,
+        EntityManagerInterface $entityManager,
         \Swift_Mailer $mailer,
         MailTemplateRepository $mailTemplateRepository,
         MailHistoryRepository $mailHistoryRepository,
@@ -41,9 +39,8 @@ class MailExService extends MailService{
         \Twig_Environment $twig,
         EccubeConfig $eccubeConfig
         ){
-        $this->container = $container;
-        $this->em = $this->container->get('doctrine.orm.entity_manager');
-        
+        $this->em = $entityManager;
+
         parent::__construct( $mailer, $mailTemplateRepository, $mailHistoryRepository, $baseInfoRepository, $eventDispatcher, $twig, $eccubeConfig);
         $this->mailHistoryRepository = $mailHistoryRepository;
     }

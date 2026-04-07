@@ -16,23 +16,18 @@ use Symfony\Component\Routing\Annotation\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
-use Psr\Container\ContainerInterface;
-use Plugin\komoju42\Repository\KomojuConfigRepository;
+use Doctrine\ORM\EntityManagerInterface;
+use Plugin\komoju42\Service\ConfigService;
 use Plugin\komoju42\Form\Type\KomojuConfigType;
 
 class ConfigController extends AbstractController
 {
-    protected $container;
     protected $entityManager;
     protected $config_service;
-    protected $komoju_config_repo;
 
-    public function __construct(ContainerInterface $container){
-        $this->container = $container;
-        $this->entityManager = $this->container->get('doctrine.orm.entity_manager');
-        $this->komoju_config_repo = $this->entityManager->getRepository('Plugin\komoju42\Entity\KomojuConfig');
-        $this->config_service = $this->container->get('plg_komoju42.service.config');
+    public function __construct(EntityManagerInterface $entityManager, ConfigService $configService){
+        $this->entityManager = $entityManager;
+        $this->config_service = $configService;
     }
     /**
      * @Route("/%eccube_admin_route%/komoju42/config", name="komoju42_admin_config")
@@ -46,7 +41,6 @@ class ConfigController extends AbstractController
             $config_data = $form->getData();
             $this->config_service->saveConfig($config_data);
         }
-        $this->config_service->enablePlugin();
 
         return [
             'form' => $form->createView(),

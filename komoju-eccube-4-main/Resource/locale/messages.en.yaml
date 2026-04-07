@@ -60,7 +60,7 @@ komoju_multipay.badge.required: Required
 komoju_multipay.shopping.verify.error.payment_total.too_small: The payment amount is too small.
 komoju_multipay.shopping.verify.error.payment_total.too_much: The payment amount is too large.
 komoju_multipay.shopping.payment_failed: KOMOJU payment failed.
-komoju_multipay.shopping.komoju_method_label: Multi-Payment
+komoju_multipay.shopping.komoju_method_label: KOMOJU Payment
 komoju_multipay.shopping.not_enough_error: Insufficient balance.
 
 komoju_multipay.admin.config.sync_methods: Sync Payment Methods

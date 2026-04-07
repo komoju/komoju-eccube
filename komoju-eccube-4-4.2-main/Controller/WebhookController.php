@@ -7,25 +7,22 @@ use Symfony\Component\Routing\Annotation\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
-use Psr\Container\ContainerInterface;
-use Plugin\komoju42\Repository\KomojuConfigRepository;
-use Plugin\komoju42\Form\Type\KomojuConfigType;
+use Plugin\komoju42\Service\LogService;
+use Plugin\komoju42\Service\ConfigService;
+use Plugin\komoju42\Service\WebhookService;
 use Komoju\WebhookEvent;
 
 
 class WebhookController extends AbstractController
 {
-    protected $container;
     protected $log_service;
     protected $config_service;
     protected $webhook_service;
 
-    public function __construct(ContainerInterface $container){
-        $this->container = $container;
-        $this->log_service = $this->container->get("plg_komoju42.service.komoju_log");
-        $this->config_service = $this->container->get("plg_komoju42.service.config");        
-        $this->webhook_service = $this->container->get("plg_komoju42.service.komoju_webhook");
+    public function __construct(LogService $logService, ConfigService $configService, WebhookService $webhookService){
+        $this->log_service = $logService;
+        $this->config_service = $configService;
+        $this->webhook_service = $webhookService;
     }
 
     /**

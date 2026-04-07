@@ -16,40 +16,54 @@ use Eccube\Service\PurchaseFlow\PurchaseFlow;
 use Symfony\Component\Form\FormInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
-use Psr\Container\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Plugin\komoju42\KomojuClient;
 use Plugin\komoju42\Entity\KomojuOrder;
 use Plugin\komoju42\Entity\KomojuPay;
+use Plugin\komoju42\Service\ConfigService;
+use Plugin\komoju42\Service\LogService;
 
 class KomojuMultiPay implements PaymentMethodInterface{
-    
+
     protected $eccubeConfig;
     protected $entityManager;
-    protected $container;
     protected $config_service;
     protected $log_service;
     protected $order_status_repo;
     protected $requestStack;
+    protected $router;
 
     /**
      * Komoju multipay constructor
-     * @param ContainerInterface $container
+     * @param EccubeConfig $eccubeConfig
+     * @param EntityManagerInterface $entityManager
+     * @param PurchaseFlow $shoppingPurchaseFlow
+     * @param OrderStatusRepository $order_status_repo
+     * @param RequestStack $requestStack
+     * @param ConfigService $configService
+     * @param LogService $logService
+     * @param UrlGeneratorInterface $router
      */
 
-    public function __construct(ContainerInterface $container){
-
-        $this->container = $container;
-
-
-        $this->eccubeConfig = $this->container->get('Eccube\Common\EccubeConfig');;
-        $this->entityManager = $this->container->get('doctrine.orm.entity_manager');
-        $this->purchase_flow = $this->container->get('eccube.purchase.flow.shopping');
-        $this->order_status_repo = $this->entityManager->getRepository(OrderStatus::class);;
-        $this->requestStack = $this->container->get('request_stack');
-        $this->config_service = $this->container->get("plg_komoju42.service.config");
-        $this->log_service = $this->container->get("plg_komoju42.service.komoju_log");
+    public function __construct(
+        EccubeConfig $eccubeConfig,
+        EntityManagerInterface $entityManager,
+        PurchaseFlow $shoppingPurchaseFlow,
+        OrderStatusRepository $order_status_repo,
+        RequestStack $requestStack,
+        ConfigService $configService,
+        LogService $logService,
+        UrlGeneratorInterface $router
+    ){
+        $this->eccubeConfig = $eccubeConfig;
+        $this->entityManager = $entityManager;
+        $this->purchase_flow = $shoppingPurchaseFlow;
+        $this->order_status_repo = $order_status_repo;
+        $this->requestStack = $requestStack;
+        $this->config_service = $configService;
+        $this->log_service = $logService;
+        $this->router = $router;
     }
     /**
      * @return PaymentResult
@@ -124,9 +138,9 @@ class KomojuMultiPay implements PaymentMethodInterface{
                 'customer_ip' => $this->requestStack->getCurrentRequest()->getClientIp(),
                 'customer_email'=> $this->Order->getEmail(),
             ],
-            'return_url'=> $this->container->get('router')->generate('shopping_complete', [], UrlGeneratorInterface::ABSOLUTE_URL),
+            'return_url'=> $this->router->generate('shopping_complete', [], UrlGeneratorInterface::ABSOLUTE_URL),
         ]);
-        
+
         $this->log_service->writeLog("createPayment", $this->Order->getId(), "response with status_code: {$komoju_client->getStatusCode()}");
         if($komoju_client->getStatusCode() != 200){
             $error = $komoju_client->getLastError();
@@ -161,7 +175,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
             $komoju_order->setType($payment_type);
             $this->entityManager->persist($komoju_order);
             $this->entityManager->flush();
-    
+
             $this->purchase_flow->commit($this->Order, new PurchaseContext());
             $result = new PaymentResult();
             $result->setSuccess(true);

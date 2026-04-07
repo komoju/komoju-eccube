@@ -7,11 +7,14 @@ use Eccube\Entity\Master\OrderStatus;
 use Eccube\Entity\Order;
 use Eccube\Repository\OrderRepository;
 use Eccube\Repository\Master\OrderStatusRepository;
-use Psr\Container\ContainerInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use Plugin\komoju42\Repository\KomojuOrderRepository;
 use Plugin\komoju42\KomojuClient;
 use Plugin\komoju42\Entity\KomojuOrder;
 use Plugin\komoju42\Entity\KomojuPay;
+use Plugin\komoju42\Service\ConfigService;
+use Plugin\komoju42\Service\LogService;
+use Plugin\komoju42\Service\MailExService;
 use Symfony\Component\Routing\Annotation\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
@@ -21,32 +24,46 @@ use Eccube\Service\OrderStateMachine;
 
 class OrderController extends AbstractController{
 
-    protected $container;
     protected $entityManager;
     protected $order_repo;
     protected $config_service;
     protected $komoju_order_repo;
     protected $log_service;
     protected $order_status_repo;
+    protected $mail_ex_service;
     /**
      * @var OrderStateMachine
      */
     protected $orderStateMachine;
 
-    public function __construct(ContainerInterface $container, OrderStateMachine $orderStateMachine){
-        $this->container = $container;
+    public function __construct(
+        EntityManagerInterface $entityManager,
+        OrderStateMachine $orderStateMachine,
+        OrderRepository $order_repo,
+        OrderStatusRepository $order_status_repo,
+        KomojuOrderRepository $komoju_order_repo,
+        ConfigService $configService,
+        LogService $logService,
+        MailExService $mailExService
+    ){
+        $this->entityManager = $entityManager;
         $this->orderStateMachine = $orderStateMachine;
-        $this->entityManager = $this->container->get('doctrine.orm.entity_manager');
-        $this->order_repo = $this->entityManager->getRepository(Order::class);
-        $this->config_service = $this->container->get("plg_komoju42.service.config");
-        $this->log_service = $this->container->get("plg_komoju42.service.komoju_log");
-        $this->komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
-        $this->order_status_repo = $this->entityManager->getRepository(OrderStatus::class);
+        $this->order_repo = $order_repo;
+        $this->order_status_repo = $order_status_repo;
+        $this->komoju_order_repo = $komoju_order_repo;
+        $this->config_service = $configService;
+        $this->log_service = $logService;
+        $this->mail_ex_service = $mailExService;
     }
     /**
-     * @Route("/%eccube_admin_route%/komoju42/payment/{id}/capture_transaction", requirements={"id" = "\d+"}, name="komoju42_capture_transaction")
+     * @Route("/%eccube_admin_route%/komoju42/payment/{id}/capture_transaction", requirements={"id" = "\d+"}, name="komoju42_capture_transaction", methods={"POST"})
      */
     public function charge(Request $request, $id){
+        if (!$this->isCsrfTokenValid('komoju_capture_' . $id, $request->request->get('_token'))) {
+            $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
+            return $this->redirectToRoute('admin_order');
+        }
+
         $Order = $this->order_repo->find($id);
         if(empty($Order)){
             $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
@@ -126,6 +143,11 @@ class OrderController extends AbstractController{
         $config = $this->config_service->getConfigData($Order);
         $this->log_service->writeLog("refund", $Order->getId(), "refund requested by admin");
         if($request->getMethod() == "POST"){
+            if (!$this->isCsrfTokenValid('komoju_refund_' . $id, $request->request->get('_token'))) {
+                $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
+                return $this->redirectToRoute('admin_order');
+            }
+
             $komoju_order = $this->komoju_order_repo->findOneBy(['Order'    =>  $Order]);
 
             if(empty($komoju_order) || empty($komoju_order->getKomojuPaymentId())){
@@ -148,10 +170,10 @@ class OrderController extends AbstractController{
             $this->log_service->writeLog("retrieve", $Order->getId(), "retrieve payment to check whether already refunded");
             $payment_obj = $komoju_client->getPayment($komoju_order->getKomojuPaymentId());
             $this->log_service->writeLog("retrieve", $Order->getId(), "result status_code : " . $komoju_client->getStatusCode());
-            if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){                
+            if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
                 $this->addError($komoju_client->getLastError(), 'admin');
                 $this->log_service->writeLog("retrieve", $Order->getId(), "retrieve failed");
-                return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);                
+                return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
             $refunds = isset($payment_obj['refunds']) ? $payment_obj['refunds'] : null;
             if(!empty($refunds) && count($refunds) > 0){
@@ -186,11 +208,11 @@ class OrderController extends AbstractController{
             $refund_amount = 0;
 
             if((int)$refund_option === KomojuOrder::REFUND_FULL){
-                $refund_amount = floor($Order->getPaymentTotal());       
+                $refund_amount = floor($Order->getPaymentTotal());
             }else if((int)$refund_option === KomojuOrder::REFUND_PARTIAL){
                 $refund_amount = $request->request->get('refund_amount');
                 $refund_amount = (int)$refund_amount;
-                if (empty($refund_amount) || !is_int($refund_amount)) {
+                if ($refund_amount <= 0) {
                     $this->addError('komoju_multipay.admin.order.refund_amount.error.invalid', 'admin');
                     return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
                 } else if($refund_amount>$Order->getPaymentTotal()){
@@ -202,7 +224,7 @@ class OrderController extends AbstractController{
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
             $this->log_service->writeLog("refund", $Order->getId(), "refund option = $refund_option, refund_amount = $refund_amount");
-            
+
             $payment_obj = $komoju_client->refundPayment($komoju_order->getKomojuPaymentId(), ['amount' => $refund_amount]);
             if($komoju_client->getStatusCode() != 200){
                 $this->log_service->writeLog("refund", $Order->getId(), "code : " . $komoju_client->getStatusCode() . " ,error : " . $komoju_client->getLastError());
@@ -213,7 +235,7 @@ class OrderController extends AbstractController{
                 $refund = $payment_obj["refunds"][0];
                 $this->log_service->writeLog("refund", $Order->getId(), \json_encode($refund));
                 $this->log_service->writeLog("refund", $Order->getId(), "refund api call success");
-                
+
                 $komoju_order->setRefundId($refund['id']);
                 $komoju_order->setSelectedRefundOption($refund_option);
                 $komoju_order->setRefundedAmount($refund_amount);
@@ -231,8 +253,7 @@ class OrderController extends AbstractController{
                 }
 
                 if(isset($refund['redirect_url'])){
-                    $mail_ex_service = $this->container->get("plg_komoju42.service.komoju_mail_service");
-                    $mail_ex_service->sendRefundRedirectMail($Order, $refund['redirect_url']);
+                    $this->mail_ex_service->sendRefundRedirectMail($Order, $refund['redirect_url']);
                 }
                 $this->addSuccess('komoju_multipay.admin.order.refund.success', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);

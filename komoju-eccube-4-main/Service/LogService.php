@@ -2,24 +2,15 @@
 
 namespace Plugin\komoju\Service;
 
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Eccube\Repository\PaymentRepository;
-use Eccube\Entity\Payment;
-use Eccube\Entity\PaymentOption;
-use Eccube\Common\EccubeConfig;
-use Plugin\komoju\Entity\KomojuPay;
-use Plugin\komoju\Entity\KomojuConfig;
+use Doctrine\ORM\EntityManagerInterface;
 use Plugin\komoju\Entity\KomojuLog;
-use Plugin\komoju\Service\Method\KomojuMultiPay;
 
 
 class LogService{
-    protected $container;    
     protected $entityManager;
 
-    public function __construct(ContainerInterface $container){
-        $this->container = $container;
-        $this->entityManager = $container->get('doctrine.orm.entity_manager');
+    public function __construct(EntityManagerInterface $entityManager){
+        $this->entityManager = $entityManager;
     }
 
     public function writeLog($api, $order_id, $msg){

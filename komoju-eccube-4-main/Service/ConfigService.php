@@ -2,7 +2,7 @@
 
 namespace Plugin\komoju\Service;
 
-use Symfony\Component\DependencyInjection\ContainerInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Repository\PaymentRepository;
 use Eccube\Entity\Payment;
 use Eccube\Entity\MailTemplate;
@@ -14,19 +14,16 @@ use Plugin\komoju\Service\Method\KomojuMultiPay;
 use Plugin\komoju\KomojuClient;
 
 class ConfigService{
-    protected $container;
     protected $eccubeConfig;
     protected $entityManager;
 
     const MAIL_TEMPLATE_REFUND_REDIRECT = "KOMOJU Refund Notification";
 
-    public function __construct(ContainerInterface $container, EccubeConfig $eccubeConfig){
-        $this->container = $container;
+    public function __construct(EntityManagerInterface $entityManager, EccubeConfig $eccubeConfig){
+        $this->entityManager = $entityManager;
         $this->eccubeConfig = $eccubeConfig;
-        $this->entityManager = $container->get('doctrine.orm.entity_manager');
-            
     }
-    
+
     public function enablePlugin(){
         $this->createTokenPayment();
         $this->insertMailTemplate();
@@ -54,7 +51,7 @@ class ConfigService{
         $config->setMerchantUuid($config_data['merchant_uuid']);
         $config->setWebhookSecret($config_data['webhook_secret']);
         $config->setCaptureOn( isset($config_data['capture_on']) ? $config_data['capture_on'] : true);
-        
+
         $this->entityManager->persist($config);
         $this->entityManager->flush();
 
@@ -136,8 +133,8 @@ class ConfigService{
         return true;
     }
     public function getConfigData($Order = null){
-        $komoju_config_repo = $this->entityManager->getRepository(KomojuConfig::class);    
-        $config = $komoju_config_repo->getConfigByOrder($Order);        
+        $komoju_config_repo = $this->entityManager->getRepository(KomojuConfig::class);
+        $config = $komoju_config_repo->getConfigByOrder($Order);
         return $config;
     }
     // ===============for enablePlugin===========
@@ -167,9 +164,8 @@ class ConfigService{
             ],
         ];
 
-    $em = $this->container->get('doctrine.orm.entity_manager');
     foreach($template_list as $template){
-        $template1 = $em->getRepository(MailTemplate::class)->findOneBy(["name" => $template["name"]]);
+        $template1 = $this->entityManager->getRepository(MailTemplate::class)->findOneBy(["name" => $template["name"]]);
         if ($template1){
             continue;
         }
@@ -177,8 +173,8 @@ class ConfigService{
         $item->setName($template["name"]);
         $item->setFileName($template["file_name"]);
         $item->setMailSubject($template["mail_subject"]);
-        $em->persist($item);            
-        $em->flush();
+        $this->entityManager->persist($item);
+        $this->entityManager->flush();
     }
     }
 }

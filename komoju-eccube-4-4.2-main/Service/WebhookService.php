@@ -2,7 +2,7 @@
 
 namespace Plugin\komoju42\Service;
 
-use Psr\Container\ContainerInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Repository\PaymentRepository;
 use Eccube\Entity\Payment;
 use Eccube\Entity\PaymentOption;
@@ -13,12 +13,12 @@ use Plugin\komoju42\Entity\KomojuLog;
 use Plugin\komoju42\Service\Method\KomojuMultiPay;
 use Plugin\komoju42\Repository\KomojuOrderRepository;
 use Plugin\komoju42\Entity\KomojuOrder;
+use Plugin\komoju42\Service\LogService;
 use Eccube\Entity\Master\OrderStatus;
 use Eccube\Service\OrderStateMachine;
 use Eccube\Entity\ProductStock;
 use Eccube\Entity\Order;
 class WebhookService{
-    protected $container;    
     protected $entityManager;
     protected $log_service;
     protected $komoju_order_repo;
@@ -27,13 +27,13 @@ class WebhookService{
 
 
     public function __construct(
-        ContainerInterface $container,
-        OrderStateMachine $orderStateMachine
+        EntityManagerInterface $entityManager,
+        OrderStateMachine $orderStateMachine,
+        LogService $logService
         ){
-        $this->container = $container;
-        $this->entityManager = $container->get('doctrine.orm.entity_manager');
+        $this->entityManager = $entityManager;
         $this->komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
-        $this->log_service = $container->get("plg_komoju42.service.komoju_log");
+        $this->log_service = $logService;
         $this->order_state_machine = $orderStateMachine;
         $this->productStockRepository = $this->entityManager->getRepository(ProductStock::class);
     }
@@ -84,7 +84,7 @@ class WebhookService{
         if(empty($order)){
             $this->log_service->writeLog("webhook[captured]", 0, "no EC-CUBE order linked to komoju_order for payment: $komoju_payment_id");
             return ;
-        }        
+        }
         $order->setPaymentDate($captured_at);
         $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::PAID);
         $order->setOrderStatus($OrderStatus);
@@ -171,7 +171,7 @@ class WebhookService{
         $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::CANCEL);
         if ($this->order_state_machine->can($Order, $OrderStatus)) {
             if ($OrderStatus->getId() == OrderStatus::DELIVERED) {
-                
+
                 $allShipped = true;
                 foreach ($Order->getShippings() as $Ship) {
                     if (!$Ship->isShipped()) {

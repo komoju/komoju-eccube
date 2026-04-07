@@ -3,10 +3,10 @@
         {% for komoju_order_data in komoju_order_mapping %}
             {% if komoju_order_data.payment_id!='' %}
                 // var order_edit_url = decodeURI("{{ komoju_order_data.order_edit_url }}")
-                var targetTR=$("#search_result").find("a[href*='{{ komoju_order_data.order_edit_url }}']").parents("tr");
+                var targetTR=$("#search_result").find("a[href*='{{ komoju_order_data.order_edit_url|e('js') }}']").parents("tr");
                 var targetTD=targetTR.find("td:nth(2)");
                 if(targetTD.find('.komojuPaymentID').length==0){
-                    var htmlToAppend='<a class="komojuPaymentID" href="{{ komoju_order_data.dashboard_url }}" target="_blank">{{ komoju_order_data.payment_id }}</a>';
+                    var htmlToAppend='<a class="komojuPaymentID" href="' + $('<span>').text('{{ komoju_order_data.dashboard_url|e('js') }}').html() + '" target="_blank">' + $('<span>').text('{{ komoju_order_data.payment_id|e('js') }}').html() + '</a>';
                     targetTD.append(htmlToAppend);
                 }
             {% endif %}

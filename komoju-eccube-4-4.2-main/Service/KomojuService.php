@@ -2,24 +2,25 @@
 
 namespace Plugin\komoju42\Service;
 
-use Psr\Container\ContainerInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use Plugin\komoju42\Entity\KomojuOrder;
 use Plugin\komoju42\KomojuClient;
 use Plugin\komoju42\Service\Method\KomojuMultiPay;
+use Plugin\komoju42\Service\ConfigService;
 use Eccube\Entity\Payment;
 
 class KomojuService{
 
-    protected $container;
     protected $entityManager;
+    protected $config_service;
 
-    public function __construct(ContainerInterface $container){
-        $this->container = $container;
-        $this->entityManager = $container->get('doctrine.orm.entity_manager');
+    public function __construct(EntityManagerInterface $entityManager, ConfigService $configService){
+        $this->entityManager = $entityManager;
+        $this->config_service = $configService;
     }
 
     public function cancelKomojuOrderByOrder($Order){
-        
+
         $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order]);
 
         if(empty($komoju_order) || $komoju_order->isCaptured() || $komoju_order->getCanceledAt()){
@@ -27,8 +28,7 @@ class KomojuService{
         }
 
         $payment_id = $komoju_order->getKomojuPaymentId();
-        $config_service = $this->container->get("plg_komoju42.service.config");
-        $config_data = $config_service->getConfigData($Order);
+        $config_data = $this->config_service->getConfigData($Order);
         $komoju_client = new KomojuClient($config_data['secret_key']);
         $payment_obj = $komoju_client->getPayment($payment_id);
         if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){

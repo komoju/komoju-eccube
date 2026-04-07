@@ -7,29 +7,26 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Plugin\komoju\Repository\KomojuConfigRepository;
-use Plugin\komoju\Form\Type\KomojuConfigType;
+use Plugin\komoju\Service\LogService;
+use Plugin\komoju\Service\ConfigService;
+use Plugin\komoju\Service\WebhookService;
 use Komoju\WebhookEvent;
 
 
 class WebhookController extends AbstractController
 {
-    protected $container;
     protected $log_service;
     protected $config_service;
     protected $webhook_service;
 
-    public function __construct(ContainerInterface $container){
-        $this->container = $container;
-        $this->log_service = $this->container->get("plg_komoju.service.komoju_log");
-        $this->config_service = $this->container->get("plg_komoju.service.config");        
-        $this->webhook_service = $this->container->get("plg_komoju.service.komoju_webhook");
+    public function __construct(LogService $logService, ConfigService $configService, WebhookService $webhookService){
+        $this->log_service = $logService;
+        $this->config_service = $configService;
+        $this->webhook_service = $webhookService;
     }
 
     /**
-     * @Route("/plugin/komoju/webhook", name="komoju_webhook")    
+     * @Route("/plugin/komoju/webhook", name="komoju_webhook")
      */
     public function webhook(Request $request){
         try{

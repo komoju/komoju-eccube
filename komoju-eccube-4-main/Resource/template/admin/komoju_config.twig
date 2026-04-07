@@ -178,6 +178,7 @@
                 url: "{{ url('komoju_admin_sync_methods') }}",
                 type: "POST",
                 dataType: "json",
+                headers: { "X-CSRF-Token": $("input[name='komoju_config[_token]']").val() },
                 success: function(data){
                     status.text("{{ 'komoju_multipay.admin.config.sync_complete'|trans }}").css("color", "green");
                     setTimeout(function(){ location.reload(); }, 1000);

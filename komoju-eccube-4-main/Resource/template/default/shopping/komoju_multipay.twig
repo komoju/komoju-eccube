@@ -23,8 +23,8 @@
             endpoint: "{{ komoju_api_url }}",
             locale: "{{ app.request.locale|default('ja') }}",
             currency: "{{ currency }}",
-            title: "{{ title }}",
-            description: "{{ description }}",
+            title: "{{ title|e('js') }}",
+            description: "{{ description|e('js') }}",
             methods: [
                 {% for method in methods %}
                 "{{method}}",

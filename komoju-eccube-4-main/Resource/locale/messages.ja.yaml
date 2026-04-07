@@ -1,7 +1,7 @@
-komoju_multipay.admin.nav.label: KOMOJUマルチ決済
+komoju_multipay.admin.nav.label: KOMOJU決済
 komoju_multipay.admin.nav.config: 設定
 komoju_multipay.admin.nav.log: ログ
-komoju_multipay.admin.config.title: Komoju 設定
+komoju_multipay.admin.config.title: KOMOJU 設定
 komoju_multipay.admin.config.subtitle: 設定
 komoju_multipay.admin.config.header: 設定
 komoju_multipay.admin.config.label:secret_key: 非公開鍵
@@ -13,16 +13,16 @@ komoju_multipay.admin.config.error.secret_key.empty: シークレットキーを
 komoju_multipay.admin.config.error.secret_key.regex_invalid: シークレットキーが無効です
 komoju_multipay.admin.config.error.merchant_uuid.empty: マーチャントUUIDを入力してください
 komoju_multipay.admin.config.error.merchant_uuid.regex_invalid: マーチャントUUIDが無効です
-komoju_multipay.admin.config.label.komoju_pay_type: Komoju支払方法
+komoju_multipay.admin.config.label.komoju_pay_type: KOMOJU支払方法
 komoju_multipay.admin.config.label.capture_on: 処理方法
 komoju_multipay.admin.config.label.capture_on.auth_only: 認証のみ
 komoju_multipay.admin.config.label.capture_on.auth_capture: 認証と売上処理
 komoju_multipay.admin.config.label:webhook_secret: シークレットトークン
 komoju_multipay.admin.config.label.webhook_url: Webhook エンドポイントURL
-komoju_multipay.admin.config.webhook_check_notice: Komojuダッシュボードからwebhookを登録してください。
-komoju_multipay.admin.config.webhook_dashboard: Komoju管理画面を開く
+komoju_multipay.admin.config.webhook_check_notice: KOMOJUダッシュボードからwebhookを登録してください。
+komoju_multipay.admin.config.webhook_dashboard: KOMOJU管理画面を開く
 komoju_multipay.admin.config.webhook_events: Webhook登録を行う時は下記のイベントを許可してください。
-komoju_multipay.admin.log.title: Komoju管理
+komoju_multipay.admin.log.title: KOMOJU管理
 komoju_multipay.admin.log.sub_title: ログ
 komoju_multipay.admin.log.label.create_at: 時刻
 komoju_multipay.admin.log.label.api: 操作
@@ -31,9 +31,9 @@ komoju_multipay.admin.log.label.msg: 内容
 komoju_multipay.admin.order.refund_amount.error.invalid: 有効な返金額を入力してください
 komoju_multipay.admin.order.refund_amount.error.exceeded: 注文合計よりも大きい金額を返金しようとしています
 komoju_multipay.admin.order.refund_action_confirm: 返金してよろしいですか？
-komoju_multipay.admin.order.section_title: Komoju決済
-komoju_multipay.admin.order.section_title_tooltip: Komoju決済関連の操作が可能です。
-komoju_multipay.admin.order.charge_id_tooltip: Komojuでの支払IDです。クリックするとKomoju管理画面の取引詳細に遷移します。
+komoju_multipay.admin.order.section_title: KOMOJU決済
+komoju_multipay.admin.order.section_title_tooltip: KOMOJU決済関連の操作が可能です。
+komoju_multipay.admin.order.charge_id_tooltip: KOMOJUでの支払IDです。クリックするとKOMOJU管理画面の取引詳細に遷移します。
 komoju_multipay.admin.order.charge_id: 支払いID
 komoju_multipay.admin.order.actions: 決済操作
 komoju_multipay.admin.order.refund_option.full_refund: 全額返金
@@ -59,8 +59,8 @@ komoju_multipay.badge.required: 必須
 
 komoju_multipay.shopping.verify.error.payment_total.too_small: 支払額が小さすぎです。
 komoju_multipay.shopping.verify.error.payment_total.too_much: 支払額が多すぎです。
-komoju_multipay.shopping.payment_failed: Komoju支払いが失敗しました
-komoju_multipay.shopping.komoju_method_label: マルチ決済
+komoju_multipay.shopping.payment_failed: KOMOJU支払いが失敗しました
+komoju_multipay.shopping.komoju_method_label: KOMOJU決済
 komoju_multipay.shopping.not_enough_error: 残高が不足です。
 
 komoju_multipay.admin.config.sync_methods: 決済方法を同期
@@ -70,7 +70,7 @@ komoju_multipay.admin.config.sync_complete: 同期完了。ページを再読み
 komoju_multipay.admin.config.sync_failed: 同期に失敗しました。
 komoju_multipay.admin.order.refund_amount_placeholder: 払い戻し額
 komoju_multipay.admin.order.error.refund_failed: 返金に失敗しました
-komoju_multipay.mail.refund_subject: Komoju返金メール
+komoju_multipay.mail.refund_subject: KOMOJU返金メール
 komoju_multipay.error.bad_request: 不正な要求です。サーバーは要求を処理できません。
 komoju_multipay.error.unauthorized: ユーザーの認証に失敗しました。
 komoju_multipay.error.not_found: リソースが見つかりませんでした。

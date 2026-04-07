@@ -18,7 +18,6 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Knp\Component\Pager\PaginatorInterface;
-use Psr\Container\ContainerInterface;
 
 class LogController extends AbstractController
 {
@@ -26,18 +25,14 @@ class LogController extends AbstractController
      * @var KomojuLogRepository
      */
     protected $komoju_log_repo;
-    protected $entityManager;
-    protected $container;
     /**
      * ConfigController constructor.
      *
-     * @param ContainerInterface $container
+     * @param KomojuLogRepository $komoju_log_repo
      */
-    public function __construct(ContainerInterface $container)
+    public function __construct(KomojuLogRepository $komoju_log_repo)
     {
-        $this->container = $container;
-        $this->entityManager = $this->container->get('doctrine.orm.entity_manager');
-        $this->komoju_log_repo = $this->entityManager->getRepository('Plugin\komoju42\Entity\KomojuLog');
+        $this->komoju_log_repo = $komoju_log_repo;
     }
 
     /**
