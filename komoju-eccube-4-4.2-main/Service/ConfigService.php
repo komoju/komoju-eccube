@@ -11,6 +11,7 @@ use Eccube\Common\EccubeConfig;
 use Plugin\komoju42\Entity\KomojuPay;
 use Plugin\komoju42\Entity\KomojuConfig;
 use Plugin\komoju42\Service\Method\KomojuMultiPay;
+use Plugin\komoju42\KomojuClient;
 
 class ConfigService{
     protected $eccubeConfig;
@@ -54,6 +55,8 @@ class ConfigService{
         $this->entityManager->persist($config);
         $this->entityManager->flush();
 
+        $this->syncPaymentMethods($config_data['secret_key']);
+
         $komoju_pays = $config_data['komoju_pays'];
         $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
         $all_komoju_pays = $komoju_pay_repo->findBy([]);
@@ -68,6 +71,75 @@ class ConfigService{
             $this->entityManager->flush();
         }
         return;
+    }
+    public function syncPaymentMethods($api_key){
+        if(empty($api_key)){
+            return false;
+        }
+
+        $client = new KomojuClient($api_key);
+        $response = $client->getPaymentMethods();
+
+        if($client->getStatusCode() !== 200 || empty($response)){
+            return false;
+        }
+
+        $methods = isset($response['data']) ? $response['data'] : $response;
+        if(!is_array($methods)){
+            return false;
+        }
+
+        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
+        $all_existing = $komoju_pay_repo->findBy([]);
+
+        $existing_by_name = [];
+        foreach($all_existing as $pay){
+            $existing_by_name[$pay->getName()] = $pay;
+        }
+
+        $api_slugs = [];
+        $sort_no = 1;
+        foreach($methods as $method){
+            $slug = $method['type_slug'];
+            $api_slugs[] = $slug;
+            $disp_name = !empty($method['name_ja']) ? $method['name_ja'] : $method['name_en'];
+
+            if(isset($existing_by_name[$slug])){
+                $pay = $existing_by_name[$slug];
+                $pay->setDispName($disp_name);
+                $pay->setSortNo($sort_no);
+                $this->entityManager->persist($pay);
+            }else{
+                $pay = new KomojuPay();
+                $max_id_result = $this->entityManager->createQueryBuilder()
+                    ->select('MAX(p.id)')
+                    ->from(KomojuPay::class, 'p')
+                    ->getQuery()
+                    ->getSingleScalarResult();
+                $pay->setId(($max_id_result ? $max_id_result : 0) + 1);
+                $pay->setName($slug);
+                $pay->setDispName($disp_name);
+                $pay->setSortNo($sort_no);
+                $pay->setEnabled(false);
+                $this->entityManager->persist($pay);
+                $this->entityManager->flush();
+            }
+            $sort_no++;
+        }
+
+        foreach($existing_by_name as $name => $pay){
+            if(!in_array($name, $api_slugs)){
+                $this->entityManager->remove($pay);
+            }
+        }
+
+        $this->entityManager->flush();
+        return true;
+    }
+    public function hasPaymentMethods(){
+        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
+        $count = $komoju_pay_repo->findBy([]);
+        return !empty($count);
     }
     public function getConfigData($Order = null){
         $komoju_config_repo = $this->entityManager->getRepository(KomojuConfig::class);

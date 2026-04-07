@@ -36,6 +36,16 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_komoju.service.config'
 
+    Plugin\komoju\Controller\SessionReturnController:
+        public: true
+        class: Plugin\komoju\Controller\SessionReturnController
+        arguments:
+            - '@Doctrine\ORM\EntityManagerInterface'
+            - '@plg_komoju.service.config'
+            - '@plg_komoju.service.komoju_log'
+            - '@eccube.purchase.flow.shopping'
+        tags: ['controller.service_arguments']
+
     # FQCN aliases for type-hinted injection
     Plugin\komoju\Service\ConfigService: '@plg_komoju.service.config'
     Plugin\komoju\Service\LogService: '@plg_komoju.service.komoju_log'

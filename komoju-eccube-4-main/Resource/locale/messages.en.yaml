@@ -60,14 +60,17 @@ komoju_multipay.badge.required: Required
 komoju_multipay.shopping.verify.error.payment_total.too_small: The payment amount is too small.
 komoju_multipay.shopping.verify.error.payment_total.too_much: The payment amount is too large.
 komoju_multipay.shopping.payment_failed: KOMOJU payment failed.
+komoju_multipay.shopping.payment_cancelled: Payment was cancelled.
 komoju_multipay.shopping.komoju_method_label: KOMOJU Payment
 komoju_multipay.shopping.not_enough_error: Insufficient balance.
 
-komoju_multipay.admin.config.sync_methods: Sync Payment Methods
+komoju_multipay.admin.config.connect_button: Connect to KOMOJU
+komoju_multipay.admin.config.connect_hint: Enter your secret key above, then click "Connect to KOMOJU" to fetch your available payment methods.
+komoju_multipay.admin.config.connect_failed: Failed to connect to KOMOJU. Please check your secret key.
+komoju_multipay.admin.config.refresh_methods: Refresh payment methods
 komoju_multipay.admin.config.save: Save
-komoju_multipay.admin.config.sync_in_progress: Syncing...
-komoju_multipay.admin.config.sync_complete: Sync complete. Reloading page...
-komoju_multipay.admin.config.sync_failed: Sync failed.
+komoju_multipay.admin.config.sync_in_progress: Connecting...
+komoju_multipay.admin.config.sync_complete: Connected. Reloading page...
 komoju_multipay.admin.order.refund_amount_placeholder: Refund amount
 komoju_multipay.admin.order.error.refund_failed: Refund failed.
 komoju_multipay.mail.refund_subject: KOMOJU Refund Notification

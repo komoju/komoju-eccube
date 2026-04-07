@@ -55,7 +55,7 @@ class ConfigService{
         $this->entityManager->persist($config);
         $this->entityManager->flush();
 
-        $this->syncPaymentMethods($config_data['publishable_key']);
+        $this->syncPaymentMethods($config_data['secret_key']);
 
         $komoju_pays = $config_data['komoju_pays'];
         $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
@@ -85,6 +85,11 @@ class ConfigService{
             return false;
         }
 
+        $methods = isset($response['data']) ? $response['data'] : $response;
+        if(!is_array($methods)){
+            return false;
+        }
+
         $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
         $all_existing = $komoju_pay_repo->findBy([]);
 
@@ -95,7 +100,7 @@ class ConfigService{
 
         $api_slugs = [];
         $sort_no = 1;
-        foreach($response as $method){
+        foreach($methods as $method){
             $slug = $method['type_slug'];
             $api_slugs[] = $slug;
             $disp_name = !empty($method['name_ja']) ? $method['name_ja'] : $method['name_en'];
@@ -131,6 +136,11 @@ class ConfigService{
 
         $this->entityManager->flush();
         return true;
+    }
+    public function hasPaymentMethods(){
+        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
+        $count = $komoju_pay_repo->findBy([]);
+        return !empty($count);
     }
     public function getConfigData($Order = null){
         $komoju_config_repo = $this->entityManager->getRepository(KomojuConfig::class);

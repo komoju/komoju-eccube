@@ -46,6 +46,7 @@ class ConfigController extends AbstractController
 
         return [
             'form' => $form->createView(),
+            'is_connected' => $this->config_service->hasPaymentMethods(),
         ];
     }
     /**
@@ -57,16 +58,31 @@ class ConfigController extends AbstractController
             return new JsonResponse(['success' => false, 'message' => 'Invalid CSRF token.'], 403);
         }
 
-        $config_data = $this->config_service->getConfigData();
-        if(empty($config_data) || empty($config_data['publishable_key'])){
-            return new JsonResponse(['success' => false, 'message' => 'Publishable key is not configured.'], 400);
+        $data = json_decode($request->getContent(), true);
+        $secret_key = isset($data['secret_key']) ? $data['secret_key'] : null;
+
+        if(empty($secret_key)){
+            try {
+                $config_data = $this->config_service->getConfigData();
+                $secret_key = !empty($config_data) ? $config_data['secret_key'] : null;
+            } catch (\Exception $e) {
+                // Config not yet saved
+            }
         }
 
-        $result = $this->config_service->syncPaymentMethods($config_data['publishable_key']);
+        if(empty($secret_key)){
+            return new JsonResponse(['success' => false, 'message' => trans('komoju_multipay.admin.config.error.secret_key.empty')], 400);
+        }
+
+        try {
+            $result = $this->config_service->syncPaymentMethods($secret_key);
+        } catch (\Exception $e) {
+            return new JsonResponse(['success' => false, 'message' => $e->getMessage()], 500);
+        }
         if($result){
             return new JsonResponse(['success' => true, 'message' => 'Payment methods synced successfully.']);
         }
-        return new JsonResponse(['success' => false, 'message' => 'Failed to sync payment methods. Please check your API key.'], 400);
+        return new JsonResponse(['success' => false, 'message' => trans('komoju_multipay.admin.config.connect_failed')], 400);
     }
 
     private function getErrorMessages(\Symfony\Component\Form\Form $form) {

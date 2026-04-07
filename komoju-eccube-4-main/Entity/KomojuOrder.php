@@ -37,15 +37,21 @@ class KomojuOrder
 
     /**
      * @var string
-     * @ORM\Column(name="payment_token", type="string")
+     * @ORM\Column(name="payment_token", type="string", nullable=true)
      */
     private $payment_token;
 
     /**
      * @var string
-     * @ORM\Column(name="komoju_payment_id", type="string")
+     * @ORM\Column(name="komoju_payment_id", type="string", nullable=true)
      */
     private $komoju_payment_id;
+
+    /**
+     * @var string
+     * @ORM\Column(name="komoju_session_id", type="string", nullable=true)
+     */
+    private $komoju_session_id;
     /**
      * @var string
      * @ORM\Column(name="type", type="string", nullable=true)
@@ -206,6 +212,13 @@ class KomojuOrder
     }
     public function setKomojuPaymentId($komoju_payment_id){
         $this->komoju_payment_id = $komoju_payment_id;
+        return $this;
+    }
+    public function getKomojuSessionId(){
+        return $this->komoju_session_id;
+    }
+    public function setKomojuSessionId($komoju_session_id){
+        $this->komoju_session_id = $komoju_session_id;
         return $this;
     }
     public function setCreatedAt($created_at){

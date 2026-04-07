@@ -60,14 +60,17 @@ komoju_multipay.badge.required: 必須
 komoju_multipay.shopping.verify.error.payment_total.too_small: 支払額が小さすぎです。
 komoju_multipay.shopping.verify.error.payment_total.too_much: 支払額が多すぎです。
 komoju_multipay.shopping.payment_failed: KOMOJU支払いが失敗しました
+komoju_multipay.shopping.payment_cancelled: お支払いがキャンセルされました。
 komoju_multipay.shopping.komoju_method_label: KOMOJU決済
 komoju_multipay.shopping.not_enough_error: 残高が不足です。
 
-komoju_multipay.admin.config.sync_methods: 決済方法を同期
+komoju_multipay.admin.config.connect_button: KOMOJUに接続
+komoju_multipay.admin.config.connect_hint: 非公開鍵を入力してから「KOMOJUに接続」をクリックし、利用可能な決済方法を取得してください。
+komoju_multipay.admin.config.connect_failed: KOMOJUへの接続に失敗しました。非公開鍵を確認してください。
+komoju_multipay.admin.config.refresh_methods: 決済方法を更新
 komoju_multipay.admin.config.save: 登録
-komoju_multipay.admin.config.sync_in_progress: 同期中...
-komoju_multipay.admin.config.sync_complete: 同期完了。ページを再読み込みします...
-komoju_multipay.admin.config.sync_failed: 同期に失敗しました。
+komoju_multipay.admin.config.sync_in_progress: 接続中...
+komoju_multipay.admin.config.sync_complete: 接続完了。ページを再読み込みします...
 komoju_multipay.admin.order.refund_amount_placeholder: 払い戻し額
 komoju_multipay.admin.order.error.refund_failed: 返金に失敗しました
 komoju_multipay.mail.refund_subject: KOMOJU返金メール

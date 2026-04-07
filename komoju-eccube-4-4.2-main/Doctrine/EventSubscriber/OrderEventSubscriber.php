@@ -4,7 +4,7 @@ namespace Plugin\komoju42\Doctrine\EventSubscriber;
 
 use Doctrine\Common\EventSubscriber;
 use Doctrine\ORM\Events;
-use Doctrine\Common\Persistence\Event\LifecycleEventArgs;
+use Doctrine\ORM\Event\PostUpdateEventArgs;
 use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Entity\Order;
 use Eccube\Entity\Payment;
@@ -26,7 +26,7 @@ class OrderEventSubscriber implements EventSubscriber{
             Events::postUpdate,
         ];
     }
-    public function postUpdate(LifecycleEventArgs $args){
+    public function postUpdate(PostUpdateEventArgs $args){
         $Order = $args->getObject();
         if($Order instanceof Order){
             if($Order->getPayment()->getId() !=

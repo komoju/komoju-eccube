@@ -12,8 +12,6 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Plugin\komoju\Service\Method\KomojuMultiPay;
 use Plugin\komoju\Service\ConfigService;
-use Plugin\komoju\Entity\KomojuConfig;
-use Plugin\komoju\Entity\KomojuPay;
 use Plugin\komoju\Entity\KomojuOrder;
 use Eccube\Event\EventArgs;
 
@@ -45,7 +43,6 @@ class KomojuEvent implements EventSubscriberInterface{
      */
     public static function getSubscribedEvents(){
         return [
-            'Shopping/confirm.twig'   =>  'onShoppingConfirmTwig',
             'Shopping/index.twig'   =>  'onShoppingIndexTwig',
             'front.shopping.complete.initialize'    =>  'onFrontShoppingCompleteInitialize',
             '@admin/Order/index.twig'   =>  'onAdminOrderIndexTwig',
@@ -63,48 +60,6 @@ class KomojuEvent implements EventSubscriberInterface{
             $payment_id = $Payment->getId();
             $event->setParameter("komoju_id", $payment_id);
             $event->addSnippet('@komoju/default/shopping/shopping.twig');
-        }
-    }
-
-    /**
-     * @param TemplateEvent $event
-     */
-    public function onShoppingConfirmTwig(TemplateEvent $event){
-        $Order = $event->getParameter("Order");
-        if($Order){
-            if($Order->getPayment()->getMethodClass() === KomojuMultiPay::class){
-                $config = $this->config_service->getConfigData($Order);
-                $total_amount = $Order->getPaymentTotal();
-
-                $order_items = $Order->getProductOrderItems();
-
-                $first_prod_name = $order_items[0]->getProduct()->getName();
-                $cnt = count($order_items);
-                if($cnt > 1){
-                    $title = $first_prod_name . " and " . ($cnt - 1) . " more";
-                }else{
-                    $title = $first_prod_name;
-                }
-                $description = $this->base_info->getShopName();
-                $methods = $this->entityManager->getRepository(KomojuPay::class)->getEnabledMethodsString();
-                $currency = $Order->getCurrencyCode();
-                if(empty($currency)){
-                    $currency = "JPY";
-                }
-
-                $komoju_api_url = getenv('KOMOJU_API_URL') ?: 'https://komoju.com';
-                $komoju_multipay_url = getenv('KOMOJU_MULTIPAY_URL') ?: 'https://multipay.komoju.com';
-
-                $event->setParameter("publishable_key", $config['publishable_key']);
-                $event->setParameter("total_amount", $total_amount);
-                $event->setParameter("title", $title);
-                $event->setParameter("description", $description);
-                $event->setParameter("methods", $methods);
-                $event->setParameter("currency", $currency);
-                $event->setParameter("komoju_api_url", $komoju_api_url);
-                $event->setParameter("komoju_multipay_url", $komoju_multipay_url);
-                $event->addSnippet('@komoju/default/shopping/komoju_multipay.twig');
-            }
         }
     }
 

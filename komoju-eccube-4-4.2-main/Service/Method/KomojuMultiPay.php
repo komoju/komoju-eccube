@@ -95,101 +95,94 @@ class KomojuMultiPay implements PaymentMethodInterface{
      * @return PaymentDispatcher|null
      */
     public function apply(){
-        // 受注ステータスを決済処理中へ変更
+        // Set order status to pending
         $OrderStatus = $this->order_status_repo->find(OrderStatus::PENDING);
         $this->Order->setOrderStatus($OrderStatus);
 
-        // purchase_flow::prepareを呼び出し, 購入処理を進める.
+        // Prepare purchase flow
         $this->purchase_flow->prepare($this->Order, new PurchaseContext());
+
+        $config_data = $this->config_service->getConfigData($this->Order);
+        $komoju_client = new KomojuClient($config_data['secret_key']);
+
+        $this->log_service->writeLog("createSession", $this->Order->getId(), "creating KOMOJU session");
+
+        $total_amount = $this->Order->getPaymentTotal();
+        $currency_code = $this->Order->getCurrencyCode();
+        if(empty($currency_code)){
+            $currency_code = "JPY";
+        }
+
+        $enabled_methods = $this->entityManager->getRepository(KomojuPay::class)->getEnabledMethodsString();
+        $locale = $this->requestStack->getCurrentRequest()->getLocale() ?: 'ja';
+
+        $return_url = $this->router->generate('komoju42_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
+        $cancel_url = $this->router->generate('komoju42_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
+
+        $session_data = [
+            'amount' => $total_amount,
+            'currency' => $currency_code,
+            'return_url' => $return_url,
+            'cancel_url' => $cancel_url,
+            'default_locale' => $locale,
+            'payment_types' => $enabled_methods,
+            'payment_data' => [
+                'capture' => $config_data['capture_on'] ? 'auto' : 'manual',
+                'external_order_num' => (string)$this->Order->getOrderNo(),
+            ],
+            'metadata' => [
+                'eccube_order_id' => (string)$this->Order->getId(),
+            ],
+        ];
+
+        $session = $komoju_client->createSession($session_data);
+
+        $this->log_service->writeLog("createSession", $this->Order->getId(), "response with status_code: {$komoju_client->getStatusCode()}");
+
+        if($komoju_client->getStatusCode() != 200 || empty($session['id'])){
+            $error = $komoju_client->getLastError() ?: trans('komoju_multipay.shopping.payment_failed');
+            $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error");
+
+            $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
+            $this->Order->setOrderStatus($OrderStatus);
+            $this->purchase_flow->rollback($this->Order, new PurchaseContext());
+
+            $dispatcher = new PaymentDispatcher();
+            $result = new PaymentResult();
+            $result->setSuccess(false);
+            $result->setErrors([$error]);
+            $dispatcher->setPaymentResult($result);
+            return $dispatcher;
+        }
+
+        $this->log_service->writeLog("createSession", $this->Order->getId(), "session created: {$session['id']}");
+
+        // Store session record
+        $komoju_order = new KomojuOrder;
+        $komoju_order->setOrder($this->Order);
+        $komoju_order->setKomojuSessionId($session['id']);
+        $komoju_order->setCreatedAt(new \DateTime());
+        $this->entityManager->persist($komoju_order);
+        $this->entityManager->flush();
+
+        // Redirect to KOMOJU hosted payment page
+        $session_url = $session['session_url'];
+        $this->log_service->writeLog("createSession", $this->Order->getId(), "redirecting to: $session_url");
+
+        $dispatcher = new PaymentDispatcher();
+        $dispatcher->setResponse(new RedirectResponse($session_url));
+        return $dispatcher;
     }
     /**
      * @return PaymentResult
      */
     public function checkout(){
-        $payment_token = $this->requestStack->getCurrentRequest()->request->get('komojuToken');
-        $payment_type = $this->checkPaymentType();
-
-        if(empty($payment_token) || empty($payment_type)){
-            $this->log_service->writeLog("createPayment", $this->Order->getId(), "payment_token or payment_type is invalid");
-            $result = new PaymentResult();
-            $result->setSuccess(false);
-            $result->setErrors(['komoju_multipay.shopping.payment_failed']);
-            return $result;
-        }
-
-        $config_data = $this->config_service->getConfigData($this->Order);
-        $komoju_client = new KomojuClient($config_data['secret_key']);
-
-        $this->log_service->writeLog("createPayment", $this->Order->getId(), "request payments");
-        $total_amount = $this->Order->getPaymentTotal();
-
-        $currency_code = $this->Order->getCurrencyCode();
-        if(empty($currency_code)){
-            $currency_code = "JPY";
-        }
-        $komoju_payment = $komoju_client->createPayment([
-            'amount'    =>  $total_amount,
-            'tax'       =>  0,
-            'currency'  =>  $currency_code,
-            'payment_details'=> $payment_token,
-            'capture'   =>  $config_data['capture_on'],
-            'via'       =>  'ec_cube',
-            'fraud_details'=>[
-                'customer_ip' => $this->requestStack->getCurrentRequest()->getClientIp(),
-                'customer_email'=> $this->Order->getEmail(),
-            ],
-            'return_url'=> $this->router->generate('shopping_complete', [], UrlGeneratorInterface::ABSOLUTE_URL),
-        ]);
-
-        $this->log_service->writeLog("createPayment", $this->Order->getId(), "response with status_code: {$komoju_client->getStatusCode()}");
-        if($komoju_client->getStatusCode() != 200){
-            $error = $komoju_client->getLastError();
-            if($komoju_client->getStatusCode() == 202){
-                $error = trans("komoju_multipay.shopping.not_enough_error");
-            }
-            if(isset($komoju_payment['id'])){
-                $komoju_client->cancelPayment($komoju_payment['id']);
-            }
-            $this->log_service->writeLog("createPayment", $this->Order->getId(), "response msg : {$error}");
-            $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
-            $this->Order->setOrderStatus($OrderStatus);
-
-            // 失敗時はpurchaseFlow::commitを呼び出す.
-            $this->purchase_flow->rollback($this->Order, new PurchaseContext());
-
-            $result = new PaymentResult();
-            $result->setSuccess(false);
-            $result->setErrors( [$error] );
-            return $result;
-        }else{
-            $this->log_service->writeLog("createPayment", $this->Order->getId(), "success");
-            $this->log_service->writeLog("createPayment", $this->Order->getId(), "status : " . $komoju_payment['status']);
-            $komoju_order = new KomojuOrder;
-            $komoju_order->setOrder($this->Order);
-            $komoju_order->setPaymentToken($payment_token);
-            $komoju_order->setKomojuPaymentId($komoju_payment['id']);
-            $komoju_order->setCreatedAt(new \DateTime());
-            if(isset($komoju_payment['status']) && $komoju_payment['status'] === "captured"){
-                $komoju_order->setCapturedAt(new \DateTime());
-            }
-            $komoju_order->setType($payment_type);
-            $this->entityManager->persist($komoju_order);
-            $this->entityManager->flush();
-
-            $this->purchase_flow->commit($this->Order, new PurchaseContext());
-            $result = new PaymentResult();
-            $result->setSuccess(true);
-            return $result;
-        }
-
-    }
-    private function checkPaymentType(){
-        $type = $this->requestStack->getCurrentRequest()->request->get('payment_type');
-        $enabled_methods = $this->entityManager->getRepository(KomojuPay::class)->getEnabledMethodsString();
-        if(in_array($type, $enabled_methods)){
-            return $type;
-        }
-        return null;
+        // In the sessions flow, checkout() is not called because apply() returns
+        // a redirect response. The SessionReturnController handles finalization.
+        // This method exists only to satisfy the PaymentMethodInterface contract.
+        $result = new PaymentResult();
+        $result->setSuccess(true);
+        return $result;
     }
 
     /**
