@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju42\Entity;
+namespace Plugin\Komoju42\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 
@@ -8,7 +8,7 @@ use Doctrine\ORM\Mapping as ORM;
  * Config
  *
  * @ORM\Table(name="plg_komoju_config")
- * @ORM\Entity(repositoryClass="Plugin\komoju42\Repository\KomojuConfigRepository")
+ * @ORM\Entity(repositoryClass="Plugin\Komoju42\Repository\KomojuConfigRepository")
  */
 class KomojuConfig
 {

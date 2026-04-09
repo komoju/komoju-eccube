@@ -1,13 +1,13 @@
 <?php
 
-namespace Plugin\komoju42\Entity;
+namespace Plugin\Komoju42\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 
 /**
  * KomojuLog
  * @ORM\Table(name="plg_komoju_log")
- * @ORM\Entity(repositoryClass="Plugin\komoju42\Repository\KomojuLogRepository")
+ * @ORM\Entity(repositoryClass="Plugin\Komoju42\Repository\KomojuLogRepository")
  */
 
 class KomojuLog{

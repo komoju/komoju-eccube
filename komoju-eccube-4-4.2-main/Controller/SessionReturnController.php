@@ -1,5 +1,5 @@
 <?php
-namespace Plugin\komoju42\Controller;
+namespace Plugin\Komoju42\Controller;
 
 use Eccube\Controller\AbstractController;
 use Eccube\Entity\Master\OrderStatus;
@@ -8,10 +8,12 @@ use Eccube\Service\PurchaseFlow\PurchaseFlow;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Request;
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\komoju42\KomojuClient;
-use Plugin\komoju42\Entity\KomojuOrder;
-use Plugin\komoju42\Service\ConfigService;
-use Plugin\komoju42\Service\LogService;
+use Plugin\Komoju42\KomojuClient;
+use Plugin\Komoju42\Entity\KomojuOrder;
+use Plugin\Komoju42\Service\ConfigService;
+use Plugin\Komoju42\Service\LogService;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Eccube\Service\CartService;
 
 class SessionReturnController extends AbstractController
 {
@@ -19,21 +21,27 @@ class SessionReturnController extends AbstractController
     protected $config_service;
     protected $log_service;
     protected $purchase_flow;
+    protected $requestStack;
+    protected $cartService;
 
     public function __construct(
         EntityManagerInterface $entityManager,
         ConfigService $configService,
         LogService $logService,
-        PurchaseFlow $shoppingPurchaseFlow
+        PurchaseFlow $shoppingPurchaseFlow,
+        RequestStack $requestStack,
+        CartService $cartService
     ){
         $this->entityManager = $entityManager;
         $this->config_service = $configService;
         $this->log_service = $logService;
         $this->purchase_flow = $shoppingPurchaseFlow;
+        $this->requestStack = $requestStack;
+        $this->cartService = $cartService;
     }
 
     /**
-     * @Route("/plugin/komoju42/session/return", name="komoju42_session_return")
+     * @Route("/plugin/Komoju42/session/return", name="Komoju42_session_return")
      */
     public function sessionReturn(Request $request){
         $session_id = $request->query->get('session_id');
@@ -71,10 +79,17 @@ class SessionReturnController extends AbstractController
             return $this->redirectToRoute('shopping');
         }
 
-        $this->log_service->writeLog("sessionReturn", $Order->getId(), "session status: " . ($session['status'] ?? 'unknown'));
+        $session_status = $session['status'] ?? 'unknown';
+        $payment_status = $session['payment']['status'] ?? 'unknown';
+        $this->log_service->writeLog("sessionReturn", $Order->getId(), "session status: $session_status, payment status: $payment_status");
 
-        if(!isset($session['status']) || $session['status'] !== 'completed'){
-            $this->log_service->writeLog("sessionReturn", $Order->getId(), "session not completed, rolling back");
+        // Session is completed for both auto-capture and manual capture.
+        // Also accept if the payment itself is authorized or captured (handles edge cases).
+        $session_ok = ($session_status === 'completed');
+        $payment_ok = in_array($payment_status, ['captured', 'authorized']);
+
+        if(!$session_ok && !$payment_ok){
+            $this->log_service->writeLog("sessionReturn", $Order->getId(), "session not completed and payment not authorized/captured, rolling back");
             $this->purchase_flow->rollback($Order, new PurchaseContext());
             $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
             $Order->setOrderStatus($OrderStatus);
@@ -89,7 +104,7 @@ class SessionReturnController extends AbstractController
             $payment = $session['payment'];
             $komoju_order->setKomojuPaymentId($payment['id']);
 
-            if(isset($payment['status']) && $payment['status'] === 'captured'){
+            if($payment_status === 'captured'){
                 $komoju_order->setCapturedAt(new \DateTime());
             }
             if(isset($payment['payment_details']['type'])){
@@ -103,13 +118,19 @@ class SessionReturnController extends AbstractController
         // Commit the purchase
         $this->purchase_flow->commit($Order, new PurchaseContext());
 
+        // Clear the cart
+        $this->cartService->clear();
+
+        // Set the order ID in session so shopping_complete can find it
+        $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
+
         $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase committed successfully");
 
         return $this->redirectToRoute('shopping_complete');
     }
 
     /**
-     * @Route("/plugin/komoju42/session/cancel", name="komoju42_session_cancel")
+     * @Route("/plugin/Komoju42/session/cancel", name="Komoju42_session_cancel")
      */
     public function sessionCancel(Request $request){
         $session_id = $request->query->get('session_id');

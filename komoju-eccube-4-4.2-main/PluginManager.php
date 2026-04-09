@@ -1,13 +1,15 @@
 <?php
 
-namespace Plugin\komoju42;
+namespace Plugin\Komoju42;
 
 use Eccube\Entity\Payment;
 use Eccube\Entity\MailTemplate;
 use Eccube\Plugin\AbstractPluginManager;
 use Psr\Container\ContainerInterface;
-use Plugin\komoju42\Entity\KomojuConfig;
-use Plugin\komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Entity\KomojuConfig;
+use Plugin\Komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Service\ConfigService;
+use Eccube\Common\EccubeConfig;
 
 class PluginManager extends AbstractPluginManager{
 
@@ -19,13 +21,13 @@ class PluginManager extends AbstractPluginManager{
      */
     public function update(array $meta, ContainerInterface $container)
     {
-        // $this->registerPageForUpdate($container);
         try{
             $entityManager = $container->get('doctrine')->getManager();
             if(\method_exists($this, 'migration')){
                 $this->migration($entityManager->getConnection(), $meta['code']);
             }
             $this->registerMethods($container);
+            $this->getConfigService($container)->createPaymentsForKomojuPays();
         }catch(\Exception $e){
             log_error('KOMOJU plugin update failed: ' . $e->getMessage());
             throw $e;
@@ -127,40 +129,18 @@ class PluginManager extends AbstractPluginManager{
     public function enable(array $meta, ContainerInterface $container){
         $this->createConfig($container);
         $this->registerMethods($container);
-        $this->createTokenPayment($container);
         $this->insertMailTemplate($container);
+        $this->getConfigService($container)->createPaymentsForKomojuPays();
     }
 
     public function disable(array $meta, ContainerInterface $container){
         $entityManager = $container->get('doctrine.orm.entity_manager');
         $paymentRepository = $entityManager->getRepository(Payment::class);
-        $Payment = $paymentRepository->findOneBy(['method_class' => \Plugin\komoju42\Service\Method\KomojuMultiPay::class]);
-        if($Payment){
+        $payments = $paymentRepository->findBy(['method_class' => \Plugin\Komoju42\Service\Method\KomojuMultiPay::class]);
+        foreach($payments as $Payment){
             $Payment->setVisible(false);
             $entityManager->persist($Payment);
-            $entityManager->flush();
         }
-    }
-
-    protected function createTokenPayment(ContainerInterface $container){
-        $entityManager = $container->get('doctrine.orm.entity_manager');
-        $paymentRepository = $entityManager->getRepository(Payment::class);
-        $Payment = $paymentRepository->findOneBy(['method_class' => \Plugin\komoju42\Service\Method\KomojuMultiPay::class]);
-        if($Payment){
-            $Payment->setVisible(true);
-            $entityManager->persist($Payment);
-            $entityManager->flush();
-            return;
-        }
-        $lastPayment = $paymentRepository->findOneBy([], ['sort_no' => 'DESC']);
-        $sortNo = $lastPayment ? $lastPayment->getSortNo() + 1 : 1;
-        $Payment = new Payment();
-        $Payment->setCharge(0);
-        $Payment->setSortNo($sortNo);
-        $Payment->setVisible(true);
-        $Payment->setMethod(trans('komoju_multipay.shopping.komoju_method_label'));
-        $Payment->setMethodClass(\Plugin\komoju42\Service\Method\KomojuMultiPay::class);
-        $entityManager->persist($Payment);
         $entityManager->flush();
     }
 
@@ -172,7 +152,7 @@ class PluginManager extends AbstractPluginManager{
         }
         $item = new MailTemplate();
         $item->setName("KOMOJU Refund Notification");
-        $item->setFileName('komoju42/Resource/template/mail/refund_redirect.twig');
+        $item->setFileName('Komoju42/Resource/template/mail/refund_redirect.twig');
         $item->setMailSubject(trans('komoju_multipay.mail.refund_subject'));
         $entityManager->persist($item);
         $entityManager->flush();
@@ -192,5 +172,11 @@ class PluginManager extends AbstractPluginManager{
 
         $entityManager->persist($config);
         $entityManager->flush();
+    }
+
+    private function getConfigService(ContainerInterface $container): ConfigService{
+        $entityManager = $container->get('doctrine.orm.entity_manager');
+        $eccubeConfig = $container->get(EccubeConfig::class);
+        return new ConfigService($entityManager, $eccubeConfig);
     }
 }

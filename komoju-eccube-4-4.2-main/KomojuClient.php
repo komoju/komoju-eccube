@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju42;
+namespace Plugin\Komoju42;
 
 require_once __DIR__ . '/Resource/komoju_lib/init.php';
 

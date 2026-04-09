@@ -1,9 +1,9 @@
 <?php
 
-namespace Plugin\komoju42\Form\Type;
+namespace Plugin\Komoju42\Form\Type;
 
-use Plugin\komoju42\Entity\KomojuPay;
-use Plugin\komoju42\Entity\KomojuConfig;
+use Plugin\Komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Entity\KomojuConfig;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
@@ -71,7 +71,12 @@ class KomojuConfigType extends AbstractType{
                 'multiple' => true,
             ])
             ->add('webhook_secret', TextType::class, [
-                'required'  =>  false,                
+                'required'  =>  false,
             ]);
-    }    
+    }
+
+    public function getBlockPrefix()
+    {
+        return 'Komoju_config';
+    }
 }

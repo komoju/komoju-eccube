@@ -9,10 +9,10 @@
 * file that was distributed with this source code.
 */
 
-namespace Plugin\komoju42\Controller\Admin;
+namespace Plugin\Komoju42\Controller\Admin;
 
 use Eccube\Controller\AbstractController;
-use Plugin\komoju42\Repository\KomojuLogRepository;
+use Plugin\Komoju42\Repository\KomojuLogRepository;
 use Symfony\Component\Routing\Annotation\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
@@ -36,9 +36,9 @@ class LogController extends AbstractController
     }
 
     /**
-     * @Route("/%eccube_admin_route%/komoju42/log", name="komoju42_admin_log")
-     * @Route("/%eccube_admin_route%/komoju42/log/page/{page_no}", requirements={"page_no" = "\d+"}, name="komoju42_admin_log_page")
-     * @Template("@komoju42/admin/komoju_log.twig")
+     * @Route("/%eccube_admin_route%/Komoju42/log", name="Komoju42_admin_log")
+     * @Route("/%eccube_admin_route%/Komoju42/log/page/{page_no}", requirements={"page_no" = "\d+"}, name="Komoju42_admin_log_page")
+     * @Template("@Komoju42/admin/komoju_log.twig")
      */
     public function index(Request $request, PaginatorInterface $paginator, $page_no = null)
     {

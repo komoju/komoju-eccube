@@ -1,11 +1,12 @@
 <?php
 
-namespace Plugin\komoju42\Repository;
+namespace Plugin\Komoju42\Repository;
 
 use Eccube\Repository\AbstractRepository;
 // use Symfony\Bridge\Doctrine\RegistryInterface;
 use Doctrine\Persistence\ManagerRegistry as RegistryInterface;
-use Plugin\komoju42\Entity\KomojuPay;
+use Eccube\Entity\Payment;
+use Plugin\Komoju42\Entity\KomojuPay;
 
 class KomojuPayRepository extends AbstractRepository{
     /**
@@ -22,11 +23,14 @@ class KomojuPayRepository extends AbstractRepository{
     }
     public function getEnabledMethodsString(){
         $methods = $this->getEnabledMethods();
-        
+
         $arr = [];
         foreach($methods as $method){
             $arr[] = $method->getName();
         }
         return $arr;
+    }
+    public function findByPayment(Payment $payment): ?KomojuPay{
+        return $this->findOneBy(['Payment' => $payment]);
     }
 }

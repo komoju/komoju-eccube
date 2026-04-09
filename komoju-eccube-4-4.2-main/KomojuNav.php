@@ -9,7 +9,7 @@
 * file that was distributed with this source code.
 */
 
-namespace Plugin\komoju42;
+namespace Plugin\Komoju42;
 
 use Eccube\Common\EccubeNav;
 
@@ -21,17 +21,17 @@ class KomojuNav implements EccubeNav
     public static function getNav()
     {
         return [
-            'komoju' => [
+            'Komoju' => [
                 'name' => 'komoju_multipay.admin.nav.label',
                 'icon' => 'fa-money-check-alt',
-                'children' => [                    
-                    'komoju_config' => [
+                'children' => [
+                    'Komoju_config' => [
                         'name' => 'komoju_multipay.admin.nav.config',
-                        'url' => 'komoju42_admin_config',
+                        'url' => 'Komoju42_admin_config',
                     ],
-                    'komoju_log' => [
+                    'Komoju_log' => [
                         'name' => 'komoju_multipay.admin.nav.log',
-                        'url' => 'komoju42_admin_log',
+                        'url' => 'Komoju42_admin_log',
                     ]
                 ],
             ],

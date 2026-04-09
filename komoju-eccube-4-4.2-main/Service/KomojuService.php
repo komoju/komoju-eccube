@@ -1,12 +1,12 @@
 <?php
 
-namespace Plugin\komoju42\Service;
+namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\komoju42\Entity\KomojuOrder;
-use Plugin\komoju42\KomojuClient;
-use Plugin\komoju42\Service\Method\KomojuMultiPay;
-use Plugin\komoju42\Service\ConfigService;
+use Plugin\Komoju42\Entity\KomojuOrder;
+use Plugin\Komoju42\KomojuClient;
+use Plugin\Komoju42\Service\Method\KomojuMultiPay;
+use Plugin\Komoju42\Service\ConfigService;
 use Eccube\Entity\Payment;
 
 class KomojuService{

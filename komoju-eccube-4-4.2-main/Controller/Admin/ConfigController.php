@@ -9,7 +9,7 @@
 * file that was distributed with this source code.
 */
 
-namespace Plugin\komoju42\Controller\Admin;
+namespace Plugin\Komoju42\Controller\Admin;
 
 use Eccube\Controller\AbstractController;
 use Symfony\Component\Routing\Annotation\Route;
@@ -18,8 +18,8 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\komoju42\Service\ConfigService;
-use Plugin\komoju42\Form\Type\KomojuConfigType;
+use Plugin\Komoju42\Service\ConfigService;
+use Plugin\Komoju42\Form\Type\KomojuConfigType;
 
 class ConfigController extends AbstractController
 {
@@ -31,8 +31,8 @@ class ConfigController extends AbstractController
         $this->config_service = $configService;
     }
     /**
-     * @Route("/%eccube_admin_route%/komoju42/config", name="komoju42_admin_config")
-     * @Template("@komoju42/admin/komoju_config.twig")
+     * @Route("/%eccube_admin_route%/Komoju42/config", name="Komoju42_admin_config")
+     * @Template("@Komoju42/admin/komoju_config.twig")
      */
     public function index(Request $request){
         $config_data = $this->config_service->getConfigData();
@@ -49,11 +49,11 @@ class ConfigController extends AbstractController
         ];
     }
     /**
-     * @Route("/%eccube_admin_route%/komoju42/config/sync", name="komoju42_admin_sync_methods", methods={"POST"})
+     * @Route("/%eccube_admin_route%/Komoju42/config/sync", name="Komoju42_admin_sync_methods", methods={"POST"})
      */
     public function syncPaymentMethods(Request $request){
         $token = $request->headers->get('X-CSRF-Token');
-        if (!$this->isCsrfTokenValid('komoju_config', $token)) {
+        if (!$this->isCsrfTokenValid('Komoju_config', $token)) {
             return new JsonResponse(['success' => false, 'message' => 'Invalid CSRF token.'], 403);
         }
 

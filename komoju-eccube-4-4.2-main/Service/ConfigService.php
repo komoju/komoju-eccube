@@ -1,17 +1,18 @@
 <?php
 
-namespace Plugin\komoju42\Service;
+namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Repository\PaymentRepository;
 use Eccube\Entity\Payment;
+use Eccube\Entity\Delivery;
 use Eccube\Entity\MailTemplate;
 use Eccube\Entity\PaymentOption;
 use Eccube\Common\EccubeConfig;
-use Plugin\komoju42\Entity\KomojuPay;
-use Plugin\komoju42\Entity\KomojuConfig;
-use Plugin\komoju42\Service\Method\KomojuMultiPay;
-use Plugin\komoju42\KomojuClient;
+use Plugin\Komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Entity\KomojuConfig;
+use Plugin\Komoju42\Service\Method\KomojuMultiPay;
+use Plugin\Komoju42\KomojuClient;
 
 class ConfigService{
     protected $eccubeConfig;
@@ -25,18 +26,17 @@ class ConfigService{
     }
 
     public function enablePlugin(){
-        $this->createTokenPayment();
         $this->insertMailTemplate();
+        $this->createPaymentsForKomojuPays();
     }
 
     public function disablePlugin(){
         $paymentRepository = $this->entityManager->getRepository(Payment::class);
-        $Payment = $paymentRepository->findOneBy(['method_class' => KomojuMultiPay::class]);
-        if(empty($Payment)){
-            return;
+        $payments = $paymentRepository->findBy(['method_class' => KomojuMultiPay::class]);
+        foreach($payments as $Payment){
+            $Payment->setVisible(false);
+            $this->entityManager->persist($Payment);
         }
-        $Payment->setVisible(false);
-        $this->entityManager->persist($Payment);
         $this->entityManager->flush();
     }
 
@@ -63,13 +63,18 @@ class ConfigService{
         foreach($all_komoju_pays as $komoju_pay){
             if($komoju_pays->contains($komoju_pay)){
                 $komoju_pay->setEnabled(true);
-                $this->entityManager->persist($komoju_pay);
             }else{
                 $komoju_pay->setEnabled(false);
-                $this->entityManager->persist($komoju_pay);
             }
-            $this->entityManager->flush();
+            $this->entityManager->persist($komoju_pay);
+
+            $Payment = $komoju_pay->getPayment();
+            if($Payment){
+                $Payment->setVisible($komoju_pay->isEnabled());
+                $this->entityManager->persist($Payment);
+            }
         }
+        $this->entityManager->flush();
         return;
     }
     public function syncPaymentMethods($api_key){
@@ -129,11 +134,22 @@ class ConfigService{
 
         foreach($existing_by_name as $name => $pay){
             if(!in_array($name, $api_slugs)){
+                $Payment = $pay->getPayment();
+                if($Payment){
+                    $this->removePaymentOptions($Payment);
+                    $pay->setPayment(null);
+                    $this->entityManager->persist($pay);
+                    $this->entityManager->flush();
+                    $this->entityManager->remove($Payment);
+                }
                 $this->entityManager->remove($pay);
             }
         }
 
         $this->entityManager->flush();
+
+        $this->createPaymentsForKomojuPays();
+
         return true;
     }
     public function hasPaymentMethods(){
@@ -146,28 +162,90 @@ class ConfigService{
         $config = $komoju_config_repo->getConfigByOrder($Order);
         return $config;
     }
-    protected function createTokenPayment(){
+    public function createPaymentsForKomojuPays(){
+        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
         $paymentRepository = $this->entityManager->getRepository(Payment::class);
-        $Payment = $paymentRepository->findOneBy(['method_class' => KomojuMultiPay::class]);
-        if($Payment){
-            return;
+        $all_komoju_pays = $komoju_pay_repo->findBy([]);
+
+        foreach($all_komoju_pays as $komoju_pay){
+            if($komoju_pay->getPayment()){
+                $Payment = $komoju_pay->getPayment();
+                $Payment->setMethod($komoju_pay->getDispName());
+                $Payment->setVisible($komoju_pay->isEnabled());
+                $this->entityManager->persist($Payment);
+                continue;
+            }
+
+            $lastPayment = $paymentRepository->findOneBy([], ['sort_no' => 'DESC']);
+            $sortNo = $lastPayment ? $lastPayment->getSortNo() + 1 : 1;
+
+            $Payment = new Payment();
+            $Payment->setCharge(0);
+            $Payment->setSortNo($sortNo);
+            $Payment->setVisible($komoju_pay->isEnabled());
+            $Payment->setMethod($komoju_pay->getDispName());
+            $Payment->setMethodClass(KomojuMultiPay::class);
+            $this->entityManager->persist($Payment);
+            $this->entityManager->flush();
+
+            $komoju_pay->setPayment($Payment);
+            $this->entityManager->persist($komoju_pay);
+            $this->entityManager->flush();
+
+            $this->linkPaymentToDeliveries($Payment);
         }
-        $lastPayment = $paymentRepository->findOneBy([], ['sort_no' => 'DESC']);
-        $sortNo = $lastPayment ? $lastPayment->getSortNo() + 1 : 1;
-        $Payment = new Payment();
-        $Payment->setCharge(0);
-        $Payment->setSortNo($sortNo);
-        $Payment->setVisible(true);
-        $Payment->setMethod(trans('komoju_multipay.shopping.komoju_method_label'));
-        $Payment->setMethodClass(KomojuMultiPay::class);
-        $this->entityManager->persist($Payment);
+        $this->entityManager->flush();
+
+        $this->hideOrphanedKomojuPayments();
+    }
+
+    protected function linkPaymentToDeliveries(Payment $Payment){
+        $deliveries = $this->entityManager->getRepository(Delivery::class)->findBy(['visible' => true]);
+        foreach($deliveries as $Delivery){
+            $exists = $this->entityManager->getRepository(PaymentOption::class)->findOneBy([
+                'payment_id' => $Payment->getId(),
+                'delivery_id' => $Delivery->getId(),
+            ]);
+            if(!$exists){
+                $option = new PaymentOption();
+                $option->setPayment($Payment);
+                $option->setPaymentId($Payment->getId());
+                $option->setDelivery($Delivery);
+                $option->setDeliveryId($Delivery->getId());
+                $Delivery->addPaymentOption($option);
+                $this->entityManager->persist($option);
+            }
+        }
+        $this->entityManager->flush();
+    }
+
+    protected function removePaymentOptions(Payment $Payment){
+        $options = $this->entityManager->getRepository(PaymentOption::class)->findBy(['payment_id' => $Payment->getId()]);
+        foreach($options as $option){
+            $this->entityManager->remove($option);
+        }
+        $this->entityManager->flush();
+    }
+
+    protected function hideOrphanedKomojuPayments(){
+        $paymentRepository = $this->entityManager->getRepository(Payment::class);
+        $komoju_payments = $paymentRepository->findBy(['method_class' => KomojuMultiPay::class]);
+        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
+
+        foreach($komoju_payments as $Payment){
+            $linked = $komoju_pay_repo->findOneBy(['Payment' => $Payment]);
+            if(!$linked){
+                $Payment->setVisible(false);
+                $this->entityManager->persist($Payment);
+            }
+        }
         $this->entityManager->flush();
     }
     private function insertMailTemplate(){
         $template_list = [
             [
                 'name'      =>  self::MAIL_TEMPLATE_REFUND_REDIRECT,
-                'file_name' =>  'komoju42/Resource/template/mail/refund_redirect.twig',
+                'file_name' =>  'Komoju42/Resource/template/mail/refund_redirect.twig',
                 'mail_subject'  => trans('komoju_multipay.mail.refund_subject'),
             ],
         ];

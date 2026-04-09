@@ -4,27 +4,27 @@ services:
         autoconfigure: true
         bind:
             $shoppingPurchaseFlow: '@eccube.purchase.flow.shopping'
-    plg_komoju42.service.config:
+    plg_Komoju42.service.config:
         public: true
-        class: Plugin\komoju42\Service\ConfigService
+        class: Plugin\Komoju42\Service\ConfigService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Common\EccubeConfig'
-    plg_komoju42.service.komoju_log:
+    plg_Komoju42.service.komoju_log:
         public: true
-        class: Plugin\komoju42\Service\LogService
+        class: Plugin\Komoju42\Service\LogService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
-    plg_komoju42.service.komoju_webhook:
+    plg_Komoju42.service.komoju_webhook:
         public: true
-        class: Plugin\komoju42\Service\WebhookService
+        class: Plugin\Komoju42\Service\WebhookService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Service\OrderStateMachine'
-            - '@plg_komoju42.service.komoju_log'
-    plg_komoju42.service.komoju_mail_service:
+            - '@plg_Komoju42.service.komoju_log'
+    plg_Komoju42.service.komoju_mail_service:
         public: true
-        class: Plugin\komoju42\Service\MailExService
+        class: Plugin\Komoju42\Service\MailExService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@mailer'
@@ -34,28 +34,28 @@ services:
             - '@Symfony\Component\EventDispatcher\EventDispatcherInterface'
             - '@twig'
             - '@Eccube\Common\EccubeConfig'
-    plg_komoju42.service.komoju_service:
+    plg_Komoju42.service.komoju_service:
         public: true
-        class: Plugin\komoju42\Service\KomojuService
+        class: Plugin\Komoju42\Service\KomojuService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
-            - '@plg_komoju42.service.config'
-    Plugin\komoju42\Doctrine\EventSubscriber\OrderEventSubscriber:
-        class: Plugin\komoju42\Doctrine\EventSubscriber\OrderEventSubscriber
-    Plugin\komoju42\Service\Method\KomojuMultiPay:
+            - '@plg_Komoju42.service.config'
+    Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber:
+        class: Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber
+    Plugin\Komoju42\Service\Method\KomojuMultiPay:
         public: true
-        class: Plugin\komoju42\Service\Method\KomojuMultiPay
+        class: Plugin\Komoju42\Service\Method\KomojuMultiPay
         tags:
             - { name: eccube.payment.method }
-    Plugin\komoju42\KomojuEvent:
-        class: Plugin\komoju42\KomojuEvent
-    Plugin\komoju42\Controller\:
+    Plugin\Komoju42\KomojuEvent:
+        class: Plugin\Komoju42\KomojuEvent
+    Plugin\Komoju42\Controller\:
         resource: '../../Controller/*'
         tags: ['controller.service_arguments']
 
     # FQCN aliases for type-hinted injection
-    Plugin\komoju42\Service\ConfigService: '@plg_komoju42.service.config'
-    Plugin\komoju42\Service\LogService: '@plg_komoju42.service.komoju_log'
-    Plugin\komoju42\Service\WebhookService: '@plg_komoju42.service.komoju_webhook'
-    Plugin\komoju42\Service\MailExService: '@plg_komoju42.service.komoju_mail_service'
-    Plugin\komoju42\Service\KomojuService: '@plg_komoju42.service.komoju_service'
+    Plugin\Komoju42\Service\ConfigService: '@plg_Komoju42.service.config'
+    Plugin\Komoju42\Service\LogService: '@plg_Komoju42.service.komoju_log'
+    Plugin\Komoju42\Service\WebhookService: '@plg_Komoju42.service.komoju_webhook'
+    Plugin\Komoju42\Service\MailExService: '@plg_Komoju42.service.komoju_mail_service'
+    Plugin\Komoju42\Service\KomojuService: '@plg_Komoju42.service.komoju_service'

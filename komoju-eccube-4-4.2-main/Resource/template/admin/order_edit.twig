@@ -47,7 +47,7 @@
         }
 
         if(confirm(amount_to_display+'{{ 'komoju_multipay.admin.order.refund_action_confirm'|trans }}')){
-            post_to_url('{{ url('komoju42_refund_transaction', { id : Order.id }) }}', {refund_option: refund_option_val, refund_amount: refund_amount_val, _token: '{{ csrf_token('komoju_refund_' ~ Order.id) }}'});
+            post_to_url('{{ url('Komoju42_refund_transaction', { id : Order.id }) }}', {refund_option: refund_option_val, refund_amount: refund_amount_val, _token: '{{ csrf_token('Komoju_refund_' ~ Order.id) }}'});
         } else {
             return false;
         }
@@ -103,9 +103,9 @@
                         <div class="row mb-3">
                             <div class="col-3">{{ 'komoju_multipay.admin.order.actions'|trans }}</div>
                             <div class="col row ml-0">
-                                {% if komoju_order.CreditType==true and komoju_order.Captured==false %}
-                                    <form method="post" action="{{ url('komoju42_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_multipay.admin.order.capture_action_confirm'|trans({'%charge_amount%':Order.getPaymentTotal|price })}}');">
-                                        <input type="hidden" name="_token" value="{{ csrf_token('komoju_capture_' ~ Order.id) }}">
+                                {% if komoju_order.Captured==false %}
+                                    <form method="post" action="{{ url('Komoju42_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_multipay.admin.order.capture_action_confirm'|trans({'%charge_amount%':Order.getPaymentTotal|price })}}');">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('Komoju_capture_' ~ Order.id) }}">
                                         <button type="submit" class="btn btn-ec-regular komoju_txn_action_btn">
                                             {{ 'komoju_multipay.admin.order.capture_action'|trans }}
                                         </button>

@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju42\Repository;
+namespace Plugin\Komoju42\Repository;
 
 // use Symfony\Bridge\Doctrine\RegistryInterface;
 use Doctrine\Persistence\ManagerRegistry as RegistryInterface;
@@ -8,8 +8,8 @@ use Doctrine\Persistence\ManagerRegistry as RegistryInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Eccube\Repository\AbstractRepository;
 use Eccube\Event\EventArgs;
-use Plugin\komoju42\Entity\KomojuConfig;
-use Plugin\komoju42\KomojuEvent;
+use Plugin\Komoju42\Entity\KomojuConfig;
+use Plugin\Komoju42\KomojuEvent;
 
 class KomojuConfigRepository extends AbstractRepository{
     

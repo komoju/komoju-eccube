@@ -9,7 +9,7 @@
 * file that was distributed with this source code.
 */
 
-namespace Plugin\komoju42\Service;
+namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Entity\BaseInfo;
@@ -22,7 +22,7 @@ use Eccube\Repository\MailTemplateRepository;
 use Eccube\Repository\BaseInfoRepository;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Eccube\Common\EccubeConfig;
-use Plugin\komoju42\Service\ConfigService;
+use Plugin\Komoju42\Service\ConfigService;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mailer\MailerInterface;
@@ -40,7 +40,7 @@ class MailExService extends MailService{
         MailHistoryRepository $mailHistoryRepository,
         BaseInfoRepository $baseInfoRepository,
         EventDispatcherInterface $eventDispatcher,
-        \Twig_Environment $twig,
+        \Twig\Environment $twig,
         EccubeConfig $eccubeConfig
         ){
         $this->em = $entityManager;

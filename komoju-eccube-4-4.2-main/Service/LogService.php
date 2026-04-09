@@ -1,9 +1,9 @@
 <?php
 
-namespace Plugin\komoju42\Service;
+namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\komoju42\Entity\KomojuLog;
+use Plugin\Komoju42\Entity\KomojuLog;
 
 
 class LogService{

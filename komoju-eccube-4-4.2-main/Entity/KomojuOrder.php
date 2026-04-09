@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju42\Entity;
+namespace Plugin\Komoju42\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
 use Eccube\Entity\Order;
@@ -9,7 +9,7 @@ use Eccube\Entity\Order;
  * Order
  *
  * @ORM\Table(name="plg_komoju_order")
- * @ORM\Entity(repositoryClass="Plugin\komoju42\Repository\KomojuOrderRepository")
+ * @ORM\Entity(repositoryClass="Plugin\Komoju42\Repository\KomojuOrderRepository")
  */
 class KomojuOrder
 {

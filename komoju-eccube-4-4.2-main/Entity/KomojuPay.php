@@ -1,13 +1,14 @@
 <?php
 
-namespace Plugin\komoju42\Entity;
+namespace Plugin\Komoju42\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use Eccube\Entity\Payment;
 
 /**
  * KomojuPay
  * @ORM\Table(name="plg_komoju_multi_pays")
- * @ORM\Entity(repositoryClass="Plugin\komoju42\Repository\KomojuPayRepository")
+ * @ORM\Entity(repositoryClass="Plugin\Komoju42\Repository\KomojuPayRepository")
  */
 
 class KomojuPay extends \Eccube\Entity\Master\AbstractMasterEntity{
@@ -34,6 +35,21 @@ class KomojuPay extends \Eccube\Entity\Master\AbstractMasterEntity{
      */
     private $enabled;
 
+    /**
+     * @var int|null
+     *
+     * @ORM\Column(name="payment_id", type="integer", nullable=true)
+     */
+    private $payment_id;
+
+    /**
+     * @var Payment|null
+     *
+     * @ORM\ManyToOne(targetEntity="Eccube\Entity\Payment")
+     * @ORM\JoinColumn(name="payment_id", referencedColumnName="id", nullable=true)
+     */
+    private $Payment;
+
     public function isEnabled(){
         return $this->enabled > 0;
     }
@@ -46,6 +62,21 @@ class KomojuPay extends \Eccube\Entity\Master\AbstractMasterEntity{
     }
     public function setDispName($disp_name){
         $this->disp_name = $disp_name;
+        return $this;
+    }
+    public function getPaymentId(){
+        return $this->payment_id;
+    }
+    public function setPaymentId($payment_id){
+        $this->payment_id = $payment_id;
+        return $this;
+    }
+    public function getPayment(){
+        return $this->Payment;
+    }
+    public function setPayment($Payment){
+        $this->Payment = $Payment;
+        $this->payment_id = $Payment ? $Payment->getId() : null;
         return $this;
     }
 }

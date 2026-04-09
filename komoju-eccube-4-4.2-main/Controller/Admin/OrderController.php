@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju42\Controller\Admin;
+namespace Plugin\Komoju42\Controller\Admin;
 
 use Eccube\Controller\AbstractController;
 use Eccube\Entity\Master\OrderStatus;
@@ -8,13 +8,13 @@ use Eccube\Entity\Order;
 use Eccube\Repository\OrderRepository;
 use Eccube\Repository\Master\OrderStatusRepository;
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\komoju42\Repository\KomojuOrderRepository;
-use Plugin\komoju42\KomojuClient;
-use Plugin\komoju42\Entity\KomojuOrder;
-use Plugin\komoju42\Entity\KomojuPay;
-use Plugin\komoju42\Service\ConfigService;
-use Plugin\komoju42\Service\LogService;
-use Plugin\komoju42\Service\MailExService;
+use Plugin\Komoju42\Repository\KomojuOrderRepository;
+use Plugin\Komoju42\KomojuClient;
+use Plugin\Komoju42\Entity\KomojuOrder;
+use Plugin\Komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Service\ConfigService;
+use Plugin\Komoju42\Service\LogService;
+use Plugin\Komoju42\Service\MailExService;
 use Symfony\Component\Routing\Annotation\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
@@ -56,10 +56,10 @@ class OrderController extends AbstractController{
         $this->mail_ex_service = $mailExService;
     }
     /**
-     * @Route("/%eccube_admin_route%/komoju42/payment/{id}/capture_transaction", requirements={"id" = "\d+"}, name="komoju42_capture_transaction", methods={"POST"})
+     * @Route("/%eccube_admin_route%/Komoju42/payment/{id}/capture_transaction", requirements={"id" = "\d+"}, name="Komoju42_capture_transaction", methods={"POST"})
      */
     public function charge(Request $request, $id){
-        if (!$this->isCsrfTokenValid('komoju_capture_' . $id, $request->request->get('_token'))) {
+        if (!$this->isCsrfTokenValid('Komoju_capture_' . $id, $request->request->get('_token'))) {
             $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
             return $this->redirectToRoute('admin_order');
         }
@@ -73,11 +73,6 @@ class OrderController extends AbstractController{
         $komoju_order = $this->komoju_order_repo->findOneBy(['Order'    =>  $Order]);
         if(empty($komoju_order)){
             $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
-            return $this->redirectToRoute('admin_order');
-        }
-
-        if($komoju_order->getType() !== KomojuPay::TYPE_CREDIT_CARD){
-            $this->addError('komoju_multipay.admin.order.error.not_credit_card', 'admin');
             return $this->redirectToRoute('admin_order');
         }
 
@@ -131,7 +126,7 @@ class OrderController extends AbstractController{
 
 
     /**
-     * @Route("/%eccube_admin_route%/komoju42/payment/{id}/refund_transaction", requirements={"id" = "\d+"}, name="komoju42_refund_transaction")
+     * @Route("/%eccube_admin_route%/Komoju42/payment/{id}/refund_transaction", requirements={"id" = "\d+"}, name="Komoju42_refund_transaction")
      */
     public function refund(Request $request, $id = null){
         $Order = $this->order_repo->find($id);
@@ -143,7 +138,7 @@ class OrderController extends AbstractController{
         $config = $this->config_service->getConfigData($Order);
         $this->log_service->writeLog("refund", $Order->getId(), "refund requested by admin");
         if($request->getMethod() == "POST"){
-            if (!$this->isCsrfTokenValid('komoju_refund_' . $id, $request->request->get('_token'))) {
+            if (!$this->isCsrfTokenValid('Komoju_refund_' . $id, $request->request->get('_token'))) {
                 $this->addError('komoju_multipay.admin.order.error.invalid_request', 'admin');
                 return $this->redirectToRoute('admin_order');
             }
