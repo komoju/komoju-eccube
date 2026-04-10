@@ -37,11 +37,11 @@ class WebhookController extends AbstractController
                 $request->headers->get('X-Komoju-Signature'),
                 $webhook_secret);
         }catch(\Exception $ex){
-            $this->log_service->writeLog("webhook", "", "webhook verification failed: " . $ex->getMessage());
+            $this->log_service->writeLog("webhook", "", "verification failed: " . $ex->getMessage());
             return $this->json(['status' => 'error'], 400);
         }
         $type = $data->type;
-        $this->log_service->writeLog("webhook[$type]", "", "");
+
         try {
             switch($type){
                 case "payment.refunded":

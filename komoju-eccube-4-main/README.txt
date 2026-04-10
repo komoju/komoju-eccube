@@ -1,7 +1,5 @@
 # komoju-eccube-4-v1
 
-Copyright (C) 2026 KOMOJU Co., Ltd.
-
 [EC-CUBE](http://www.ec-cube.net)用の[KOMOJU](https://komoju.com/)の決済プラグインです。
 
 このプラグインはEC-CUBE上での買い物をKOMOJUで決済する機能を提供します。

@@ -51,8 +51,6 @@ class SessionReturnController extends AbstractController
             return $this->redirectToRoute('shopping');
         }
 
-        $this->log_service->writeLog("sessionReturn", 0, "processing return for session: $session_id");
-
         $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)
             ->findOneBy(['komoju_session_id' => $session_id]);
 
@@ -81,7 +79,6 @@ class SessionReturnController extends AbstractController
 
         $session_status = $session['status'] ?? 'unknown';
         $payment_status = $session['payment']['status'] ?? 'unknown';
-        $this->log_service->writeLog("sessionReturn", $Order->getId(), "session status: $session_status, payment status: $payment_status");
 
         // Session is completed for both auto-capture and manual capture.
         // Also accept if the payment itself is authorized or captured (handles edge cases).
@@ -89,7 +86,7 @@ class SessionReturnController extends AbstractController
         $payment_ok = in_array($payment_status, ['captured', 'authorized']);
 
         if(!$session_ok && !$payment_ok){
-            $this->log_service->writeLog("sessionReturn", $Order->getId(), "session not completed and payment not authorized/captured, rolling back");
+            $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment failed: session=$session_status, payment=$payment_status");
             $this->purchase_flow->rollback($Order, new PurchaseContext());
             $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
             $Order->setOrderStatus($OrderStatus);
@@ -124,7 +121,7 @@ class SessionReturnController extends AbstractController
         // Set the order ID in session so shopping_complete can find it
         $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
 
-        $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase committed successfully");
+        $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase completed (payment=$payment_status)");
 
         return $this->redirectToRoute('shopping_complete');
     }
@@ -134,7 +131,6 @@ class SessionReturnController extends AbstractController
      */
     public function sessionCancel(Request $request){
         $session_id = $request->query->get('session_id');
-        $this->log_service->writeLog("sessionCancel", 0, "cancel for session: $session_id");
 
         if(!empty($session_id)){
             $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)
@@ -147,7 +143,7 @@ class SessionReturnController extends AbstractController
                     $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
                     $Order->setOrderStatus($OrderStatus);
                     $this->entityManager->flush();
-                    $this->log_service->writeLog("sessionCancel", $Order->getId(), "purchase rolled back");
+                    $this->log_service->writeLog("sessionCancel", $Order->getId(), "customer cancelled payment");
                 }
             }
         }

@@ -53,6 +53,27 @@ komoju_multipay.admin.order.capture_action_confirm: '%charge_amount%を請求し
 komoju_multipay.admin.order.capture_success: 支払いが正常に取得されました
 
 komoju_multipay.admin.log.no_log: ログはまだありません。
+komoju_multipay.admin.log.search.order_id: 注文ID
+komoju_multipay.admin.log.search.api: 操作
+komoju_multipay.admin.log.search.date_from: 開始日
+komoju_multipay.admin.log.search.date_to: 終了日
+komoju_multipay.admin.log.search.keyword: キーワード
+komoju_multipay.admin.log.search.button: 検索
+komoju_multipay.admin.log.search.clear: クリア
+komoju_multipay.admin.log.search.api.all: すべて
+komoju_multipay.admin.log.search.api.webhook: Webhook
+komoju_multipay.admin.log.search.api.capture: 売上処理
+komoju_multipay.admin.log.search.api.refund: 払い戻し
+komoju_multipay.admin.log.search.api.retrieve: 取得
+komoju_multipay.admin.log.search.result_count: '%count%件'
+komoju_multipay.admin.log.export_csv: CSVエクスポート
+komoju_multipay.admin.log.delete_all: ログを全件削除
+komoju_multipay.admin.log.delete_all.confirm: すべてのログを削除してよろしいですか？この操作は元に戻せません。
+komoju_multipay.admin.log.delete_all.success: すべてのログを削除しました。
+komoju_multipay.admin.config.label.log_retention_days: ログ保持期間
+komoju_multipay.admin.config.label.log_retention_days_hint: 日間（空欄の場合、ログを無期限に保持します）
+komoju_multipay.admin.config.label.logging_enabled: ログ記録を有効にする
+komoju_multipay.admin.config.label.logging_enabled_hint: 無効にすると、新しいログは記録されません。
 
 komoju_multipay.admin.config.back: プラグイン一覧
 komoju_multipay.badge.required: 必須

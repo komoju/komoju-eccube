@@ -53,6 +53,27 @@ komoju_multipay.admin.order.capture_action_confirm: 'Are you sure you want to ca
 komoju_multipay.admin.order.capture_success: Payment captured successfully.
 
 komoju_multipay.admin.log.no_log: No logs yet.
+komoju_multipay.admin.log.search.order_id: Order ID
+komoju_multipay.admin.log.search.api: Operation
+komoju_multipay.admin.log.search.date_from: From
+komoju_multipay.admin.log.search.date_to: To
+komoju_multipay.admin.log.search.keyword: Keyword
+komoju_multipay.admin.log.search.button: Search
+komoju_multipay.admin.log.search.clear: Clear
+komoju_multipay.admin.log.search.api.all: All
+komoju_multipay.admin.log.search.api.webhook: Webhook
+komoju_multipay.admin.log.search.api.capture: Capture
+komoju_multipay.admin.log.search.api.refund: Refund
+komoju_multipay.admin.log.search.api.retrieve: Retrieve
+komoju_multipay.admin.log.search.result_count: '%count% results'
+komoju_multipay.admin.log.export_csv: Export CSV
+komoju_multipay.admin.log.delete_all: Clear All Logs
+komoju_multipay.admin.log.delete_all.confirm: Are you sure you want to delete all logs? This cannot be undone.
+komoju_multipay.admin.log.delete_all.success: All logs have been deleted.
+komoju_multipay.admin.config.label.log_retention_days: Log Retention Period
+komoju_multipay.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
+komoju_multipay.admin.config.label.logging_enabled: Enable Logging
+komoju_multipay.admin.config.label.logging_enabled_hint: When disabled, no new log entries will be recorded.
 
 komoju_multipay.admin.config.back: Plugin List
 komoju_multipay.badge.required: Required

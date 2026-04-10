@@ -51,6 +51,8 @@ class ConfigService{
         $config->setMerchantUuid($config_data['merchant_uuid']);
         $config->setWebhookSecret($config_data['webhook_secret']);
         $config->setCaptureOn( isset($config_data['capture_on']) ? $config_data['capture_on'] : true);
+        $config->setLogRetentionDays(isset($config_data['log_retention_days']) ? $config_data['log_retention_days'] : null);
+        $config->setLoggingEnabled(isset($config_data['logging_enabled']) ? $config_data['logging_enabled'] : true);
 
         $this->entityManager->persist($config);
         $this->entityManager->flush();

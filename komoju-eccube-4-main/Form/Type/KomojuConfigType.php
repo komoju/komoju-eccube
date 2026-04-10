@@ -8,6 +8,8 @@ use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
 use Symfony\Component\Validator\Constraints as Assert;
 
 
@@ -71,7 +73,17 @@ class KomojuConfigType extends AbstractType{
                 'multiple' => true,
             ])
             ->add('webhook_secret', TextType::class, [
-                'required'  =>  false,                
+                'required'  =>  false,
+            ])
+            ->add('logging_enabled', CheckboxType::class, [
+                'required' => false,
+            ])
+            ->add('log_retention_days', IntegerType::class, [
+                'required' => false,
+                'attr' => ['min' => 1],
+                'constraints' => [
+                    new Assert\PositiveOrZero(),
+                ],
             ]);
     }    
 }

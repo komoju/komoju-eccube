@@ -122,9 +122,6 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $config_data = $this->config_service->getConfigData($this->Order);
         $komoju_client = new KomojuClient($config_data['secret_key']);
 
-        $return_url = $this->router->generate('Komoju42_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
-        $this->log_service->writeLog("createSession", $this->Order->getId(), "creating KOMOJU session, return_url: $return_url");
-
         $total_amount = $this->Order->getPaymentTotal();
         $currency_code = $this->Order->getCurrencyCode();
         if(empty($currency_code)){
@@ -137,6 +134,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $enabled_methods = $komojuPay ? [$komojuPay->getName()] : [];
         $locale = $this->requestStack->getCurrentRequest()->getLocale() ?: 'ja';
 
+        $return_url = $this->router->generate('Komoju42_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
         $cancel_url = $this->router->generate('Komoju42_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
 
         $session_data = [
@@ -157,8 +155,6 @@ class KomojuMultiPay implements PaymentMethodInterface{
 
         $session = $komoju_client->createSession($session_data);
 
-        $this->log_service->writeLog("createSession", $this->Order->getId(), "response with status_code: {$komoju_client->getStatusCode()}");
-
         if($komoju_client->getStatusCode() != 200 || empty($session['id'])){
             $error = $komoju_client->getLastError() ?: trans('komoju_multipay.shopping.payment_failed');
             $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error");
@@ -170,8 +166,6 @@ class KomojuMultiPay implements PaymentMethodInterface{
             throw new PurchaseException($error);
         }
 
-        $this->log_service->writeLog("createSession", $this->Order->getId(), "session created: {$session['id']}");
-
         // Store session record
         $komoju_order = new KomojuOrder;
         $komoju_order->setOrder($this->Order);
@@ -182,7 +176,6 @@ class KomojuMultiPay implements PaymentMethodInterface{
 
         // Redirect to KOMOJU hosted payment page
         $session_url = $session['session_url'];
-        $this->log_service->writeLog("createSession", $this->Order->getId(), "redirecting to: $session_url");
 
         $dispatcher = new PaymentDispatcher();
         $dispatcher->setResponse(new RedirectResponse($session_url));

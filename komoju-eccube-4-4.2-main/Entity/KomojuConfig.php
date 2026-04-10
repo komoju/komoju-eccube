@@ -55,6 +55,20 @@ class KomojuConfig
      */
     private $webhook_secret;
 
+    /**
+     * @var int|null
+     *
+     * @ORM\Column(name="log_retention_days", type="integer", nullable=true)
+     */
+    private $log_retention_days;
+
+    /**
+     * @var boolean
+     *
+     * @ORM\Column(name="logging_enabled", type="smallint", options={"default" : 1}, nullable=true)
+     */
+    private $logging_enabled = 1;
+
     public function getWebhookSecret(){
         return $this->webhook_secret;
     }
@@ -93,5 +107,19 @@ class KomojuConfig
     }
     public function setMerchantUuid($merchant_uuid){
         $this->merchant_uuid = $merchant_uuid;
+    }
+    public function isLoggingEnabled(){
+        return $this->logging_enabled > 0;
+    }
+    public function setLoggingEnabled($logging_enabled){
+        $this->logging_enabled = $logging_enabled ? 1 : 0;
+        return $this;
+    }
+    public function getLogRetentionDays(){
+        return $this->log_retention_days;
+    }
+    public function setLogRetentionDays($log_retention_days){
+        $this->log_retention_days = $log_retention_days;
+        return $this;
     }
 }

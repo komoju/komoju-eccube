@@ -8,8 +8,65 @@
     <div class="c-contentsArea__cols">
         <div class="c-contentsArea__primaryCol">
             <div class="c-primaryCol">
+                <div class="card rounded border-0 mb-4">
+                    <div class="card-header">
+                        <div class="row align-items-center">
+                            <div class="col"><span class="card-title">{{ 'komoju_multipay.admin.log.search.button'|trans }}</span></div>
+                            <div class="col-auto">
+                                <a href="{{ url('Komoju42_admin_log_export') }}" class="btn btn-sm btn-outline-secondary">
+                                    <i class="fas fa-download"></i> {{ 'komoju_multipay.admin.log.export_csv'|trans }}
+                                </a>
+                                <form method="post" action="{{ url('Komoju42_admin_log_delete_all') }}" id="form-delete-all-logs" class="d-inline ml-2">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('komoju_log_delete_all') }}">
+                                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete-all-logs">
+                                        <i class="fas fa-trash"></i> {{ 'komoju_multipay.admin.log.delete_all'|trans }}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{{ url('Komoju42_admin_log') }}">
+                            {{ form_widget(searchForm._token) }}
+                            <div class="row mb-2">
+                                <div class="col-sm-3">
+                                    <label class="col-form-label">{{ 'komoju_multipay.admin.log.search.order_id'|trans }}</label>
+                                    {{ form_widget(searchForm.order_id, {'attr': {'class': 'form-control', 'placeholder': 'komoju_multipay.admin.log.search.order_id'|trans}}) }}
+                                </div>
+                                <div class="col-sm-3">
+                                    <label class="col-form-label">{{ 'komoju_multipay.admin.log.search.api'|trans }}</label>
+                                    {{ form_widget(searchForm.api, {'attr': {'class': 'form-control'}}) }}
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="col-form-label">{{ 'komoju_multipay.admin.log.search.keyword'|trans }}</label>
+                                    {{ form_widget(searchForm.keyword, {'attr': {'class': 'form-control', 'placeholder': 'komoju_multipay.admin.log.search.keyword'|trans}}) }}
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-sm-3">
+                                    <label class="col-form-label">{{ 'komoju_multipay.admin.log.search.date_from'|trans }}</label>
+                                    {{ form_widget(searchForm.date_from, {'attr': {'class': 'form-control'}}) }}
+                                </div>
+                                <div class="col-sm-3">
+                                    <label class="col-form-label">{{ 'komoju_multipay.admin.log.search.date_to'|trans }}</label>
+                                    {{ form_widget(searchForm.date_to, {'attr': {'class': 'form-control'}}) }}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-12">
+                                    <button type="submit" class="btn btn-ec-conversion">{{ 'komoju_multipay.admin.log.search.button'|trans }}</button>
+                                    <a href="{{ url('Komoju42_admin_log_clear') }}" class="btn btn-ec-regular ml-2">{{ 'komoju_multipay.admin.log.search.clear'|trans }}</a>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 {% if pagination and pagination.totalItemCount %}
                     <div class="card rounded border-0 mb-4 d-block">
+                            <div class="card-header">
+                                <span class="card-title">{{ 'komoju_multipay.admin.log.search.result_count'|trans({'%count%': pagination.totalItemCount}) }}</span>
+                            </div>
                             <div class="card-body p-0">
                                 <table class="table table-sm" id="search_result">
                                     <thead>
@@ -58,4 +115,13 @@
             </div>
         </div>
     </div>
+<script>
+    $(function(){
+        $("#btn-delete-all-logs").click(function(){
+            if(confirm("{{ 'komoju_multipay.admin.log.delete_all.confirm'|trans }}")){
+                $("#form-delete-all-logs").submit();
+            }
+        });
+    });
+</script>
 {% endblock %}
