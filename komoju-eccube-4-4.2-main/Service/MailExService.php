@@ -90,18 +90,4 @@ class MailExService extends MailService{
 
         return $message;
     }
-    protected function initialMsg($Customer, $template){
-        $message = (new Email())
-            ->subject('[' . $this->BaseInfo->getShopName() . '] ' . $template->getMailSubject())
-            ->from(new Address($this->BaseInfo->getEmail01(), $this->BaseInfo->getShopName()))
-            ->to($Customer->getEmail())
-            ->bcc($this->BaseInfo->getEmail01())
-            ->replyTo($this->BaseInfo->getEmail03())
-            ->returnPath($this->BaseInfo->getEmail04());
-        return $message;
-    }
-    protected function isHtml($template_path){
-        $fileName = explode('.', $template_path);
-        return in_array("html", $fileName);
-    }
 }

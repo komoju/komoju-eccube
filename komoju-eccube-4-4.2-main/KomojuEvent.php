@@ -107,8 +107,6 @@ class KomojuEvent implements EventSubscriberInterface{
         if(empty($komoju_orders)){
             return;
         }
-        $komoju_orders_mapping = [];
-
         $komoju_order_mapping = array();
         foreach($komoju_orders as $komoju_order){
             $Order = $komoju_order->getOrder();

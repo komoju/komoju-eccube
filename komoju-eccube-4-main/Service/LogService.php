@@ -9,14 +9,19 @@ use Plugin\Komoju\Entity\KomojuLog;
 
 class LogService{
     protected $entityManager;
+    protected $cachedConfig;
+    protected $configLoaded = false;
 
     public function __construct(EntityManagerInterface $entityManager){
         $this->entityManager = $entityManager;
     }
 
     public function writeLog($api, $order_id, $msg){
-        $config = $this->entityManager->getRepository(KomojuConfig::class)->findOneBy([]);
-        if ($config && !$config->isLoggingEnabled()) {
+        if (!$this->configLoaded) {
+            $this->cachedConfig = $this->entityManager->getRepository(KomojuConfig::class)->findOneBy([]);
+            $this->configLoaded = true;
+        }
+        if ($this->cachedConfig && !$this->cachedConfig->isLoggingEnabled()) {
             return;
         }
 

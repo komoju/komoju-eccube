@@ -89,18 +89,4 @@ class MailExService extends MailService{
 
         return $message;
     }
-    protected function initialMsg($Customer, $template){
-        $message = (new \Swift_Message())
-            ->setSubject('['.$this->BaseInfo->getShopName().'] '.$template->getMailSubject())
-            ->setFrom([$this->BaseInfo->getEmail01() => $this->BaseInfo->getShopName()])
-            ->setTo([$Customer->getEmail()])
-            ->setBcc($this->BaseInfo->getEmail01())
-            ->setReplyTo($this->BaseInfo->getEmail03())
-            ->setReturnPath($this->BaseInfo->getEmail04());
-        return $message;
-    }
-    protected function isHtml($template_path){
-        $fileName = explode('.', $template_path);
-        return in_array("html", $fileName);
-    }
 }

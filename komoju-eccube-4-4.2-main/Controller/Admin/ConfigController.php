@@ -75,23 +75,4 @@ class ConfigController extends AbstractController
         return new JsonResponse(['success' => false, 'message' => trans('komoju_multipay.admin.config.connect_failed')], 400);
     }
 
-    private function getErrorMessages(\Symfony\Component\Form\Form $form) {
-        $errors = array();
-
-        foreach ($form->getErrors() as $key => $error) {
-            if ($form->isRoot()) {
-                $errors['#'][] = $error->getMessage();
-            } else {
-                $errors[] = $error->getMessage();
-            }
-        }
-
-        foreach ($form->all() as $child) {
-            if (!$child->isValid()) {
-                $errors[$child->getName()] = $this->getErrorMessages($child);
-            }
-        }
-
-        return $errors;
-    }
 }

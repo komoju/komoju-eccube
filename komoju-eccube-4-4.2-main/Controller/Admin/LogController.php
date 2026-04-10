@@ -146,7 +146,7 @@ class LogController extends AbstractController
                 trans('komoju_multipay.admin.log.label.msg'),
             ]);
 
-            $results = $qb->getQuery()->iterate();
+            $results = $qb->setMaxResults(50000)->getQuery()->iterate();
             foreach ($results as $row) {
                 $log = $row[0];
                 fputcsv($handle, [

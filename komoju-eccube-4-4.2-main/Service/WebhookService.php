@@ -106,49 +106,22 @@ class WebhookService{
         $this->entityManager->persist($order);
         $this->entityManager->flush($order);
     }
-    public function paymentCanceled($object){
+    public function paymentCanceled($object){ $this->handleCancelEvent($object, 'canceled', 'payment cancelled'); }
+    public function paymentExpired($object){ $this->handleCancelEvent($object, 'expired', 'payment expired'); }
+    public function paymentFailed($object){ $this->handleCancelEvent($object, 'failed', 'payment failed'); }
+    private function handleCancelEvent($object, $tag, $message){
         $komoju_payment_id = $object->data->id;
         $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
         if(empty($komoju_order)){
-            $this->log_service->writeLog("webhook[canceled]", 0, "no order found for payment: $komoju_payment_id");
+            $this->log_service->writeLog("webhook[$tag]", 0, "no order found for payment: $komoju_payment_id");
             return;
         }
         $order = $komoju_order->getOrder();
         if(empty($order)){
-            $this->log_service->writeLog("webhook[canceled]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
+            $this->log_service->writeLog("webhook[$tag]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
             return;
         }
-        $this->log_service->writeLog("webhook[canceled]", $order->getId(), "payment cancelled");
-        $this->cancelOrder($komoju_order);
-    }
-    public function paymentExpired($object){
-        $komoju_payment_id = $object->data->id;
-        $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
-        if(empty($komoju_order)){
-            $this->log_service->writeLog("webhook[expired]", 0, "no order found for payment: $komoju_payment_id");
-            return;
-        }
-        $order = $komoju_order->getOrder();
-        if(empty($order)){
-            $this->log_service->writeLog("webhook[expired]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
-            return;
-        }
-        $this->log_service->writeLog("webhook[expired]", $order->getId(), "payment expired");
-        $this->cancelOrder($komoju_order);
-    }
-    public function paymentFailed($object){
-        $komoju_payment_id = $object->data->id;
-        $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
-        if(empty($komoju_order)){
-            $this->log_service->writeLog("webhook[failed]", 0, "no order found for payment: $komoju_payment_id");
-            return;
-        }
-        $order = $komoju_order->getOrder();
-        if(empty($order)){
-            $this->log_service->writeLog("webhook[failed]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
-            return;
-        }
-        $this->log_service->writeLog("webhook[failed]", $order->getId(), "payment failed");
+        $this->log_service->writeLog("webhook[$tag]", $order->getId(), $message);
         $this->cancelOrder($komoju_order);
     }
     public function paymentUpdated($object){
@@ -165,12 +138,6 @@ class WebhookService{
             }
             $this->cancelOrder($komoju_order);
         }
-    }
-    private function setOrderStatus($order, $status){
-        $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find($status);
-        $order->setOrderStatus($OrderStatus);
-        $this->entityManager->persist($order);
-        $this->entityManager->flush($order);
     }
     private function cancelOrder($komoju_order){
         if($komoju_order->getCanceledAt()){
