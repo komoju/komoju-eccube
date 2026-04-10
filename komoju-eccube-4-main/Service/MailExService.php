@@ -8,7 +8,7 @@
 * file that was distributed with this source code.
 */
 
-namespace Plugin\komoju\Service;
+namespace Plugin\Komoju\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Entity\BaseInfo;
@@ -21,7 +21,7 @@ use Eccube\Repository\MailTemplateRepository;
 use Eccube\Repository\BaseInfoRepository;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Eccube\Common\EccubeConfig;
-use Plugin\komoju\Service\ConfigService;
+use Plugin\Komoju\Service\ConfigService;
 
 class MailExService extends MailService{
 

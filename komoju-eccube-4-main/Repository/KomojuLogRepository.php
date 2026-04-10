@@ -1,10 +1,10 @@
 <?php
 
-namespace Plugin\komoju\Repository;
+namespace Plugin\Komoju\Repository;
 
 use Symfony\Bridge\Doctrine\RegistryInterface;
 use Eccube\Repository\AbstractRepository;
-use Plugin\komoju\Entity\KomojuLog;
+use Plugin\Komoju\Entity\KomojuLog;
 
 class KomojuLogRepository extends AbstractRepository{
     

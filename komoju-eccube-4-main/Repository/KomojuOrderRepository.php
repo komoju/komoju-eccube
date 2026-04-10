@@ -1,10 +1,10 @@
 <?php
 
-namespace Plugin\komoju\Repository;
+namespace Plugin\Komoju\Repository;
 
 use Symfony\Bridge\Doctrine\RegistryInterface;
 use Eccube\Repository\AbstractRepository;
-use Plugin\komoju\Entity\KomojuOrder;
+use Plugin\Komoju\Entity\KomojuOrder;
 
 class KomojuOrderRepository extends AbstractRepository{
     

@@ -1,19 +1,19 @@
 <?php
 
-namespace Plugin\komoju\Service;
+namespace Plugin\Komoju\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Repository\PaymentRepository;
 use Eccube\Entity\Payment;
 use Eccube\Entity\PaymentOption;
 use Eccube\Common\EccubeConfig;
-use Plugin\komoju\Entity\KomojuPay;
-use Plugin\komoju\Entity\KomojuConfig;
-use Plugin\komoju\Entity\KomojuLog;
-use Plugin\komoju\Service\Method\KomojuMultiPay;
-use Plugin\komoju\Repository\KomojuOrderRepository;
-use Plugin\komoju\Entity\KomojuOrder;
-use Plugin\komoju\Service\LogService;
+use Plugin\Komoju\Entity\KomojuPay;
+use Plugin\Komoju\Entity\KomojuConfig;
+use Plugin\Komoju\Entity\KomojuLog;
+use Plugin\Komoju\Service\Method\KomojuMultiPay;
+use Plugin\Komoju\Repository\KomojuOrderRepository;
+use Plugin\Komoju\Entity\KomojuOrder;
+use Plugin\Komoju\Service\LogService;
 use Eccube\Entity\Master\OrderStatus;
 use Eccube\Service\OrderStateMachine;
 use Eccube\Entity\ProductStock;

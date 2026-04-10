@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju\Doctrine\EventSubscriber;
+namespace Plugin\Komoju\Doctrine\EventSubscriber;
 
 use Doctrine\Common\EventSubscriber;
 use Doctrine\Common\Persistence\Event\LifecycleEventArgs;
@@ -9,8 +9,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Entity\Order;
 use Eccube\Entity\Payment;
 use Eccube\Entity\Master\OrderStatus;
-use Plugin\komoju\Service\Method\KomojuMultiPay;
-use Plugin\komoju\Service\KomojuService;
+use Plugin\Komoju\Service\Method\KomojuMultiPay;
+use Plugin\Komoju\Service\KomojuService;
 
 class OrderEventSubscriber implements EventSubscriber{
     protected $komoju_service;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju\Service\Method;
+namespace Plugin\Komoju\Service\Method;
 
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Master\OrderStatus;
@@ -18,11 +18,12 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
-use Plugin\komoju\KomojuClient;
-use Plugin\komoju\Entity\KomojuOrder;
-use Plugin\komoju\Entity\KomojuPay;
-use Plugin\komoju\Service\ConfigService;
-use Plugin\komoju\Service\LogService;
+use Eccube\Service\PurchaseFlow\PurchaseException;
+use Plugin\Komoju\KomojuClient;
+use Plugin\Komoju\Entity\KomojuOrder;
+use Plugin\Komoju\Entity\KomojuPay;
+use Plugin\Komoju\Service\ConfigService;
+use Plugin\Komoju\Service\LogService;
 
 class KomojuMultiPay implements PaymentMethodInterface{
 
@@ -71,8 +72,24 @@ class KomojuMultiPay implements PaymentMethodInterface{
      */
     public function verify(){
         $result = new PaymentResult();
-        $payment_repo = $this->entityManager->getRepository(Payment::class);
-        $Payment = $payment_repo->findOneBy(['method_class' => KomojuMultiPay::class]);
+
+        $config_data = $this->config_service->getConfigData($this->Order);
+        if(empty($config_data['secret_key'])){
+            $result->setSuccess(false);
+            $result->setErrors([trans('komoju_multipay.shopping.payment_failed')]);
+            return $result;
+        }
+
+        $selectedPayment = $this->Order->getPayment();
+        $komojuPay = $this->entityManager->getRepository(KomojuPay::class)
+            ->findOneBy(['Payment' => $selectedPayment]);
+        if(!$komojuPay){
+            $result->setSuccess(false);
+            $result->setErrors([trans('komoju_multipay.shopping.payment_failed')]);
+            return $result;
+        }
+
+        $Payment = $this->Order->getPayment();
         $min = $Payment->getRuleMin();
         $max = $Payment->getRuleMax();
         $total = $this->Order->getPaymentTotal();
@@ -113,11 +130,14 @@ class KomojuMultiPay implements PaymentMethodInterface{
             $currency_code = "JPY";
         }
 
-        $enabled_methods = $this->entityManager->getRepository(KomojuPay::class)->getEnabledMethodsString();
+        $selectedPayment = $this->Order->getPayment();
+        $komojuPay = $this->entityManager->getRepository(KomojuPay::class)
+            ->findOneBy(['Payment' => $selectedPayment]);
+        $enabled_methods = $komojuPay ? [$komojuPay->getName()] : [];
         $locale = $this->requestStack->getCurrentRequest()->getLocale() ?: 'ja';
 
-        $return_url = $this->router->generate('komoju_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
-        $cancel_url = $this->router->generate('komoju_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
+        $return_url = $this->router->generate('Komoju_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
+        $cancel_url = $this->router->generate('Komoju_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
 
         $session_data = [
             'amount' => $total_amount,
@@ -147,12 +167,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
             $this->Order->setOrderStatus($OrderStatus);
             $this->purchase_flow->rollback($this->Order, new PurchaseContext());
 
-            $dispatcher = new PaymentDispatcher();
-            $result = new PaymentResult();
-            $result->setSuccess(false);
-            $result->setErrors([$error]);
-            $dispatcher->setPaymentResult($result);
-            return $dispatcher;
+            throw new PurchaseException($error);
         }
 
         $this->log_service->writeLog("createSession", $this->Order->getId(), "session created: {$session['id']}");

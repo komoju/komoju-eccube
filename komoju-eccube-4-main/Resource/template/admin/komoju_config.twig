@@ -1,6 +1,6 @@
 {% extends '@admin/default_frame.twig' %}
 
-{% set menus = ['komoju', 'komoju_config'] %}
+{% set menus = ['Komoju', 'Komoju_config'] %}
 
 {% block title %}{{ 'komoju_multipay.admin.config.title'|trans }}{% endblock %}
 {% block sub_title %}{{ 'komoju_multipay.admin.config.subtitle'|trans }}{% endblock %}
@@ -114,7 +114,7 @@
                             <div class="row">
                                 <div class="col-3"><span>{{ 'komoju_multipay.admin.config.label.webhook_url'|trans }}</span></div>
                                 <div class="col mb-2">
-                                    {{ url('komoju_webhook') }}
+                                    {{ url('Komoju_webhook') }}
                                     <div class="mt-2">
                                     {{ 'komoju_multipay.admin.config.webhook_check_notice'|trans }}<br>
                                     <a href="https://komoju.com/merchant/webhooks" target="_blank">{{ 'komoju_multipay.admin.config.webhook_dashboard'|trans }}</a><br><br>
@@ -187,7 +187,7 @@
             status.text("{{ 'komoju_multipay.admin.config.sync_in_progress'|trans }}").css("color", "").show();
 
             $.ajax({
-                url: "{{ url('komoju_admin_sync_methods') }}",
+                url: "{{ url('Komoju_admin_sync_methods') }}",
                 type: "POST",
                 contentType: "application/json",
                 data: JSON.stringify({ secret_key: secretKey }),
@@ -195,7 +195,7 @@
                 headers: { "X-CSRF-Token": $("input[name='komoju_config[_token]']").val() },
                 success: function(data){
                     status.text("{{ 'komoju_multipay.admin.config.sync_complete'|trans }}").css("color", "green");
-                    setTimeout(function(){ location.reload(); }, 1000);
+                    setTimeout(function(){ $("form[role='form']").submit(); }, 1000);
                 },
                 error: function(xhr){
                     var msg = "{{ 'komoju_multipay.admin.config.connect_failed'|trans }}";

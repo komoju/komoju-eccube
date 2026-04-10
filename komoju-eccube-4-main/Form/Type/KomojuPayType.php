@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju\Form\Type;
+namespace Plugin\Komoju\Form\Type;
 
 use Eccube\Form\Type\MasterType;
 use Symfony\Component\Form\AbstractType;
@@ -8,8 +8,8 @@ use Symfony\Component\Form\FormInterface;
 use Symfony\Component\Form\FormView;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use Symfony\Component\Validator\Constraints as Assert;
-use Plugin\komoju\Entity\KomojuPay;
-use Plugin\komoju\Repository\KomojuPayRepository;
+use Plugin\Komoju\Entity\KomojuPay;
+use Plugin\Komoju\Repository\KomojuPayRepository;
 
 class KomojuPayType extends AbstractType
 {

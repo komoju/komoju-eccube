@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
 
-namespace  Plugin\komoju\DoctrineMigrations;
+namespace  Plugin\Komoju\DoctrineMigrations;
 
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;

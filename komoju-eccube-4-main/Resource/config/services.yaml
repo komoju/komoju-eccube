@@ -1,25 +1,25 @@
 services:
-    plg_komoju.service.config:
+    plg_Komoju.service.config:
         public: true
-        class: Plugin\komoju\Service\ConfigService
+        class: Plugin\Komoju\Service\ConfigService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Common\EccubeConfig'
-    plg_komoju.service.komoju_log:
+    plg_Komoju.service.komoju_log:
         public: true
-        class: Plugin\komoju\Service\LogService
+        class: Plugin\Komoju\Service\LogService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
-    plg_komoju.service.komoju_webhook:
+    plg_Komoju.service.komoju_webhook:
         public: true
-        class: Plugin\komoju\Service\WebhookService
+        class: Plugin\Komoju\Service\WebhookService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Service\OrderStateMachine'
-            - '@plg_komoju.service.komoju_log'
-    plg_komoju.service.komoju_mail_service:
+            - '@plg_Komoju.service.komoju_log'
+    plg_Komoju.service.komoju_mail_service:
         public: true
-        class: Plugin\komoju\Service\MailExService
+        class: Plugin\Komoju\Service\MailExService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@swiftmailer.mailer.default'
@@ -29,26 +29,26 @@ services:
             - '@Symfony\Component\EventDispatcher\EventDispatcherInterface'
             - '@twig'
             - '@Eccube\Common\EccubeConfig'
-    plg_komoju.service.komoju_service:
+    plg_Komoju.service.komoju_service:
         public: true
-        class: Plugin\komoju\Service\KomojuService
+        class: Plugin\Komoju\Service\KomojuService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
-            - '@plg_komoju.service.config'
+            - '@plg_Komoju.service.config'
 
-    Plugin\komoju\Controller\SessionReturnController:
+    Plugin\Komoju\Controller\SessionReturnController:
         public: true
-        class: Plugin\komoju\Controller\SessionReturnController
+        class: Plugin\Komoju\Controller\SessionReturnController
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
-            - '@plg_komoju.service.config'
-            - '@plg_komoju.service.komoju_log'
+            - '@plg_Komoju.service.config'
+            - '@plg_Komoju.service.komoju_log'
             - '@eccube.purchase.flow.shopping'
         tags: ['controller.service_arguments']
 
     # FQCN aliases for type-hinted injection
-    Plugin\komoju\Service\ConfigService: '@plg_komoju.service.config'
-    Plugin\komoju\Service\LogService: '@plg_komoju.service.komoju_log'
-    Plugin\komoju\Service\WebhookService: '@plg_komoju.service.komoju_webhook'
-    Plugin\komoju\Service\MailExService: '@plg_komoju.service.komoju_mail_service'
-    Plugin\komoju\Service\KomojuService: '@plg_komoju.service.komoju_service'
+    Plugin\Komoju\Service\ConfigService: '@plg_Komoju.service.config'
+    Plugin\Komoju\Service\LogService: '@plg_Komoju.service.komoju_log'
+    Plugin\Komoju\Service\WebhookService: '@plg_Komoju.service.komoju_webhook'
+    Plugin\Komoju\Service\MailExService: '@plg_Komoju.service.komoju_mail_service'
+    Plugin\Komoju\Service\KomojuService: '@plg_Komoju.service.komoju_service'

@@ -1,5 +1,5 @@
 <?php
-namespace Plugin\komoju\Controller;
+namespace Plugin\Komoju\Controller;
 include_once dirname(__FILE__) . '/../Resource/komoju_lib/init.php';
 
 use Eccube\Controller\AbstractController;
@@ -7,9 +7,9 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Plugin\komoju\Service\LogService;
-use Plugin\komoju\Service\ConfigService;
-use Plugin\komoju\Service\WebhookService;
+use Plugin\Komoju\Service\LogService;
+use Plugin\Komoju\Service\ConfigService;
+use Plugin\Komoju\Service\WebhookService;
 use Komoju\WebhookEvent;
 
 
@@ -26,7 +26,7 @@ class WebhookController extends AbstractController
     }
 
     /**
-     * @Route("/plugin/komoju/webhook", name="komoju_webhook")
+     * @Route("/plugin/Komoju/webhook", name="Komoju_webhook")
      */
     public function webhook(Request $request){
         try{

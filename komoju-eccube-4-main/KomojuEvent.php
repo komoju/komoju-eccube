@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\komoju;
+namespace Plugin\Komoju;
 
 use Eccube\Common\EccubeConfig;
 use Eccube\Event\TemplateEvent;
@@ -10,9 +10,9 @@ use Eccube\Entity\Master\OrderStatus;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\komoju\Service\Method\KomojuMultiPay;
-use Plugin\komoju\Service\ConfigService;
-use Plugin\komoju\Entity\KomojuOrder;
+use Plugin\Komoju\Service\Method\KomojuMultiPay;
+use Plugin\Komoju\Service\ConfigService;
+use Plugin\Komoju\Entity\KomojuOrder;
 use Eccube\Event\EventArgs;
 
 class KomojuEvent implements EventSubscriberInterface{
@@ -54,13 +54,8 @@ class KomojuEvent implements EventSubscriberInterface{
      * @param TemplateEvent
      */
     public function onShoppingIndexTwig(TemplateEvent $event){
-        $paymentRepository = $this->entityManager->getRepository(Payment::class);
-        $Payment = $paymentRepository->findOneBy(['method_class' => KomojuMultiPay::class]);
-        if($Payment){
-            $payment_id = $Payment->getId();
-            $event->setParameter("komoju_id", $payment_id);
-            $event->addSnippet('@komoju/default/shopping/shopping.twig');
-        }
+        // Each KOMOJU method is now its own Payment entity, so EC-CUBE natively
+        // renders them as individual radio buttons. No snippet injection needed.
     }
 
     /**
@@ -128,7 +123,7 @@ class KomojuEvent implements EventSubscriberInterface{
         }
 
         $event->setParameter('komoju_order_mapping', $komoju_order_mapping);
-        $event->addAsset('@komoju\admin\order_index.js.twig');
+        $event->addAsset('@Komoju/admin/order_index.js.twig');
     }
 
     /**
@@ -162,7 +157,7 @@ class KomojuEvent implements EventSubscriberInterface{
             $event->setParameter("komoju_dashboard_link", $this->getKomojuDashboardLink($komoju_order->getKomojuPaymentId()));
             $event->setParameter('REFUND_FULL_OPTION',  $refund_full_option);
             $event->setParameter('REFUND_PARTIAL_OPTION',  $refund_partial_option);
-            $event->addSnippet("@komoju/admin/order_edit.twig");
+            $event->addSnippet("@Komoju/admin/order_edit.twig");
         }
     }
 

@@ -1,13 +1,13 @@
 <?php
 
-namespace Plugin\komoju\Repository;
+namespace Plugin\Komoju\Repository;
 
 use Symfony\Bridge\Doctrine\RegistryInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Eccube\Repository\AbstractRepository;
 use Eccube\Event\EventArgs;
-use Plugin\komoju\Entity\KomojuConfig;
-use Plugin\komoju\KomojuEvent;
+use Plugin\Komoju\Entity\KomojuConfig;
+use Plugin\Komoju\KomojuEvent;
 
 class KomojuConfigRepository extends AbstractRepository{
     

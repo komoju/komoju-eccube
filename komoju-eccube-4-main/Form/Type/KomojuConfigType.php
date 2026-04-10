@@ -1,9 +1,9 @@
 <?php
 
-namespace Plugin\komoju\Form\Type;
+namespace Plugin\Komoju\Form\Type;
 
-use Plugin\komoju\Entity\KomojuPay;
-use Plugin\komoju\Entity\KomojuConfig;
+use Plugin\Komoju\Entity\KomojuPay;
+use Plugin\Komoju\Entity\KomojuConfig;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
