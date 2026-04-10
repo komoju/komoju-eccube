@@ -133,17 +133,16 @@
                                     <span>{{ 'komoju_multipay.admin.config.label.logging_enabled'|trans }}</span>
                                 </div>
                                 <div class="col mb-2">
-                                    <div class="form-check">
-                                        {{ form_widget(form.logging_enabled, { 'attr': { 'class': 'form-check-input' } }) }}
-                                        <label class="form-check-label text-muted" for="{{ form.logging_enabled.vars.id }}">
-                                            {{ 'komoju_multipay.admin.config.label.logging_enabled_hint'|trans }}
-                                        </label>
-                                    </div>
+                                    <input type="checkbox" id="{{ form.logging_enabled.vars.id }}" name="{{ form.logging_enabled.vars.full_name }}" class="form-check-input" style="margin-left: 0; position: static;" value="1" {{ form.logging_enabled.vars.checked is defined and form.logging_enabled.vars.checked ? 'checked="checked"' : '' }}>
+                                    <label class="form-check-label text-muted ml-1" for="{{ form.logging_enabled.vars.id }}">
+                                        {{ 'komoju_multipay.admin.config.label.logging_enabled_hint'|trans }}
+                                    </label>
                                 </div>
                             </div>
                             <div class="row mt-4">
                                 <div class="col-3">
                                     <span>{{ 'komoju_multipay.admin.config.label.log_retention_days'|trans }}</span>
+                                    <i class="fa fa-question-circle fa-lg ml-1" data-toggle="tooltip" data-placement="top" title="{{ 'komoju_multipay.admin.config.label.log_retention_days_tooltip'|trans }}"></i>
                                 </div>
                                 <div class="col mb-2">
                                     {{ form_widget(form.log_retention_days, { 'attr': { 'class': 'form-control', 'style': 'width:120px; display:inline-block;', 'placeholder': '90' } }) }}

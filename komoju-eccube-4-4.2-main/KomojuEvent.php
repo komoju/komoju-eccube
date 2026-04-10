@@ -13,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Plugin\Komoju42\Service\Method\KomojuMultiPay;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Entity\KomojuOrder;
+use Plugin\Komoju42\Entity\KomojuLog;
 use Eccube\Event\EventArgs;
 
 class KomojuEvent implements EventSubscriberInterface{
@@ -157,6 +158,16 @@ class KomojuEvent implements EventSubscriberInterface{
             $event->setParameter("komoju_dashboard_link", $this->getKomojuDashboardLink($komoju_order->getKomojuPaymentId()));
             $event->setParameter('REFUND_FULL_OPTION',  $refund_full_option);
             $event->setParameter('REFUND_PARTIAL_OPTION',  $refund_partial_option);
+
+            $komoju_logs = $this->entityManager->getRepository(KomojuLog::class)
+                ->createQueryBuilder('l')
+                ->where('l.order_id = :order_id')
+                ->setParameter('order_id', $Order->getId())
+                ->orderBy('l.id', 'ASC')
+                ->getQuery()
+                ->getResult();
+            $event->setParameter('komoju_logs', $komoju_logs);
+
             $event->addSnippet("@Komoju42/admin/order_edit.twig");
         }
     }

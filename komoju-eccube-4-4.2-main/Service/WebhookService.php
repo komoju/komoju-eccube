@@ -38,32 +38,46 @@ class WebhookService{
         $this->productStockRepository = $this->entityManager->getRepository(ProductStock::class);
     }
     public function paymentRefunded($object){
+        $komoju_payment_id = $object->data->id;
         $refunds = $object->data->refunds;
         if(empty($refunds)){
-            $this->log_service->writeLog("webhook[refund]", 0, "no refunds in payload for payment: {$object->data->id}");
+            $this->log_service->writeLog("webhook[refund]", 0, "no refunds in payload for payment: $komoju_payment_id");
             return;
         }
-        $refund_id = $refunds[0]->id;
 
-        $qb = $this->komoju_order_repo->createQueryBuilder("ko");
-        $komoju_orders = $qb->where($qb->expr()->like("ko.refund_id", ":refund_id"))
-            ->setParameter("refund_id", "%$refund_id%")
-            ->getQuery()
-            ->getResult();
-        if(empty($komoju_orders)){
-            $this->log_service->writeLog("webhook[refund]", 0, "no order found for refund: $refund_id");
+        // Look up order by komoju_payment_id (works for both EC-CUBE and dashboard refunds)
+        $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
+        if(empty($komoju_order)){
+            $this->log_service->writeLog("webhook[refund]", 0, "no order found for payment: $komoju_payment_id");
             return;
         }
-        $komoju_order = $komoju_orders[0];
+
         $Order = $komoju_order->getOrder();
-        if($Order){
-            $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed");
-            $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
-            if ($this->order_state_machine->can($Order, $OrderStatus)) {
-                $this->order_state_machine->apply($Order, $OrderStatus);
-            }
-            $this->entityManager->flush();
+        if(empty($Order)){
+            $this->log_service->writeLog("webhook[refund]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
+            return;
         }
+
+        // Calculate total refund amount and collect refund IDs from payload
+        $refund_ids = [];
+        $refund_amount = 0;
+        foreach($refunds as $refund){
+            $refund_ids[] = $refund->id;
+            $refund_amount += $refund->amount;
+        }
+
+        // Update KomojuOrder with refund data
+        $komoju_order->setRefundId(implode(",", $refund_ids));
+        $komoju_order->setRefundedAmount($refund_amount);
+        $this->entityManager->persist($komoju_order);
+
+        $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$refund_amount)");
+
+        $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
+        if ($this->order_state_machine->can($Order, $OrderStatus)) {
+            $this->order_state_machine->apply($Order, $OrderStatus);
+        }
+        $this->entityManager->flush();
     }
     public function paymentCaptured($object){
         $komoju_payment_id = $object->data->id;

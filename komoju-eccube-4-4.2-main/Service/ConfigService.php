@@ -11,6 +11,7 @@ use Eccube\Entity\PaymentOption;
 use Eccube\Common\EccubeConfig;
 use Plugin\Komoju42\Entity\KomojuPay;
 use Plugin\Komoju42\Entity\KomojuConfig;
+use Plugin\Komoju42\Entity\KomojuLog;
 use Plugin\Komoju42\Service\Method\KomojuMultiPay;
 use Plugin\Komoju42\KomojuClient;
 
@@ -52,7 +53,19 @@ class ConfigService{
         $config->setWebhookSecret($config_data['webhook_secret']);
         $config->setCaptureOn( isset($config_data['capture_on']) ? $config_data['capture_on'] : true);
         $config->setLogRetentionDays(isset($config_data['log_retention_days']) ? $config_data['log_retention_days'] : null);
-        $config->setLoggingEnabled(isset($config_data['logging_enabled']) ? $config_data['logging_enabled'] : true);
+
+        $newLoggingEnabled = isset($config_data['logging_enabled']) ? (bool) $config_data['logging_enabled'] : true;
+        $oldLoggingEnabled = $config->isLoggingEnabled();
+        if ($newLoggingEnabled !== $oldLoggingEnabled) {
+            $log = new KomojuLog();
+            $log->setApi('config');
+            $log->setOrderId('');
+            $log->setMsg($newLoggingEnabled ? 'logging enabled' : 'logging disabled');
+            $log->setCreatedAt(new \DateTime());
+            $this->entityManager->persist($log);
+        }
+
+        $config->setLoggingEnabled($newLoggingEnabled);
 
         $this->entityManager->persist($config);
         $this->entityManager->flush();
@@ -233,12 +246,19 @@ class ConfigService{
         $paymentRepository = $this->entityManager->getRepository(Payment::class);
         $komoju_payments = $paymentRepository->findBy(['method_class' => KomojuMultiPay::class]);
         $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
+        $orderRepo = $this->entityManager->getRepository(\Eccube\Entity\Order::class);
 
         foreach($komoju_payments as $Payment){
             $linked = $komoju_pay_repo->findOneBy(['Payment' => $Payment]);
             if(!$linked){
-                $Payment->setVisible(false);
-                $this->entityManager->persist($Payment);
+                $usedByOrder = $orderRepo->findOneBy(['Payment' => $Payment]);
+                if($usedByOrder){
+                    $Payment->setVisible(false);
+                    $this->entityManager->persist($Payment);
+                }else{
+                    $this->removePaymentOptions($Payment);
+                    $this->entityManager->remove($Payment);
+                }
             }
         }
         $this->entityManager->flush();

@@ -39,6 +39,12 @@ komoju_multipay.admin.order.actions: Payment Actions
 komoju_multipay.admin.order.refund_option.full_refund: Full Refund
 komoju_multipay.admin.order.refund_option.partial_refund: Partial Refund
 komoju_multipay.admin.order.refund_action: Refund
+komoju_multipay.admin.order.event_log: Event Log
+komoju_multipay.admin.order.status: Payment Status
+komoju_multipay.admin.order.status.authorized: Authorized
+komoju_multipay.admin.order.status.captured: 'Captured on %date%'
+komoju_multipay.admin.order.status.fully_refunded: Fully Refunded
+komoju_multipay.admin.order.status.partially_refunded: 'Partially Refunded (%refunded% / %total%)'
 komoju_multipay.admin.order.status.refunded: Refunded
 komoju_multipay.admin.order.refunded_amount: Refunded Amount
 komoju_multipay.admin.order.error.invalid_request: Invalid request.
@@ -51,6 +57,18 @@ komoju_multipay.admin.order.refund.success: Refund completed successfully.
 komoju_multipay.admin.order.capture_action: Capture Payment
 komoju_multipay.admin.order.capture_action_confirm: 'Are you sure you want to capture %charge_amount%?'
 komoju_multipay.admin.order.capture_success: Payment captured successfully.
+komoju_multipay.admin.order.timeline.purchase_completed: Purchase completed
+komoju_multipay.admin.order.timeline.customer_cancelled: Cancelled by customer
+komoju_multipay.admin.order.timeline.error: An error occurred
+komoju_multipay.admin.order.timeline.captured: Payment captured
+komoju_multipay.admin.order.timeline.refunded: '¥%amount% refunded'
+komoju_multipay.admin.order.timeline.refunded_externally: '¥%amount% refunded externally'
+komoju_multipay.admin.order.timeline.cancelled: Payment cancelled
+komoju_multipay.admin.order.timeline.expired: Payment expired
+komoju_multipay.admin.order.timeline.failed: Payment failed
+komoju_multipay.admin.order.timeline.capture_failed: Capture failed
+komoju_multipay.admin.order.timeline.already_refunded: Already refunded
+komoju_multipay.admin.order.timeline.status_changed: 'Status changed to %status%'
 
 komoju_multipay.admin.log.no_log: No logs yet.
 komoju_multipay.admin.log.search.order_id: Order ID
@@ -72,6 +90,7 @@ komoju_multipay.admin.log.delete_all.confirm: Are you sure you want to delete al
 komoju_multipay.admin.log.delete_all.success: All logs have been deleted.
 komoju_multipay.admin.config.label.log_retention_days: Log Retention Period
 komoju_multipay.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
+komoju_multipay.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
 komoju_multipay.admin.config.label.logging_enabled: Enable Logging
 komoju_multipay.admin.config.label.logging_enabled_hint: When disabled, no new log entries will be recorded.
 

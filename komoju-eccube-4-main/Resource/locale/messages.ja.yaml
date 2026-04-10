@@ -39,6 +39,12 @@ komoju_multipay.admin.order.actions: 決済操作
 komoju_multipay.admin.order.refund_option.full_refund: 全額返金
 komoju_multipay.admin.order.refund_option.partial_refund: 一部返金
 komoju_multipay.admin.order.refund_action: 払い戻し
+komoju_multipay.admin.order.event_log: イベントログ
+komoju_multipay.admin.order.status: 決済ステータス
+komoju_multipay.admin.order.status.authorized: オーソリ済み
+komoju_multipay.admin.order.status.captured: '%date% に売上確定'
+komoju_multipay.admin.order.status.fully_refunded: 全額返金済み
+komoju_multipay.admin.order.status.partially_refunded: '一部返金済み（%refunded% / %total%）'
 komoju_multipay.admin.order.status.refunded: 払い戻し済み
 komoju_multipay.admin.order.refunded_amount: 返金額
 komoju_multipay.admin.order.error.invalid_request: 無効なリクエスト
@@ -51,6 +57,18 @@ komoju_multipay.admin.order.refund.success: 正常に返金されました
 komoju_multipay.admin.order.capture_action: 支払いを受け取る
 komoju_multipay.admin.order.capture_action_confirm: '%charge_amount%を請求してもよろしいですか？'
 komoju_multipay.admin.order.capture_success: 支払いが正常に取得されました
+komoju_multipay.admin.order.timeline.purchase_completed: 購入完了
+komoju_multipay.admin.order.timeline.customer_cancelled: お客様によるキャンセル
+komoju_multipay.admin.order.timeline.error: エラーが発生しました
+komoju_multipay.admin.order.timeline.captured: 売上確定
+komoju_multipay.admin.order.timeline.refunded: '¥%amount% 返金済み'
+komoju_multipay.admin.order.timeline.refunded_externally: '¥%amount% 外部から返金済み'
+komoju_multipay.admin.order.timeline.cancelled: 決済キャンセル
+komoju_multipay.admin.order.timeline.expired: 決済期限切れ
+komoju_multipay.admin.order.timeline.failed: 決済失敗
+komoju_multipay.admin.order.timeline.capture_failed: 売上処理失敗
+komoju_multipay.admin.order.timeline.already_refunded: 返金済みのため処理不可
+komoju_multipay.admin.order.timeline.status_changed: '決済ステータスが「%status%」に変更'
 
 komoju_multipay.admin.log.no_log: ログはまだありません。
 komoju_multipay.admin.log.search.order_id: 注文ID
@@ -72,6 +90,7 @@ komoju_multipay.admin.log.delete_all.confirm: すべてのログを削除して�
 komoju_multipay.admin.log.delete_all.success: すべてのログを削除しました。
 komoju_multipay.admin.config.label.log_retention_days: ログ保持期間
 komoju_multipay.admin.config.label.log_retention_days_hint: 日間（空欄の場合、ログを無期限に保持します）
+komoju_multipay.admin.config.label.log_retention_days_tooltip: ログページを表示した際に、設定した保持期間を超えた古いログが自動的に削除されます。
 komoju_multipay.admin.config.label.logging_enabled: ログ記録を有効にする
 komoju_multipay.admin.config.label.logging_enabled_hint: 無効にすると、新しいログは記録されません。
 
