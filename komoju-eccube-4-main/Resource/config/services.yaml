@@ -36,6 +36,19 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju.service.config'
 
+    Plugin\Komoju\Controller\Admin\OrderController:
+        public: true
+        class: Plugin\Komoju\Controller\Admin\OrderController
+        arguments:
+            - '@Eccube\Service\OrderStateMachine'
+            - '@Eccube\Repository\OrderRepository'
+            - '@Eccube\Repository\Master\OrderStatusRepository'
+            - '@Plugin\Komoju\Repository\KomojuOrderRepository'
+            - '@plg_Komoju.service.config'
+            - '@plg_Komoju.service.komoju_log'
+            - '@plg_Komoju.service.komoju_mail_service'
+        tags: ['controller.service_arguments']
+
     Plugin\Komoju\Controller\SessionReturnController:
         public: true
         class: Plugin\Komoju\Controller\SessionReturnController
