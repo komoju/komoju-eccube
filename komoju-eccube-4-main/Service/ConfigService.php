@@ -265,20 +265,29 @@ class ConfigService{
         $paymentRepository = $this->entityManager->getRepository(Payment::class);
         $linkedPaymentIds = $this->getLinkedPaymentIds();
 
+        // Build reverse lookup: Payment ID → KomojuPay.name (stable slug)
+        $slugByPaymentId = [];
+        foreach($this->entityManager->getRepository(KomojuPay::class)->findBy([]) as $kp){
+            if($kp->getPayment()){
+                $slugByPaymentId[$kp->getPayment()->getId()] = $kp->getName();
+            }
+        }
+
         // Categorize all KOMOJU payments as active or orphaned (scalars only)
-        $activeIdByName = [];
+        $activeIdBySlug = [];
         $orphans = [];
         foreach($paymentRepository->findBy(['method_class' => KomojuMultiPay::class]) as $Payment){
+            $slug = isset($slugByPaymentId[$Payment->getId()]) ? $slugByPaymentId[$Payment->getId()] : $Payment->getMethod();
             if(isset($linkedPaymentIds[$Payment->getId()])){
-                $activeIdByName[$Payment->getMethod()] = $Payment->getId();
+                $activeIdBySlug[$slug] = $Payment->getId();
             }else{
-                $orphans[] = ['id' => $Payment->getId(), 'method' => $Payment->getMethod()];
+                $orphans[] = ['id' => $Payment->getId(), 'slug' => $slug];
             }
         }
 
         // Phase 1: Migrate orphans that have an active equivalent (pure DQL, no entity state)
         foreach($orphans as $orphan){
-            $activeId = isset($activeIdByName[$orphan['method']]) ? $activeIdByName[$orphan['method']] : null;
+            $activeId = isset($activeIdBySlug[$orphan['slug']]) ? $activeIdBySlug[$orphan['slug']] : null;
             if(!$activeId){
                 continue;
             }
