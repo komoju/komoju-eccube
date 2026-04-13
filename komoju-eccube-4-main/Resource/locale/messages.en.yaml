@@ -1,0 +1,159 @@
+komoju_multipay.admin.nav.label: KOMOJU Payment
+komoju_multipay.admin.nav.config: Settings
+komoju_multipay.admin.nav.log: Logs
+komoju_multipay.admin.config.title: KOMOJU Settings
+komoju_multipay.admin.config.subtitle: Settings
+komoju_multipay.admin.config.header: Settings
+komoju_multipay.admin.config.label:secret_key: Secret Key
+komoju_multipay.admin.config.label:publishable_key: Publishable Key
+komoju_multipay.admin.config.label:merchant_uuid: Merchant UUID
+komoju_multipay.admin.config.error.publishable_key.empty: Please enter a publishable key.
+komoju_multipay.admin.config.error.publishable_key.regex_invalid: The publishable key is invalid.
+komoju_multipay.admin.config.error.secret_key.empty: Please enter a secret key.
+komoju_multipay.admin.config.error.secret_key.regex_invalid: The secret key is invalid.
+komoju_multipay.admin.config.error.merchant_uuid.empty: Please enter a merchant UUID.
+komoju_multipay.admin.config.error.merchant_uuid.regex_invalid: The merchant UUID is invalid.
+komoju_multipay.admin.config.label.komoju_pay_type: KOMOJU Payment Methods
+komoju_multipay.admin.config.label.capture_on: Capture Mode
+komoju_multipay.admin.config.label.capture_on.auth_only: Authorize Only
+komoju_multipay.admin.config.label.capture_on.auth_capture: Authorize and Capture
+komoju_multipay.admin.config.label:webhook_secret: Webhook Secret
+komoju_multipay.admin.config.label.webhook_url: Webhook Endpoint URL
+komoju_multipay.admin.config.webhook_check_notice: Please register the webhook from the KOMOJU dashboard.
+komoju_multipay.admin.config.webhook_dashboard: Open KOMOJU Dashboard
+komoju_multipay.admin.config.webhook_events: Please enable the following events when registering the webhook.
+komoju_multipay.admin.log.title: KOMOJU Management
+komoju_multipay.admin.log.sub_title: Logs
+komoju_multipay.admin.log.label.create_at: Time
+komoju_multipay.admin.log.label.api: Operation
+komoju_multipay.admin.log.label.order_id: Order ID
+komoju_multipay.admin.log.label.msg: Details
+komoju_multipay.admin.order.refund_amount.error.invalid: Please enter a valid refund amount.
+komoju_multipay.admin.order.refund_amount.error.exceeded: The refund amount exceeds the order total.
+komoju_multipay.admin.order.refund_action_confirm: Are you sure you want to refund?
+komoju_multipay.admin.order.section_title: KOMOJU Payment
+komoju_multipay.admin.order.section_title_tooltip: You can perform KOMOJU payment operations here.
+komoju_multipay.admin.order.charge_id_tooltip: This is the KOMOJU payment ID. Click to view the transaction details in the KOMOJU dashboard.
+komoju_multipay.admin.order.charge_id: Payment ID
+komoju_multipay.admin.order.actions: Payment Actions
+komoju_multipay.admin.order.refund_option.full_refund: Full Refund
+komoju_multipay.admin.order.refund_option.partial_refund: Partial Refund
+komoju_multipay.admin.order.refund_action: Refund
+komoju_multipay.admin.order.order_number: Order Number
+komoju_multipay.admin.order.event_log: Event Log
+komoju_multipay.admin.order.status: Payment Status
+komoju_multipay.admin.order.status.authorized: Authorized
+komoju_multipay.admin.order.status.captured: 'Captured on %date%'
+komoju_multipay.admin.order.status.fully_refunded: Fully Refunded
+komoju_multipay.admin.order.status.partially_refunded: 'Partially Refunded (%refunded% / %total%)'
+komoju_multipay.admin.order.status.refunded: Refunded
+komoju_multipay.admin.order.refunded_amount: Refunded Amount
+komoju_multipay.admin.order.error.invalid_request: Invalid request.
+komoju_multipay.admin.order.error.refunded: This payment has already been refunded.
+komoju_multipay.admin.order.error.refund_option.invalid: Invalid refund option.
+komoju_multipay.admin.order.error.already_captured: This payment has already been captured.
+komoju_multipay.admin.order.error.not_credit_card: This is not a valid credit card payment.
+komoju_multipay.admin.order.error.capture_failed: Capture failed.
+komoju_multipay.admin.order.refund.success: Refund completed successfully.
+komoju_multipay.admin.order.capture_action: Capture Payment
+komoju_multipay.admin.order.capture_action_confirm: 'Are you sure you want to capture %charge_amount%?'
+komoju_multipay.admin.order.capture_success: Payment captured successfully.
+komoju_multipay.admin.order.timeline.purchase_completed: Purchase completed
+komoju_multipay.admin.order.timeline.customer_cancelled: Cancelled by customer
+komoju_multipay.admin.order.timeline.error: An error occurred
+komoju_multipay.admin.order.timeline.captured: Payment captured
+komoju_multipay.admin.order.timeline.refunded: '¥%amount% refunded'
+komoju_multipay.admin.order.timeline.refunded_externally: '¥%amount% refunded externally'
+komoju_multipay.admin.order.timeline.cancelled: Payment cancelled
+komoju_multipay.admin.order.timeline.expired: Payment expired
+komoju_multipay.admin.order.timeline.failed: Payment failed
+komoju_multipay.admin.order.timeline.capture_failed: Capture failed
+komoju_multipay.admin.order.timeline.already_refunded: Already refunded
+komoju_multipay.admin.order.timeline.status_changed: 'Status changed to %status%'
+
+komoju_multipay.admin.log.no_log: No logs yet.
+komoju_multipay.admin.log.search.order_id: Order ID
+komoju_multipay.admin.log.search.api: Operation
+komoju_multipay.admin.log.search.date_from: From
+komoju_multipay.admin.log.search.date_to: To
+komoju_multipay.admin.log.search.keyword: Keyword
+komoju_multipay.admin.log.search.button: Search
+komoju_multipay.admin.log.search.clear: Clear
+komoju_multipay.admin.log.search.api.all: All
+komoju_multipay.admin.log.search.api.webhook: Webhook
+komoju_multipay.admin.log.search.api.capture: Capture
+komoju_multipay.admin.log.search.api.refund: Refund
+komoju_multipay.admin.log.search.api.retrieve: Retrieve
+komoju_multipay.admin.log.search.result_count: '%count% results'
+komoju_multipay.admin.log.export_csv: Export CSV
+komoju_multipay.admin.log.delete_all: Clear All Logs
+komoju_multipay.admin.log.delete_all.confirm: Are you sure you want to delete all logs? This cannot be undone.
+komoju_multipay.admin.log.delete_all.success: All logs have been deleted.
+komoju_multipay.admin.log.delete_all.nothing: No deletable logs found. Order timeline logs are protected.
+komoju_multipay.admin.config.label.log_retention_days: Log Retention Period
+komoju_multipay.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
+komoju_multipay.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
+komoju_multipay.admin.config.label.logging_enabled: Enable Logging
+komoju_multipay.admin.config.label.logging_enabled_hint: When disabled, no new log entries will be recorded.
+komoju_multipay.admin.config.label.order_number_format: Order Number Format
+komoju_multipay.admin.config.label.order_number_format_hint: "Use {order_no} for the order number, {order_id} for the internal ID. Leave blank to use the default order number."
+komoju_multipay.admin.config.label.order_number_format_tooltip: "Customize the order number sent to KOMOJU. Example: SHOP-{order_no}"
+
+komoju_multipay.admin.config.back: Plugin List
+komoju_multipay.badge.required: Required
+
+komoju_multipay.shopping.verify.error.payment_total.too_small: The payment amount is too small.
+komoju_multipay.shopping.verify.error.payment_total.too_much: The payment amount is too large.
+komoju_multipay.shopping.payment_failed: KOMOJU payment failed.
+komoju_multipay.shopping.payment_cancelled: Payment was cancelled.
+komoju_multipay.shopping.komoju_method_label: KOMOJU Payment
+komoju_multipay.shopping.not_enough_error: Insufficient balance.
+
+komoju_multipay.admin.config.connect_button: Connect to KOMOJU
+komoju_multipay.admin.config.connect_hint: Enter your secret key above, then click "Connect to KOMOJU" to fetch your available payment methods.
+komoju_multipay.admin.config.connect_failed: Failed to connect to KOMOJU. Please check your secret key.
+komoju_multipay.admin.config.refresh_methods: Refresh payment methods
+komoju_multipay.admin.config.save: Save
+komoju_multipay.admin.config.sync_in_progress: Connecting...
+komoju_multipay.admin.config.sync_complete: Connected. Reloading page...
+komoju_multipay.admin.order.refund_amount_placeholder: Refund amount
+komoju_multipay.admin.order.error.refund_failed: Refund failed.
+komoju_multipay.mail.refund_subject: KOMOJU Refund Notification
+komoju_multipay.error.bad_request: Bad request. The server cannot process the request.
+komoju_multipay.error.unauthorized: Authentication failed.
+komoju_multipay.error.not_found: Resource not found.
+komoju_multipay.error.internal_server_error: An internal error occurred.
+komoju_multipay.error.forbidden: Access to the resource is not allowed.
+komoju_multipay.error.unprocessable_entity: The request could not be processed due to invalid parameters.
+komoju_multipay.error.bad_gateway: The upstream gateway returned an error.
+komoju_multipay.error.gateway_timeout: A gateway timeout occurred while processing the payment. No charge was made. Please try again.
+komoju_multipay.error.service_unavailable: The service is under maintenance. Please try again later.
+komoju_multipay.error.request_failed: The request failed.
+komoju_multipay.error.invalid_payment_type: Invalid payment method.
+komoju_multipay.error.invalid_token: Invalid token value.
+komoju_multipay.error.invalid_currency: Invalid currency specified.
+komoju_multipay.error.not_refundable: This payment cannot be refunded.
+komoju_multipay.error.not_capturable: This payment cannot be captured.
+komoju_multipay.error.not_cancellable: This payment cannot be cancelled.
+komoju_multipay.error.not_chargebackable: This payment cannot be charged back.
+komoju_multipay.error.fraudulent: This payment is suspected of fraud.
+komoju_multipay.error.invalid_parameter: Invalid parameter value.
+komoju_multipay.error.missing_parameter: A required parameter is missing.
+komoju_multipay.error.insufficient_funds: Insufficient funds.
+komoju_multipay.error.used_number: This number has already been used.
+komoju_multipay.error.card_declined: The card was declined.
+komoju_multipay.error.invalid_password: Invalid password.
+komoju_multipay.error.bad_verification_value: Invalid security code.
+komoju_multipay.error.exceeds_limit: The transaction exceeds the allowed limit.
+komoju_multipay.error.card_expired: The card has expired.
+komoju_multipay.error.invalid_number: Invalid number specified.
+komoju_multipay.error.invalid_account: Invalid account.
+komoju_multipay.error.restricted_account: The account is restricted.
+komoju_multipay.error.other_error: A gateway error occurred.
+komoju_multipay.error.invalid_user_key: Invalid user key.
+komoju_multipay.error.other_invalid: Invalid card.
+komoju_multipay.error.too_many_requests: Too many requests. Please try again later.
+komoju_multipay.error.conflict: The request conflicts with the current state.
+komoju_multipay.error.payment_type_under_maintenance: This payment method is currently under maintenance.
+komoju_multipay.error.unknown_with_code: An error occurred (%code%).
+komoju_multipay.error.unknown: An unknown error occurred.

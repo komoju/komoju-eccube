@@ -1,0 +1,227 @@
+{% if komoju_order is defined %}
+<script type="text/javascript">
+    const formatter = new Intl.NumberFormat('ja-JP', {
+        style: 'currency',
+        currency: 'JPY',
+        minimumFractionDigits: 0
+    });
+    function post_to_url(path, params) {
+        method = "post";
+
+        var form = document.createElement("form");
+        form.setAttribute("method", method);
+        form.setAttribute("action", path);
+
+        for(var key in params) {
+            if(params.hasOwnProperty(key)) {
+                var hiddenField = document.createElement("input");
+                hiddenField.setAttribute("type", "hidden");
+                hiddenField.setAttribute("name", key);
+                hiddenField.setAttribute("value", params[key]);
+
+                form.appendChild(hiddenField);
+            }
+        }
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+    function isValidRefundAmount(value) {
+        return /^\d+$/.test(value) && parseInt(value, 10) > 0;
+    }
+    function refundConfirmDialog(){
+        var refund_option_val=$("#refund_option").val();
+        var refund_amount_val=$("#refund_amount").val();
+        if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && !isValidRefundAmount(refund_amount_val)){
+            alert('{{ 'komoju_multipay.admin.order.refund_amount.error.invalid'|trans }}');
+            $("#refund_amount").focus();
+            return false;
+        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && parseInt(refund_amount_val, 10)>{{ Order.payment_total }}){
+            alert('{{ 'komoju_multipay.admin.order.refund_amount.error.exceeded'|trans }}');
+            $("#refund_amount").focus();
+            return false;
+        }
+        var amount_to_display=formatter.format(refund_amount_val);        
+        if(refund_option_val=={{ REFUND_FULL_OPTION }}) {
+            amount_to_display ='{{ Order.getPaymentTotal|round(0, 'floor')|price }}';
+        }
+
+        if(confirm(amount_to_display+'{{ 'komoju_multipay.admin.order.refund_action_confirm'|trans }}')){
+            post_to_url('{{ url('Komoju_refund_transaction', { id : Order.id }) }}', {refund_option: refund_option_val, refund_amount: refund_amount_val, _token: '{{ csrf_token('Komoju_refund_' ~ Order.id) }}'});
+        } else {
+            return false;
+        }
+    }
+    $(function () {
+        $(".c-primaryCol div:first").after($('#komoju-details'));
+        $('#komoju-details [data-toggle="tooltip"]').tooltip();
+        $("#refund_option").on("change",function(){
+            if($(this).val()== {{ REFUND_PARTIAL_OPTION }}){
+                $("#refund_amount_contained").slideDown();
+            } else {
+                $("#refund_amount_contained").slideUp();
+            }
+        });
+    });
+</script>
+<style type="text/css">.ml-n-15 {margin-left: -15px;}</style>
+<div style="display: none;">
+    <div id="komoju-details" class="card rounded border-0 mb-4">
+        <div class="card-header">
+            <div class="row">
+                <div class="col-8">
+                    <div class="d-inline-block" data-toggle="tooltip" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.section_title_tooltip'|trans }}">
+                        <span class="card-title">{{ 'komoju_multipay.admin.order.section_title'|trans }}</span>
+                        <i class="fa fa-question-circle fa-lg ml-1"></i>
+                    </div>
+                </div>
+                <div class="col-4 text-right">
+                    <a data-toggle="collapse" href="#komojuPaymentOverview" aria-expanded="false" aria-controls="komojuPaymentOverview">
+                        <i class="fa fa-angle-up fa-lg"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="collapse show ec-cardCollapse" id="komojuPaymentOverview">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3" data-toggle="tooltip" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.charge_id_tooltip'|trans}}">{{ 'komoju_multipay.admin.order.charge_id'|trans}}<i class="fa fa-question-circle fa-lg ml-1"></i></div>
+                            <div class="col"> <a class="komojuPaymentID" href="{{ komoju_dashboard_link }}" target="_blank">{{ komoju_order.KomojuPaymentId }}</a></div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3">{{ 'admin.order.payment_total'|trans }}</div>
+                            <div class="col">{{ Order.payment_total|price }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3">{{ 'komoju_multipay.admin.order.order_number'|trans }}</div>
+                            <div class="col">{{ komoju_order_num }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <div class="row">
+                            <div class="col-3">{{ 'komoju_multipay.admin.order.status'|trans }}</div>
+                            <div class="col">
+                                {% if komoju_order.IsChargeRefunded %}
+                                    {% if komoju_order.refundedAmount >= Order.payment_total %}
+                                        <span class="badge badge-danger">{{ 'komoju_multipay.admin.order.status.fully_refunded'|trans }}</span>
+                                    {% else %}
+                                        <span class="badge badge-warning">{{ 'komoju_multipay.admin.order.status.partially_refunded'|trans({'%refunded%': komoju_order.refundedAmount|price, '%total%': Order.payment_total|price}) }}</span>
+                                    {% endif %}
+                                {% elseif komoju_order.Captured %}
+                                    <span class="badge badge-success">{{ 'komoju_multipay.admin.order.status.captured'|trans({'%date%': komoju_order.capturedAt|date('Y-m-d')}) }}</span>
+                                {% else %}
+                                    <span class="badge badge-info">{{ 'komoju_multipay.admin.order.status.authorized'|trans }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% if order_canceled == false %}
+                <div class="row">
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3">{{ 'komoju_multipay.admin.order.actions'|trans }}</div>
+                            <div class="col row ml-0">
+                                {% if komoju_order.Captured==false %}
+                                    <form method="post" action="{{ url('Komoju_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_multipay.admin.order.capture_action_confirm'|trans({'%charge_amount%':Order.getPaymentTotal|price })}}');">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('Komoju_capture_' ~ Order.id) }}">
+                                        <button type="submit" class="btn btn-ec-regular komoju_txn_action_btn">
+                                            {{ 'komoju_multipay.admin.order.capture_action'|trans }}
+                                        </button>
+                                    </form>
+                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.IsChargeRefunded==false %}
+                                    <div class="col-6 ml-n-15">
+                                        <select id="refund_option" class="form-control">
+                                            <option value="{{ REFUND_FULL_OPTION }}">{{ 'komoju_multipay.admin.order.refund_option.full_refund'|trans }}</option>                                            
+                                            <option value="{{ REFUND_PARTIAL_OPTION }}">{{ 'komoju_multipay.admin.order.refund_option.partial_refund'|trans }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <div id="refund_amount_contained" style="display: none;">
+                                            <input type="number" id="refund_amount" min="1" max="{{ Order.payment_total|round(0, 'floor') }}" placeholder="{{ 'komoju_multipay.admin.order.refund_amount_placeholder'|trans }}" class="form-control" />
+                                            <br/>
+                                        </div>
+                                        <a id="refund_btn" href="javascript:void(0);"  class="btn btn-ec-regular komoju_txn_action_btn" onclick="refundConfirmDialog();">{{ 'komoju_multipay.admin.order.refund_action'|trans }}</a>
+                                    </div>
+                                {% elseif komoju_order.IsChargeRefunded %}
+                                    <span style="background-color: #fff; color: #C04949; border-color: #C04949">{{ 'komoju_multipay.admin.order.status.refunded'|trans }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% if komoju_order.getIsChargeRefunded and komoju_order.getRefundedAmount>0 %}
+                    <div class="col-6">
+                        <div class="row mb-3">
+                            <div class="col-3">{{ 'komoju_multipay.admin.order.refunded_amount'|trans }}</div>
+                            <div class="col">{{ komoju_order.getRefundedAmount|price }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% if komoju_logs is defined and komoju_logs|length > 0 %}
+                <hr class="mt-1 mb-3">
+                <div class="row">
+                    <div class="col-12">
+                        <span class="font-weight-bold mb-2 d-block">{{ 'komoju_multipay.admin.order.event_log'|trans }}</span>
+                        <table class="table table-sm mb-0">
+                            <tbody>
+                                {% for log in komoju_logs %}
+                                <tr>
+                                    <td class="pl-3 text-muted" style="width: 140px; white-space: nowrap;">{{ log.createdAt|date('Y-m-d H:i') }}</td>
+                                    <td>
+                                        {% set msg = log.msg %}
+                                        {% set api = log.api %}
+                                        {% if msg starts with 'purchase completed' %}
+                                            <i class="fa fa-shopping-cart text-success ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.purchase_completed'|trans }}
+                                        {% elseif msg starts with 'payment captured' or msg starts with 'capture successful' %}
+                                            <i class="fa fa-check-circle text-success ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.captured'|trans }}
+                                        {% elseif msg starts with 'refund confirmed' or msg starts with 'refund successful' %}
+                                            {% set amount = msg|split('amount=')|last|split(')')|first %}
+                                            <i class="fa fa-undo text-warning ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.refunded'|trans({'%amount%': amount}) }}
+                                        {% elseif msg starts with 'already refunded externally' %}
+                                            {% set amount = msg|split('amount=')|last|split(')')|first %}
+                                            <i class="fa fa-undo text-warning ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.refunded_externally'|trans({'%amount%': amount}) }}
+                                        {% elseif msg starts with 'customer cancelled' %}
+                                            <i class="fa fa-times-circle text-secondary ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.customer_cancelled'|trans }}
+                                        {% elseif msg starts with 'payment cancelled' %}
+                                            <i class="fa fa-times-circle text-danger ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.cancelled'|trans }}
+                                        {% elseif msg starts with 'payment expired' %}
+                                            <i class="fa fa-clock text-secondary ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.expired'|trans }}
+                                        {% elseif msg starts with 'payment failed' %}
+                                            <i class="fa fa-exclamation-circle text-danger ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.failed'|trans }}
+                                        {% elseif msg starts with 'capture failed' %}
+                                            <i class="fa fa-exclamation-circle text-danger ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.capture_failed'|trans }}
+                                        {% elseif msg starts with 'rejected: already refunded' %}
+                                            <i class="fa fa-ban text-secondary ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.already_refunded'|trans }}
+                                        {% elseif msg starts with 'payment status changed to' %}
+                                            {% set status = msg|split('changed to ')|last %}
+                                            <i class="fa fa-info-circle text-info ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.status_changed'|trans({'%status%': status}) }}
+                                        {% elseif msg starts with 'failed' or msg starts with 'retrieve failed' %}
+                                            <i class="fa fa-exclamation-triangle text-danger ml-1"></i> {{ 'komoju_multipay.admin.order.timeline.error'|trans }}
+                                        {% else %}
+                                            <i class="fa fa-circle text-muted ml-1" style="font-size: 0.6em; vertical-align: middle;"></i> {{ msg }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

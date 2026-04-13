@@ -1,0 +1,248 @@
+{% extends '@admin/default_frame.twig' %}
+
+{% set menus = ['Komoju', 'Komoju_config'] %}
+
+{% block title %}{{ 'komoju_multipay.admin.config.title'|trans }}{% endblock %}
+{% block sub_title %}{{ 'komoju_multipay.admin.config.subtitle'|trans }}{% endblock %}
+
+
+{% block stylesheet %}
+
+{% endblock stylesheet %}
+
+{% block main %}
+
+{% form_theme form '@admin/Form/bootstrap_4_horizontal_layout.html.twig' %}
+
+    <form role="form" method="post">
+    {{ form_widget(form._token) }}
+        <div class="c-contentsArea__cols">
+            <div class="c-contentsArea__primaryCol">
+                <div class="c-primaryCol">
+                    <div class="card rounded border-0 mb-4">
+                        <div class="card-header"><span>{{ 'komoju_multipay.admin.config.header'|trans }}</span></div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:merchant_uuid'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.merchant_uuid) }}
+                                    {{ form_errors(form.merchant_uuid) }}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:secret_key'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.secret_key) }}
+                                    {{ form_errors(form.secret_key) }}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:publishable_key'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.publishable_key) }}
+                                    {{ form_errors(form.publishable_key) }}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.capture_on'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.capture_on) }}
+                                    {{ form_errors(form.capture_on) }}
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.komoju_pay_type'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {% if is_connected %}
+                                        <div id="komoju-pay-methods">
+                                            {% set komoju_pays_form = form.komoju_pays %}
+                                            {% for id, child in komoju_pays_form %}
+                                                <div class="form-check form-check-inline">
+                                                    <input type="checkbox"
+                                                        id="{{ child.vars.id}}"
+                                                        name="{{ child.vars.full_name}}"
+                                                        class="form-check-input"
+                                                        value="{{ child.vars.value }}" {{ komoju_pays_form.vars.checked[child.vars.value] ? "checked" : "" }}>
+                                                    <label class="form-check-label" for="{{ child.vars.id }}">{{ komoju_pays_form.vars.disp_name[child.vars.value] }}</label>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                        <div class="mt-2">
+                                            <button type="button" id="btn-sync-methods" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fas fa-sync-alt"></i> {{ 'komoju_multipay.admin.config.refresh_methods'|trans }}
+                                            </button>
+                                            <span id="sync-status" class="ml-2" style="display:none;"></span>
+                                        </div>
+                                    {% else %}
+                                        <p class="text-muted mb-2">{{ 'komoju_multipay.admin.config.connect_hint'|trans }}</p>
+                                        <button type="button" id="btn-connect-komoju" class="btn btn-primary">
+                                            <i class="fas fa-plug"></i> {{ 'komoju_multipay.admin.config.connect_button'|trans }}
+                                        </button>
+                                        <span id="sync-status" class="ml-2" style="display:none;"></span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="row mt-4">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:webhook_secret'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {# <span>{{ form.webhook_secret.vars.value }}</span> #}
+                                    {{ form_widget(form.webhook_secret, { 'attr' : { 'readonly' : true , 'style' : 'width:30%; display: inline;' } }) }}
+                                    {{ form_errors(form.webhook_secret) }}
+                                    <span class="clip-board-btn"><i class="fas fa-copy"></i></span>
+
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3"><span>{{ 'komoju_multipay.admin.config.label.webhook_url'|trans }}</span></div>
+                                <div class="col mb-2">
+                                    {{ url('Komoju42_webhook') }}
+                                    <div class="mt-2">
+                                    {{ 'komoju_multipay.admin.config.webhook_check_notice'|trans }}<br>
+                                    <a href="https://komoju.com/merchant/webhooks" target="_blank">{{ 'komoju_multipay.admin.config.webhook_dashboard'|trans }}</a><br><br>
+                                    {{ 'komoju_multipay.admin.config.webhook_events'|trans }}<br><br>
+                                    payment.refunded<br>
+                                    payment.captured<br>
+                                    payment.expired<br>
+                                    payment.failed<br>
+                                    payment.cancelled<br>
+                                    payment.updated
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row mt-4">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.logging_enabled'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    <input type="checkbox" id="{{ form.logging_enabled.vars.id }}" name="{{ form.logging_enabled.vars.full_name }}" class="form-check-input" style="margin-left: 0; position: static;" value="1" {{ form.logging_enabled.vars.checked is defined and form.logging_enabled.vars.checked ? 'checked="checked"' : '' }}>
+                                    <label class="form-check-label text-muted ml-1" for="{{ form.logging_enabled.vars.id }}">
+                                        {{ 'komoju_multipay.admin.config.label.logging_enabled_hint'|trans }}
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="row mt-4">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.log_retention_days'|trans }}</span>
+                                    <i class="fa fa-question-circle fa-lg ms-1" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ 'komoju_multipay.admin.config.label.log_retention_days_tooltip'|trans }}"></i>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.log_retention_days, { 'attr': { 'class': 'form-control', 'style': 'width:120px; display:inline-block;', 'placeholder': '90' } }) }}
+                                    <span class="ml-2 text-muted">{{ 'komoju_multipay.admin.config.label.log_retention_days_hint'|trans }}</span>
+                                    {{ form_errors(form.log_retention_days) }}
+                                </div>
+                            </div>
+                            <div class="row mt-4">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.order_number_format'|trans }}</span>
+                                    <i class="fa fa-question-circle fa-lg ms-1" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ 'komoju_multipay.admin.config.label.order_number_format_tooltip'|trans }}"></i>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.order_number_format, { 'attr': { 'class': 'form-control', 'style': 'width:50%; display:inline-block;', 'placeholder': '{order_no}' } }) }}
+                                    <div class="mt-1 text-muted">{{ 'komoju_multipay.admin.config.label.order_number_format_hint'|trans }}</div>
+                                    {{ form_errors(form.order_number_format) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="c-conversionArea">
+            <div class="c-conversionArea__container">
+                <div class="row justify-content-between align-items-center">
+                    <div class="col-6">
+                        <div class="c-conversionArea__leftBlockItem">
+                            <a class="c-beseLink"
+                                href="{{ url('admin_store_plugin') }}">
+                                <i class="fa fa-backward" aria-hidden="true"></i>
+                                <span>{{ 'komoju_multipay.admin.config.back'|trans }}</span>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="row align-items-center justify-content-end">
+                            <div class="col-auto">
+                                <button class="btn btn-ec-conversion px-5"
+                                        type="submit">{{ 'komoju_multipay.admin.config.save'|trans }}</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+<style>
+.clip-board-btn{
+    color: #53aee0
+}
+.clip-board-btn:hover{
+    color: #185d82
+}
+</style>
+<script>
+    $(function(){
+        {% if form.webhook_secret is defined %}
+        $(".clip-board-btn").click(function(){
+            var secret_box = document.getElementById("{{ form.webhook_secret.vars.id }}");
+            secret_box.select();
+            document.execCommand('Copy');
+        })
+        {% endif %}
+
+        function doSync(btn) {
+            var status = $("#sync-status");
+            var secretKey = $("#{{ form.secret_key.vars.id }}").val();
+            if (!secretKey) {
+                status.text("{{ 'komoju_multipay.admin.config.error.secret_key.empty'|trans }}").css("color", "red").show();
+                return;
+            }
+            btn.prop("disabled", true);
+            btn.find("i").addClass("fa-spin");
+            status.text("{{ 'komoju_multipay.admin.config.sync_in_progress'|trans }}").css("color", "").show();
+
+            $.ajax({
+                url: "{{ url('Komoju42_admin_sync_methods') }}",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ secret_key: secretKey }),
+                dataType: "json",
+                headers: { "X-CSRF-Token": $("input[name='Komoju_config[_token]']").val() },
+                success: function(data){
+                    status.text("{{ 'komoju_multipay.admin.config.sync_complete'|trans }}").css("color", "green");
+                    setTimeout(function(){ $("form[role='form']").submit(); }, 1000);
+                },
+                error: function(xhr){
+                    var msg = "{{ 'komoju_multipay.admin.config.connect_failed'|trans }}";
+                    if(xhr.responseJSON && xhr.responseJSON.message){
+                        msg = xhr.responseJSON.message;
+                    }
+                    status.text(msg).css("color", "red");
+                    btn.prop("disabled", false);
+                    btn.find("i").removeClass("fa-spin");
+                }
+            });
+        }
+
+        $("#btn-connect-komoju").click(function(){ doSync($(this)); });
+        $("#btn-sync-methods").click(function(){ doSync($(this)); });
+    });
+</script>
+{% endblock %}

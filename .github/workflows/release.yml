@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'komoju/v*'
+      - 'komoju42/v*'
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: 'Which plugin to build'
+        required: true
+        type: choice
+        options:
+          - komoju
+          - komoju42
+      version:
+        description: 'Version tag (e.g. 1.0.9)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Plugin Zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine plugin and version
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PLUGIN="${{ inputs.plugin }}"
+            VERSION="${{ inputs.version }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            PLUGIN="${TAG%%/v*}"
+            VERSION="${TAG#*/v}"
+          fi
+
+          if [ "$PLUGIN" = "komoju" ]; then
+            SOURCE_DIR="komoju-eccube-4-main"
+            ZIP_NAME="Komoju"
+          elif [ "$PLUGIN" = "komoju42" ]; then
+            SOURCE_DIR="komoju-eccube-4-4.2-main"
+            ZIP_NAME="Komoju42"
+          else
+            echo "Unknown plugin: $PLUGIN"
+            exit 1
+          fi
+
+          echo "plugin=$PLUGIN" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_dir=$SOURCE_DIR" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build zip
+        run: |
+          cd "${{ steps.meta.outputs.source_dir }}"
+          zip -r "../${{ steps.meta.outputs.zip_name }}.zip" . \
+            -x "tests/*" \
+            -x "phpunit.xml" \
+            -x ".gitignore"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.zip_name }}-${{ steps.meta.outputs.version }}
+          path: ${{ steps.meta.outputs.zip_name }}.zip
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.meta.outputs.zip_name }} v${{ steps.meta.outputs.version }}
+          files: ${{ steps.meta.outputs.zip_name }}.zip
