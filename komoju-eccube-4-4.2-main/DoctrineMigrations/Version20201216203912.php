@@ -12,21 +12,25 @@ final class Version20201216203912 extends AbstractMigration
 {
     public function up(Schema $schema) : void
     {
-        // this up() migration is auto-generated, please modify it to your needs
-        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'mysql', 'Migration can only be executed safely on \'mysql\'.');
+        if (!$schema->hasTable('plg_komoju_order')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_order');
 
         if(!$table->hasColumn('canceled_at')){
-            $this->addSql('ALTER TABLE plg_komoju_order ADD canceled_at DATETIME DEFAULT NULL COMMENT \'(DC2Type:datetimetz)\'');
+            $table->addColumn('canceled_at', 'datetimetz', ['notnull' => false, 'default' => null]);
         }
     }
 
     public function down(Schema $schema) : void
     {
+        if (!$schema->hasTable('plg_komoju_order')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_order');
 
         if($table->hasColumn('canceled_at')){
-            $this->addSql('ALTER TABLE plg_komoju_order DROP canceled_at');
+            $table->dropColumn('canceled_at');
         }
     }
 }

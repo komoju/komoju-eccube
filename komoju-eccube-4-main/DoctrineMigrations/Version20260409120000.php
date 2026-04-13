@@ -9,20 +9,25 @@ final class Version20260409120000 extends AbstractMigration
 {
     public function up(Schema $schema) : void
     {
-        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'mysql', 'Migration can only be executed safely on \'mysql\'.');
+        if (!$schema->hasTable('plg_komoju_multi_pays')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_multi_pays');
 
         if(!$table->hasColumn('payment_id')){
-            $this->addSql('ALTER TABLE plg_komoju_multi_pays ADD payment_id INT DEFAULT NULL');
+            $table->addColumn('payment_id', 'integer', ['notnull' => false, 'default' => null]);
         }
     }
 
     public function down(Schema $schema) : void
     {
+        if (!$schema->hasTable('plg_komoju_multi_pays')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_multi_pays');
 
         if($table->hasColumn('payment_id')){
-            $this->addSql('ALTER TABLE plg_komoju_multi_pays DROP payment_id');
+            $table->dropColumn('payment_id');
         }
     }
 }

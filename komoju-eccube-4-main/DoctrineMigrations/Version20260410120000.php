@@ -9,6 +9,9 @@ final class Version20260410120000 extends AbstractMigration
 {
     public function up(Schema $schema) : void
     {
+        if (!$schema->hasTable('plg_komoju_config')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_config');
 
         if (!$table->hasColumn('log_retention_days')) {
@@ -22,6 +25,9 @@ final class Version20260410120000 extends AbstractMigration
 
     public function down(Schema $schema) : void
     {
+        if (!$schema->hasTable('plg_komoju_config')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_config');
 
         if ($table->hasColumn('log_retention_days')) {

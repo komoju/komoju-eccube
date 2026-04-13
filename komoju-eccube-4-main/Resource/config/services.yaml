@@ -36,6 +36,15 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju.service.config'
 
+    Plugin\Komoju\Doctrine\EventSubscriber\OrderEventSubscriber:
+        public: true
+        class: Plugin\Komoju\Doctrine\EventSubscriber\OrderEventSubscriber
+        arguments:
+            - '@Doctrine\ORM\EntityManagerInterface'
+            - '@plg_Komoju.service.komoju_service'
+        tags:
+            - { name: doctrine.event_subscriber }
+
     Plugin\Komoju\EventListener\SqliteBusyTimeoutListener:
         public: true
         class: Plugin\Komoju\EventListener\SqliteBusyTimeoutListener

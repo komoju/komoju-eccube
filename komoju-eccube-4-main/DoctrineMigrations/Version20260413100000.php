@@ -9,6 +9,9 @@ final class Version20260413100000 extends AbstractMigration
 {
     public function up(Schema $schema) : void
     {
+        if (!$schema->hasTable('plg_komoju_log')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_log');
 
         if (!$table->hasColumn('is_protected')) {
@@ -18,6 +21,9 @@ final class Version20260413100000 extends AbstractMigration
 
     public function down(Schema $schema) : void
     {
+        if (!$schema->hasTable('plg_komoju_log')) {
+            return;
+        }
         $table = $schema->getTable('plg_komoju_log');
 
         if ($table->hasColumn('is_protected')) {
