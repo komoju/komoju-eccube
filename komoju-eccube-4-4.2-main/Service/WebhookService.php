@@ -157,21 +157,7 @@ class WebhookService{
         }
         $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::CANCEL);
         if ($this->order_state_machine->can($Order, $OrderStatus)) {
-            if ($OrderStatus->getId() == OrderStatus::DELIVERED) {
-
-                $allShipped = true;
-                foreach ($Order->getShippings() as $Ship) {
-                    if (!$Ship->isShipped()) {
-                        $allShipped = false;
-                        break;
-                    }
-                }
-                if ($allShipped) {
-                    $this->order_state_machine->apply($Order, $OrderStatus);
-                }
-            } else {
-                $this->order_state_machine->apply($Order, $OrderStatus);
-            }
+            $this->order_state_machine->apply($Order, $OrderStatus);
 
             foreach ($Order->getOrderItems() as $OrderItem) {
                 $ProductClass = $OrderItem->getProductClass();

@@ -110,7 +110,7 @@ class SessionReturnController extends AbstractController
         }
 
         $this->entityManager->persist($komoju_order);
-        $this->entityManager->flush();
+        $this->flushWithRetry();
 
         // Commit the purchase
         $this->purchase_flow->commit($Order, new PurchaseContext());
@@ -150,5 +150,19 @@ class SessionReturnController extends AbstractController
 
         $this->addFlash('eccube.front.shopping.error', trans('komoju_multipay.shopping.payment_cancelled'));
         return $this->redirectToRoute('shopping');
+    }
+
+    private function flushWithRetry($maxRetries = 3){
+        for ($i = 0; $i < $maxRetries; $i++) {
+            try {
+                $this->entityManager->flush();
+                return;
+            } catch (\Doctrine\DBAL\Exception\LockWaitTimeoutException $e) {
+                if ($i === $maxRetries - 1) {
+                    throw $e;
+                }
+                usleep(500000); // 500ms
+            }
+        }
     }
 }

@@ -114,6 +114,7 @@ class KomojuConfig
     }
     public function setMerchantUuid($merchant_uuid){
         $this->merchant_uuid = $merchant_uuid;
+        return $this;
     }
     public function isLoggingEnabled(){
         return $this->logging_enabled > 0;
