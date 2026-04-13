@@ -9,12 +9,12 @@ use Eccube\Repository\OrderRepository;
 use Eccube\Repository\Master\OrderStatusRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Plugin\Komoju42\Repository\KomojuOrderRepository;
-use Plugin\Komoju42\KomojuClient;
 use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Entity\KomojuPay;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\MailExService;
+use Plugin\Komoju42\Service\KomojuClientFactory;
 use Symfony\Component\Routing\Annotation\Route;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
@@ -31,6 +31,7 @@ class OrderController extends AbstractController{
     protected $log_service;
     protected $order_status_repo;
     protected $mail_ex_service;
+    protected $client_factory;
     /**
      * @var OrderStateMachine
      */
@@ -44,7 +45,8 @@ class OrderController extends AbstractController{
         KomojuOrderRepository $komoju_order_repo,
         ConfigService $configService,
         LogService $logService,
-        MailExService $mailExService
+        MailExService $mailExService,
+        KomojuClientFactory $clientFactory
     ){
         $this->entityManager = $entityManager;
         $this->orderStateMachine = $orderStateMachine;
@@ -54,6 +56,7 @@ class OrderController extends AbstractController{
         $this->config_service = $configService;
         $this->log_service = $logService;
         $this->mail_ex_service = $mailExService;
+        $this->client_factory = $clientFactory;
     }
     /**
      * @Route("/%eccube_admin_route%/Komoju42/payment/{id}/capture_transaction", requirements={"id" = "\d+"}, name="Komoju42_capture_transaction", methods={"POST"})
@@ -85,7 +88,7 @@ class OrderController extends AbstractController{
             $this->addError('komoju_multipay.admin.order.error.already_captured', 'admin');
             return $this->redirectToRoute('admin_order');
         }
-        $komoju_client = new KomojuClient($config['secret_key']);
+        $komoju_client = $this->client_factory->create($config['secret_key']);
         $payment_obj = $komoju_client->getPayment($komoju_order->getKomojuPaymentId());
         if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
             $this->addError($komoju_client->getLastError(), 'admin');
@@ -159,7 +162,7 @@ class OrderController extends AbstractController{
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
 
-            $komoju_client = new KomojuClient($config['secret_key']);
+            $komoju_client = $this->client_factory->create($config['secret_key']);
             $payment_obj = $komoju_client->getPayment($komoju_order->getKomojuPaymentId());
             if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
                 $this->addError($komoju_client->getLastError(), 'admin');

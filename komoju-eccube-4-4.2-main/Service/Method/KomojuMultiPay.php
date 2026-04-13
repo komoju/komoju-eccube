@@ -19,11 +19,11 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Eccube\Service\PurchaseFlow\PurchaseException;
-use Plugin\Komoju42\KomojuClient;
 use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Entity\KomojuPay;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
+use Plugin\Komoju42\Service\KomojuClientFactory;
 
 class KomojuMultiPay implements PaymentMethodInterface{
 
@@ -34,6 +34,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
     protected $order_status_repo;
     protected $requestStack;
     protected $router;
+    protected $client_factory;
 
     /**
      * Komoju multipay constructor
@@ -45,6 +46,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
      * @param ConfigService $configService
      * @param LogService $logService
      * @param UrlGeneratorInterface $router
+     * @param KomojuClientFactory $clientFactory
      */
 
     public function __construct(
@@ -55,7 +57,8 @@ class KomojuMultiPay implements PaymentMethodInterface{
         RequestStack $requestStack,
         ConfigService $configService,
         LogService $logService,
-        UrlGeneratorInterface $router
+        UrlGeneratorInterface $router,
+        KomojuClientFactory $clientFactory
     ){
         $this->eccubeConfig = $eccubeConfig;
         $this->entityManager = $entityManager;
@@ -65,6 +68,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $this->config_service = $configService;
         $this->log_service = $logService;
         $this->router = $router;
+        $this->client_factory = $clientFactory;
     }
     /**
      * @return PaymentResult
@@ -120,7 +124,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $this->purchase_flow->prepare($this->Order, new PurchaseContext());
 
         $config_data = $this->config_service->getConfigData($this->Order);
-        $komoju_client = new KomojuClient($config_data['secret_key']);
+        $komoju_client = $this->client_factory->create($config_data['secret_key']);
 
         $total_amount = $this->Order->getPaymentTotal();
         $currency_code = $this->Order->getCurrencyCode();

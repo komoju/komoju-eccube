@@ -13,17 +13,19 @@ use Plugin\Komoju\Entity\KomojuPay;
 use Plugin\Komoju\Entity\KomojuConfig;
 use Plugin\Komoju\Entity\KomojuLog;
 use Plugin\Komoju\Service\Method\KomojuMultiPay;
-use Plugin\Komoju\KomojuClient;
+use Plugin\Komoju\Service\KomojuClientFactory;
 
 class ConfigService{
     protected $eccubeConfig;
     protected $entityManager;
+    protected $client_factory;
 
     const MAIL_TEMPLATE_REFUND_REDIRECT = "KOMOJU Refund Notification";
 
-    public function __construct(EntityManagerInterface $entityManager, EccubeConfig $eccubeConfig){
+    public function __construct(EntityManagerInterface $entityManager, EccubeConfig $eccubeConfig, KomojuClientFactory $clientFactory = null){
         $this->entityManager = $entityManager;
         $this->eccubeConfig = $eccubeConfig;
+        $this->client_factory = $clientFactory ?: new KomojuClientFactory();
     }
 
     public function enablePlugin(){
@@ -104,7 +106,7 @@ class ConfigService{
             return false;
         }
 
-        $client = new KomojuClient($api_key);
+        $client = $this->client_factory->create($api_key);
         $response = $client->getPaymentMethods();
 
         if($client->getStatusCode() !== 200 || empty($response)){

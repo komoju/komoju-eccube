@@ -4,19 +4,21 @@ namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Plugin\Komoju42\Entity\KomojuOrder;
-use Plugin\Komoju42\KomojuClient;
 use Plugin\Komoju42\Service\Method\KomojuMultiPay;
 use Plugin\Komoju42\Service\ConfigService;
+use Plugin\Komoju42\Service\KomojuClientFactory;
 use Eccube\Entity\Payment;
 
 class KomojuService{
 
     protected $entityManager;
     protected $config_service;
+    protected $client_factory;
 
-    public function __construct(EntityManagerInterface $entityManager, ConfigService $configService){
+    public function __construct(EntityManagerInterface $entityManager, ConfigService $configService, KomojuClientFactory $clientFactory){
         $this->entityManager = $entityManager;
         $this->config_service = $configService;
+        $this->client_factory = $clientFactory;
     }
 
     public function cancelKomojuOrderByOrder($Order){
@@ -29,7 +31,7 @@ class KomojuService{
 
         $payment_id = $komoju_order->getKomojuPaymentId();
         $config_data = $this->config_service->getConfigData($Order);
-        $komoju_client = new KomojuClient($config_data['secret_key']);
+        $komoju_client = $this->client_factory->create($config_data['secret_key']);
         $payment_obj = $komoju_client->getPayment($payment_id);
         if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
             return;

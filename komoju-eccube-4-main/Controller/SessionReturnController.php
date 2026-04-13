@@ -8,10 +8,10 @@ use Eccube\Service\PurchaseFlow\PurchaseFlow;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Route;
 use Symfony\Component\HttpFoundation\Request;
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\Komoju\KomojuClient;
 use Plugin\Komoju\Entity\KomojuOrder;
 use Plugin\Komoju\Service\ConfigService;
 use Plugin\Komoju\Service\LogService;
+use Plugin\Komoju\Service\KomojuClientFactory;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 use Eccube\Service\CartService;
 
@@ -23,6 +23,7 @@ class SessionReturnController extends AbstractController
     protected $purchase_flow;
     protected $session;
     protected $cartService;
+    protected $client_factory;
 
     public function __construct(
         EntityManagerInterface $entityManager,
@@ -30,7 +31,8 @@ class SessionReturnController extends AbstractController
         LogService $logService,
         PurchaseFlow $shoppingPurchaseFlow,
         SessionInterface $session,
-        CartService $cartService
+        CartService $cartService,
+        KomojuClientFactory $clientFactory
     ){
         $this->entityManager = $entityManager;
         $this->config_service = $configService;
@@ -38,6 +40,7 @@ class SessionReturnController extends AbstractController
         $this->purchase_flow = $shoppingPurchaseFlow;
         $this->session = $session;
         $this->cartService = $cartService;
+        $this->client_factory = $clientFactory;
     }
 
     /**
@@ -68,7 +71,7 @@ class SessionReturnController extends AbstractController
         }
 
         $config_data = $this->config_service->getConfigData($Order);
-        $komoju_client = new KomojuClient($config_data['secret_key']);
+        $komoju_client = $this->client_factory->create($config_data['secret_key']);
         $session = $komoju_client->getSession($session_id);
 
         if($komoju_client->getStatusCode() != 200 || empty($session)){

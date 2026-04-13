@@ -1,10 +1,15 @@
 services:
+    Plugin\Komoju\Service\KomojuClientFactory:
+        public: true
+        class: Plugin\Komoju\Service\KomojuClientFactory
+
     plg_Komoju.service.config:
         public: true
         class: Plugin\Komoju\Service\ConfigService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Common\EccubeConfig'
+            - '@Plugin\Komoju\Service\KomojuClientFactory'
     plg_Komoju.service.komoju_log:
         public: true
         class: Plugin\Komoju\Service\LogService
@@ -35,6 +40,7 @@ services:
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju.service.config'
+            - '@Plugin\Komoju\Service\KomojuClientFactory'
 
     Plugin\Komoju\Doctrine\EventSubscriber\OrderEventSubscriber:
         public: true
@@ -62,6 +68,7 @@ services:
             - '@plg_Komoju.service.config'
             - '@plg_Komoju.service.komoju_log'
             - '@plg_Komoju.service.komoju_mail_service'
+            - '@Plugin\Komoju\Service\KomojuClientFactory'
         tags: ['controller.service_arguments']
 
     Plugin\Komoju\Controller\SessionReturnController:
@@ -72,7 +79,26 @@ services:
             - '@plg_Komoju.service.config'
             - '@plg_Komoju.service.komoju_log'
             - '@eccube.purchase.flow.shopping'
+            - '@session'
+            - '@Eccube\Service\CartService'
+            - '@Plugin\Komoju\Service\KomojuClientFactory'
         tags: ['controller.service_arguments']
+
+    Plugin\Komoju\Service\Method\KomojuMultiPay:
+        public: true
+        class: Plugin\Komoju\Service\Method\KomojuMultiPay
+        arguments:
+            - '@Eccube\Common\EccubeConfig'
+            - '@Doctrine\ORM\EntityManagerInterface'
+            - '@eccube.purchase.flow.shopping'
+            - '@Eccube\Repository\Master\OrderStatusRepository'
+            - '@Symfony\Component\HttpFoundation\RequestStack'
+            - '@plg_Komoju.service.config'
+            - '@plg_Komoju.service.komoju_log'
+            - '@Symfony\Component\Routing\Generator\UrlGeneratorInterface'
+            - '@Plugin\Komoju\Service\KomojuClientFactory'
+        tags:
+            - { name: eccube.payment.method }
 
     # FQCN aliases for type-hinted injection
     Plugin\Komoju\Service\ConfigService: '@plg_Komoju.service.config'

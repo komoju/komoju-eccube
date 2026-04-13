@@ -4,12 +4,17 @@ services:
         autoconfigure: true
         bind:
             $shoppingPurchaseFlow: '@eccube.purchase.flow.shopping'
+    Plugin\Komoju42\Service\KomojuClientFactory:
+        public: true
+        class: Plugin\Komoju42\Service\KomojuClientFactory
+
     plg_Komoju42.service.config:
         public: true
         class: Plugin\Komoju42\Service\ConfigService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Common\EccubeConfig'
+            - '@Plugin\Komoju42\Service\KomojuClientFactory'
     plg_Komoju42.service.komoju_log:
         public: true
         class: Plugin\Komoju42\Service\LogService
@@ -40,6 +45,7 @@ services:
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju42.service.config'
+            - '@Plugin\Komoju42\Service\KomojuClientFactory'
     Plugin\Komoju42\EventListener\SqliteBusyTimeoutListener:
         tags:
             - { name: doctrine.event_listener, event: postConnect }
