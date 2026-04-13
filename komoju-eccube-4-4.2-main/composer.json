@@ -1,6 +1,6 @@
 {
   "name": "ec-cube/Komoju42",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "KOMOJU決済プラグイン (4.2/4.3系)",
   "type": "eccube-plugin",
   "require": {
