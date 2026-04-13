@@ -1,6 +1,6 @@
 # KOMOJU Payment Plugin for EC-CUBE
 
-The official [KOMOJU](https://komoju.com) payment gateway plugin for [EC-CUBE](https://www.ec-cube.net), Japan's leading open-source e-commerce platform.
+The official [KOMOJU](https://komoju.com) payment gateway plugin for [EC-CUBE](https://www.ec-cube.net).
 
 Customers are redirected to KOMOJU's hosted payment page at checkout. Card data never touches your EC-CUBE server (PCI DSS compliant).
 
@@ -62,16 +62,6 @@ Payment methods enabled in your KOMOJU account are automatically synced to EC-CU
 Webhooks are verified using HMAC-SHA256 signature validation.
 
 ## Development
-
-There is no standalone build step. The plugins are Symfony bundles managed by EC-CUBE's plugin system.
-
-```bash
-# Install PHP dependencies (if working outside EC-CUBE)
-composer install
-
-# Regenerate autoload files
-composer dump-autoload
-```
 
 Plugin installation, enabling, and disabling are done through the EC-CUBE admin panel.
 
