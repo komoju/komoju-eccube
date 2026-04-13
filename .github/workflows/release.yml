@@ -63,7 +63,13 @@ jobs:
           zip -r "../${{ steps.meta.outputs.zip_name }}.zip" . \
             -x "tests/*" \
             -x "phpunit.xml" \
-            -x ".gitignore"
+            -x ".gitignore" \
+            -x "README.md" \
+            -x "README.txt" \
+            -x "CHANGELOG.txt" \
+            -x "TECHNICAL.md" \
+            -x "LICENSE.txt" \
+            -x "composer.lock"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
