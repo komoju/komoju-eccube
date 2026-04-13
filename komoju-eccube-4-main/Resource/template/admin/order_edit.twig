@@ -54,6 +54,7 @@
     }
     $(function () {
         $(".c-primaryCol div:first").after($('#komoju-details'));
+        $('#komoju-details [data-toggle="tooltip"]').tooltip();
         $("#refund_option").on("change",function(){
             if($(this).val()== {{ REFUND_PARTIAL_OPTION }}){
                 $("#refund_amount_contained").slideDown();
@@ -69,7 +70,7 @@
         <div class="card-header">
             <div class="row">
                 <div class="col-8">
-                    <div class="d-inline-block" data-tooltip="true" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.section_title_tooltip'|trans }}">
+                    <div class="d-inline-block" data-toggle="tooltip" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.section_title_tooltip'|trans }}">
                         <span class="card-title">{{ 'komoju_multipay.admin.order.section_title'|trans }}</span>
                         <i class="fa fa-question-circle fa-lg ml-1"></i>
                     </div>
@@ -86,7 +87,7 @@
                 <div class="row">
                     <div class="col-6">
                         <div class="row mb-3">
-                            <div class="col-3" data-tooltip="true" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.charge_id_tooltip'|trans}}">{{ 'komoju_multipay.admin.order.charge_id'|trans}}<i class="fa fa-question-circle fa-lg ml-1"></i></div>
+                            <div class="col-3" data-toggle="tooltip" data-placement="top" title="" data-original-title="{{ 'komoju_multipay.admin.order.charge_id_tooltip'|trans}}">{{ 'komoju_multipay.admin.order.charge_id'|trans}}<i class="fa fa-question-circle fa-lg ml-1"></i></div>
                             <div class="col"> <a class="komojuPaymentID" href="{{ komoju_dashboard_link }}" target="_blank">{{ komoju_order.KomojuPaymentId }}</a></div>
                         </div>
                     </div>

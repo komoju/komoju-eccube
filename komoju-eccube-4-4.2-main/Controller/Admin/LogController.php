@@ -119,10 +119,12 @@ class LogController extends AbstractController
             ->getQuery()
             ->execute();
 
-        $this->log_service->writeLog('admin', 0, "All logs cleared by admin ($count entries deleted)");
-
         $request->getSession()->remove('komoju_log_search');
-        $this->addSuccess('komoju_multipay.admin.log.delete_all.success');
+        if ($count > 0) {
+            $this->addSuccess('komoju_multipay.admin.log.delete_all.success');
+        } else {
+            $this->addWarning('komoju_multipay.admin.log.delete_all.nothing');
+        }
 
         return $this->redirectToRoute('Komoju42_admin_log');
     }

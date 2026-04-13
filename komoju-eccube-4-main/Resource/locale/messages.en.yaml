@@ -89,6 +89,7 @@ komoju_multipay.admin.log.export_csv: Export CSV
 komoju_multipay.admin.log.delete_all: Clear All Logs
 komoju_multipay.admin.log.delete_all.confirm: Are you sure you want to delete all logs? This cannot be undone.
 komoju_multipay.admin.log.delete_all.success: All logs have been deleted.
+komoju_multipay.admin.log.delete_all.nothing: No deletable logs found. Order timeline logs are protected.
 komoju_multipay.admin.config.label.log_retention_days: Log Retention Period
 komoju_multipay.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
 komoju_multipay.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.

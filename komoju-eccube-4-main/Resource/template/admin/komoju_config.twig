@@ -24,6 +24,16 @@
                         <div class="card-body">
                             <div class="row">
                                 <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label:merchant_uuid'|trans }}</span>
+                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.merchant_uuid) }}
+                                    {{ form_errors(form.merchant_uuid) }}
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-3">
                                     <span>{{ 'komoju_multipay.admin.config.label:secret_key'|trans }}</span>
                                     <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
                                 </div>
@@ -50,17 +60,6 @@
                                 <div class="col mb-2">
                                     {{ form_widget(form.capture_on) }}
                                     {{ form_errors(form.capture_on) }}
-                                </div>
-                            </div>
-
-                            <div class="row">
-                                <div class="col-3">
-                                    <span>{{ 'komoju_multipay.admin.config.label:merchant_uuid'|trans }}</span>
-                                    <span class="badge badge-primary ml-1">{{ 'komoju_multipay.badge.required'|trans }}</span>
-                                </div>
-                                <div class="col mb-2">
-                                    {{ form_widget(form.merchant_uuid) }}
-                                    {{ form_errors(form.merchant_uuid) }}
                                 </div>
                             </div>
 

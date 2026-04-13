@@ -89,6 +89,7 @@ komoju_multipay.admin.log.export_csv: CSVエクスポート
 komoju_multipay.admin.log.delete_all: ログを全件削除
 komoju_multipay.admin.log.delete_all.confirm: すべてのログを削除してよろしいですか？この操作は元に戻せません。
 komoju_multipay.admin.log.delete_all.success: すべてのログを削除しました。
+komoju_multipay.admin.log.delete_all.nothing: 削除対象のログがありません。注文タイムラインのログは保護されています。
 komoju_multipay.admin.config.label.log_retention_days: ログ保持期間
 komoju_multipay.admin.config.label.log_retention_days_hint: 日間（空欄の場合、ログを無期限に保持します）
 komoju_multipay.admin.config.label.log_retention_days_tooltip: ログページを表示した際に、設定した保持期間を超えた古いログが自動的に削除されます。
