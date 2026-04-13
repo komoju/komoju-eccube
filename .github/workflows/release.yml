@@ -57,19 +57,22 @@ jobs:
           echo "source_dir=$SOURCE_DIR" >> "$GITHUB_OUTPUT"
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Build zip
+      - name: Prepare plugin directory
         run: |
-          cd "${{ steps.meta.outputs.source_dir }}"
-          zip -r "../${{ steps.meta.outputs.zip_name }}.zip" . \
-            -x "tests/*" \
-            -x "phpunit.xml" \
-            -x ".gitignore"
+          mkdir -p staging
+          rsync -a --exclude='tests' --exclude='phpunit.xml' --exclude='.gitignore' \
+            "${{ steps.meta.outputs.source_dir }}/" staging/
+
+      - name: Build zip (for GitHub Release)
+        run: |
+          cd staging
+          zip -r "../${{ steps.meta.outputs.zip_name }}.zip" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.zip_name }}-${{ steps.meta.outputs.version }}
-          path: ${{ steps.meta.outputs.zip_name }}.zip
+          path: staging/*
 
       - name: Create GitHub Release
         if: github.event_name == 'push'
