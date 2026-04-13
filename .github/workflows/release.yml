@@ -19,6 +19,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Plugin Zip
@@ -59,13 +62,8 @@ jobs:
           cd "${{ steps.meta.outputs.source_dir }}"
           zip -r "../${{ steps.meta.outputs.zip_name }}.zip" . \
             -x "tests/*" \
-            -x "vendor/*" \
-            -x "composer.lock" \
             -x "phpunit.xml" \
-            -x ".phpunit.result.cache" \
-            -x ".gitignore" \
-            -x ".DS_Store" \
-            -x ".claude/*"
+            -x ".gitignore"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
