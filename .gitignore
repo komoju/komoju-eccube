@@ -2,3 +2,4 @@ CLAUDE.md
 .claude/
 vendor/
 composer.lock
+.DS_Store
