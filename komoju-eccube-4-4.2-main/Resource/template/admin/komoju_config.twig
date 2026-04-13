@@ -150,6 +150,17 @@
                                     {{ form_errors(form.log_retention_days) }}
                                 </div>
                             </div>
+                            <div class="row mt-4">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_multipay.admin.config.label.order_number_format'|trans }}</span>
+                                    <i class="fa fa-question-circle fa-lg ms-1" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ 'komoju_multipay.admin.config.label.order_number_format_tooltip'|trans }}"></i>
+                                </div>
+                                <div class="col mb-2">
+                                    {{ form_widget(form.order_number_format, { 'attr': { 'class': 'form-control', 'style': 'width:50%; display:inline-block;', 'placeholder': '{order_no}' } }) }}
+                                    <div class="mt-1 text-muted">{{ 'komoju_multipay.admin.config.label.order_number_format_hint'|trans }}</div>
+                                    {{ form_errors(form.order_number_format) }}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

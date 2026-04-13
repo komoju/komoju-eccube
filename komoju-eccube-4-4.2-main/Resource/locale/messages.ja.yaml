@@ -39,6 +39,7 @@ komoju_multipay.admin.order.actions: 決済操作
 komoju_multipay.admin.order.refund_option.full_refund: 全額返金
 komoju_multipay.admin.order.refund_option.partial_refund: 一部返金
 komoju_multipay.admin.order.refund_action: 払い戻し
+komoju_multipay.admin.order.order_number: 注文番号
 komoju_multipay.admin.order.event_log: イベントログ
 komoju_multipay.admin.order.status: 決済ステータス
 komoju_multipay.admin.order.status.authorized: オーソリ済み
@@ -93,6 +94,9 @@ komoju_multipay.admin.config.label.log_retention_days_hint: 日間（空欄の�
 komoju_multipay.admin.config.label.log_retention_days_tooltip: ログページを表示した際に、設定した保持期間を超えた古いログが自動的に削除されます。
 komoju_multipay.admin.config.label.logging_enabled: ログ記録を有効にする
 komoju_multipay.admin.config.label.logging_enabled_hint: 無効にすると、新しいログは記録されません。
+komoju_multipay.admin.config.label.order_number_format: 注文番号フォーマット
+komoju_multipay.admin.config.label.order_number_format_hint: "{order_no}で注文番号、{order_id}で内部IDに置換されます。空欄の場合はデフォルトの注文番号が使用されます。"
+komoju_multipay.admin.config.label.order_number_format_tooltip: "KOMOJUに送信する注文番号をカスタマイズします。例：SHOP-{order_no}"
 
 komoju_multipay.admin.config.back: プラグイン一覧
 komoju_multipay.badge.required: 必須

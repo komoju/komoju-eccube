@@ -16,13 +16,15 @@ class LogService{
         $this->entityManager = $entityManager;
     }
 
-    public function writeLog($api, $order_id, $msg){
-        if (!$this->configLoaded) {
-            $this->cachedConfig = $this->entityManager->getRepository(KomojuConfig::class)->findOneBy([]);
-            $this->configLoaded = true;
-        }
-        if ($this->cachedConfig && !$this->cachedConfig->isLoggingEnabled()) {
-            return;
+    public function writeLog($api, $order_id, $msg, $protected = false){
+        if (!$protected) {
+            if (!$this->configLoaded) {
+                $this->cachedConfig = $this->entityManager->getRepository(KomojuConfig::class)->findOneBy([]);
+                $this->configLoaded = true;
+            }
+            if ($this->cachedConfig && !$this->cachedConfig->isLoggingEnabled()) {
+                return;
+            }
         }
 
         $log = new KomojuLog;
@@ -30,6 +32,9 @@ class LogService{
         $log->setOrderId($order_id);
         $log->setMsg($msg);
         $log->setCreatedAt(new \DateTime());
+        if ($protected) {
+            $log->setIsProtected(true);
+        }
 
         $this->entityManager->persist($log);
         $this->entityManager->flush();

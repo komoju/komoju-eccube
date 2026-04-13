@@ -69,6 +69,13 @@ class KomojuConfig
      */
     private $logging_enabled = 1;
 
+    /**
+     * @var string|null
+     *
+     * @ORM\Column(name="order_number_format", type="string", length=255, nullable=true)
+     */
+    private $order_number_format;
+
     public function getWebhookSecret(){
         return $this->webhook_secret;
     }
@@ -120,6 +127,13 @@ class KomojuConfig
     }
     public function setLogRetentionDays($log_retention_days){
         $this->log_retention_days = $log_retention_days;
+        return $this;
+    }
+    public function getOrderNumberFormat(){
+        return $this->order_number_format;
+    }
+    public function setOrderNumberFormat($order_number_format){
+        $this->order_number_format = $order_number_format;
         return $this;
     }
 }

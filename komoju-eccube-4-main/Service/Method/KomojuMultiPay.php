@@ -146,7 +146,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
             'payment_types' => $enabled_methods,
             'payment_data' => [
                 'capture' => $config_data['capture_on'] ? 'auto' : 'manual',
-                'external_order_num' => (string)$this->Order->getOrderNo(),
+                'external_order_num' => $this->formatOrderNumber($config_data),
             ],
             'metadata' => [
                 'eccube_order_id' => (string)$this->Order->getId(),
@@ -205,5 +205,17 @@ class KomojuMultiPay implements PaymentMethodInterface{
      */
     public function setOrder(Order $order){
         $this->Order = $order;
+    }
+
+    private function formatOrderNumber($config_data){
+        $format = !empty($config_data['order_number_format']) ? $config_data['order_number_format'] : null;
+        if(empty($format)){
+            return (string)$this->Order->getOrderNo();
+        }
+        return str_replace(
+            ['{order_no}', '{order_id}'],
+            [(string)$this->Order->getOrderNo(), (string)$this->Order->getId()],
+            $format
+        );
     }
 }

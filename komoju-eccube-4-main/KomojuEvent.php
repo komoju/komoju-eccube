@@ -166,8 +166,27 @@ class KomojuEvent implements EventSubscriberInterface{
                 ->getResult();
             $event->setParameter('komoju_logs', $komoju_logs);
 
+            $event->setParameter('komoju_order_num', $this->formatOrderNumber($Order));
+
             $event->addSnippet("@Komoju/admin/order_edit.twig");
         }
+    }
+
+    private function formatOrderNumber($Order){
+        try {
+            $config_data = $this->config_service->getConfigData($Order);
+            $format = !empty($config_data['order_number_format']) ? $config_data['order_number_format'] : null;
+        } catch (\Exception $e) {
+            $format = null;
+        }
+        if (empty($format)) {
+            return (string)$Order->getOrderNo();
+        }
+        return str_replace(
+            ['{order_no}', '{order_id}'],
+            [(string)$Order->getOrderNo(), (string)$Order->getId()],
+            $format
+        );
     }
 
     private function getKomojuDashboardLink($komoju_payment_id){

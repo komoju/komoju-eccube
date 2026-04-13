@@ -39,6 +39,7 @@ komoju_multipay.admin.order.actions: Payment Actions
 komoju_multipay.admin.order.refund_option.full_refund: Full Refund
 komoju_multipay.admin.order.refund_option.partial_refund: Partial Refund
 komoju_multipay.admin.order.refund_action: Refund
+komoju_multipay.admin.order.order_number: Order Number
 komoju_multipay.admin.order.event_log: Event Log
 komoju_multipay.admin.order.status: Payment Status
 komoju_multipay.admin.order.status.authorized: Authorized
@@ -93,6 +94,9 @@ komoju_multipay.admin.config.label.log_retention_days_hint: days (leave blank to
 komoju_multipay.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
 komoju_multipay.admin.config.label.logging_enabled: Enable Logging
 komoju_multipay.admin.config.label.logging_enabled_hint: When disabled, no new log entries will be recorded.
+komoju_multipay.admin.config.label.order_number_format: Order Number Format
+komoju_multipay.admin.config.label.order_number_format_hint: "Use {order_no} for the order number, {order_id} for the internal ID. Leave blank to use the default order number."
+komoju_multipay.admin.config.label.order_number_format_tooltip: "Customize the order number sent to KOMOJU. Example: SHOP-{order_no}"
 
 komoju_multipay.admin.config.back: Plugin List
 komoju_multipay.badge.required: Required

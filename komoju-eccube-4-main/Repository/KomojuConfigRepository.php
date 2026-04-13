@@ -40,7 +40,8 @@ class KomojuConfigRepository extends AbstractRepository{
             'webhook_secret'    =>  $config_data->getWebhookSecret(),
             'capture_on'        =>  $config_data->isCaptureOn(),
             'log_retention_days' => $config_data->getLogRetentionDays(),
-            'logging_enabled' => $config_data->isLoggingEnabled()
+            'logging_enabled' => $config_data->isLoggingEnabled(),
+            'order_number_format' => $config_data->getOrderNumberFormat()
         ];
 
         $event = new EventArgs([

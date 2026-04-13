@@ -116,6 +116,7 @@ class LogController extends AbstractController
 
         $count = $this->entityManager->createQueryBuilder()
             ->delete('Plugin\Komoju\Entity\KomojuLog', 's')
+            ->where('s.is_protected = 0 OR s.is_protected IS NULL')
             ->getQuery()
             ->execute();
 
@@ -220,6 +221,7 @@ class LogController extends AbstractController
         $this->entityManager->createQueryBuilder()
             ->delete('Plugin\Komoju\Entity\KomojuLog', 's')
             ->where('s.created_at < :cutoff')
+            ->andWhere('s.is_protected = 0 OR s.is_protected IS NULL')
             ->setParameter('cutoff', $cutoff)
             ->getQuery()
             ->execute();

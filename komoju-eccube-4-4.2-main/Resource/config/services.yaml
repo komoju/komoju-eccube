@@ -40,6 +40,10 @@ services:
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju42.service.config'
+    Plugin\Komoju42\EventListener\SqliteBusyTimeoutListener:
+        tags:
+            - { name: doctrine.event_listener, event: postConnect }
+
     Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber:
         class: Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber
     Plugin\Komoju42\Service\Method\KomojuMultiPay:

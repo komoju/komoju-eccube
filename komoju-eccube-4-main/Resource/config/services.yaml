@@ -36,6 +36,12 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju.service.config'
 
+    Plugin\Komoju\EventListener\SqliteBusyTimeoutListener:
+        public: true
+        class: Plugin\Komoju\EventListener\SqliteBusyTimeoutListener
+        tags:
+            - { name: doctrine.event_listener, event: postConnect }
+
     Plugin\Komoju\Controller\Admin\OrderController:
         public: true
         class: Plugin\Komoju\Controller\Admin\OrderController

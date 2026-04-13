@@ -84,6 +84,10 @@ class KomojuConfigType extends AbstractType{
                 'constraints' => [
                     new Assert\PositiveOrZero(),
                 ],
+            ])
+            ->add('order_number_format', TextType::class, [
+                'required' => false,
+                'attr' => ['placeholder' => '{order_no}'],
             ]);
     }
 

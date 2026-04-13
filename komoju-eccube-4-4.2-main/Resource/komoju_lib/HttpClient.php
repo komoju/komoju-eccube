@@ -37,7 +37,7 @@ class HttpClient{
         \curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         \curl_setopt($ch, CURLOPT_URL, $url);
         \curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        \curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json', 'Content-Type: application/json'));
+        \curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json', 'Content-Type: application/json', 'KOMOJU-VIA: ec_cube'));
         \curl_setopt($ch, CURLOPT_VERBOSE, false);
         \curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $this->isSSL() ? 2 : 0);
         \curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $this->isSSL());

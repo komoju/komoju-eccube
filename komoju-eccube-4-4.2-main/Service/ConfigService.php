@@ -66,17 +66,23 @@ class ConfigService{
         }
 
         $config->setLoggingEnabled($newLoggingEnabled);
+        $config->setOrderNumberFormat(isset($config_data['order_number_format']) ? $config_data['order_number_format'] : null);
 
         $this->entityManager->persist($config);
         $this->entityManager->flush();
 
+        // Collect enabled IDs before sync (which may clear the identity map)
+        $enabledPayIds = [];
+        foreach($config_data['komoju_pays'] as $kp){
+            $enabledPayIds[] = $kp->getId();
+        }
+
         $this->syncPaymentMethods($config_data['secret_key']);
 
-        $komoju_pays = $config_data['komoju_pays'];
         $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
         $all_komoju_pays = $komoju_pay_repo->findBy([]);
         foreach($all_komoju_pays as $komoju_pay){
-            if($komoju_pays->contains($komoju_pay)){
+            if(in_array($komoju_pay->getId(), $enabledPayIds, true)){
                 $komoju_pay->setEnabled(true);
             }else{
                 $komoju_pay->setEnabled(false);
@@ -211,7 +217,7 @@ class ConfigService{
         }
         $this->entityManager->flush();
 
-        $this->hideOrphanedKomojuPayments();
+        $this->cleanupOrphanedPayments();
     }
 
     protected function linkPaymentToDeliveries(Payment $Payment){
@@ -242,23 +248,83 @@ class ConfigService{
         $this->entityManager->flush();
     }
 
-    protected function hideOrphanedKomojuPayments(){
-        $paymentRepository = $this->entityManager->getRepository(Payment::class);
-        $komoju_payments = $paymentRepository->findBy(['method_class' => KomojuMultiPay::class]);
-        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
-        $orderRepo = $this->entityManager->getRepository(\Eccube\Entity\Order::class);
+    private function getLinkedPaymentIds(){
+        $linked = [];
+        foreach($this->entityManager->getRepository(KomojuPay::class)->findBy([]) as $kp){
+            if($kp->getPayment()){
+                $linked[$kp->getPayment()->getId()] = true;
+            }
+        }
+        return $linked;
+    }
 
-        foreach($komoju_payments as $Payment){
-            $linked = $komoju_pay_repo->findOneBy(['Payment' => $Payment]);
-            if(!$linked){
-                $usedByOrder = $orderRepo->findOneBy(['Payment' => $Payment]);
-                if($usedByOrder){
-                    $Payment->setVisible(false);
-                    $this->entityManager->persist($Payment);
-                }else{
-                    $this->removePaymentOptions($Payment);
-                    $this->entityManager->remove($Payment);
-                }
+    protected function cleanupOrphanedPayments(){
+        $paymentRepository = $this->entityManager->getRepository(Payment::class);
+        $linkedPaymentIds = $this->getLinkedPaymentIds();
+
+        // Categorize all KOMOJU payments as active or orphaned (scalars only)
+        $activeIdByName = [];
+        $orphans = [];
+        foreach($paymentRepository->findBy(['method_class' => KomojuMultiPay::class]) as $Payment){
+            if(isset($linkedPaymentIds[$Payment->getId()])){
+                $activeIdByName[$Payment->getMethod()] = $Payment->getId();
+            }else{
+                $orphans[] = ['id' => $Payment->getId(), 'method' => $Payment->getMethod()];
+            }
+        }
+
+        // Phase 1: Migrate orphans that have an active equivalent (pure DQL, no entity state)
+        foreach($orphans as $orphan){
+            $activeId = isset($activeIdByName[$orphan['method']]) ? $activeIdByName[$orphan['method']] : null;
+            if(!$activeId){
+                continue;
+            }
+            $conn = $this->entityManager->getConnection();
+            try {
+                $conn->beginTransaction();
+                $this->entityManager->createQueryBuilder()
+                    ->update(\Eccube\Entity\Order::class, 'o')
+                    ->set('o.Payment', ':newId')
+                    ->where('o.Payment = :oldId')
+                    ->setParameter('newId', $activeId)
+                    ->setParameter('oldId', $orphan['id'])
+                    ->getQuery()
+                    ->execute();
+                $this->entityManager->createQueryBuilder()
+                    ->delete(PaymentOption::class, 'po')
+                    ->where('po.payment_id = :pid')
+                    ->setParameter('pid', $orphan['id'])
+                    ->getQuery()
+                    ->execute();
+                $this->entityManager->createQueryBuilder()
+                    ->delete(Payment::class, 'p')
+                    ->where('p.id = :pid')
+                    ->setParameter('pid', $orphan['id'])
+                    ->getQuery()
+                    ->execute();
+                $conn->commit();
+            } catch (\Exception $e) {
+                $conn->rollBack();
+                log_warning('KOMOJU: failed to migrate orphaned Payment id=' . $orphan['id'] . ': ' . $e->getMessage());
+            }
+        }
+
+        // Phase 2: Handle remaining orphans (no active equivalent) — fresh state after DQL
+        $this->entityManager->clear();
+        $linkedPaymentIds = $this->getLinkedPaymentIds();
+
+        $orderRepo = $this->entityManager->getRepository(\Eccube\Entity\Order::class);
+        foreach($paymentRepository->findBy(['method_class' => KomojuMultiPay::class]) as $Payment){
+            if(isset($linkedPaymentIds[$Payment->getId()])){
+                continue;
+            }
+            $usedByOrder = $orderRepo->findOneBy(['Payment' => $Payment]);
+            if($usedByOrder){
+                $Payment->setVisible(false);
+                $this->entityManager->persist($Payment);
+            }else{
+                $this->removePaymentOptions($Payment);
+                $this->entityManager->remove($Payment);
             }
         }
         $this->entityManager->flush();

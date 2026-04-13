@@ -41,6 +41,13 @@ class KomojuLog{
     private $msg;
 
     /**
+     * @var int
+     *
+     * @ORM\Column(name="is_protected", type="smallint", options={"default":0}, nullable=true)
+     */
+    private $is_protected = 0;
+
+    /**
      * @var \DateTime
      *
      * @ORM\Column(name="created_at", type="datetime")
@@ -77,5 +84,12 @@ class KomojuLog{
     }
     public function getCreatedAt(){
         return $this->created_at;
+    }
+    public function getIsProtected(){
+        return $this->is_protected;
+    }
+    public function setIsProtected($is_protected){
+        $this->is_protected = $is_protected ? 1 : 0;
+        return $this;
     }
 }

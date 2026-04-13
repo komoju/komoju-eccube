@@ -71,7 +71,7 @@ class WebhookService{
         $komoju_order->setRefundedAmount($refund_amount);
         $this->entityManager->persist($komoju_order);
 
-        $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$refund_amount)");
+        $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$refund_amount)", true);
 
         $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
         if ($this->order_state_machine->can($Order, $OrderStatus)) {
@@ -99,7 +99,7 @@ class WebhookService{
             $this->log_service->writeLog("webhook[captured]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
             return ;
         }
-        $this->log_service->writeLog("webhook[captured]", $order->getId(), "payment captured");
+        $this->log_service->writeLog("webhook[captured]", $order->getId(), "payment captured", true);
         $order->setPaymentDate($captured_at);
         $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::PAID);
         $order->setOrderStatus($OrderStatus);
@@ -121,7 +121,7 @@ class WebhookService{
             $this->log_service->writeLog("webhook[$tag]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
             return;
         }
-        $this->log_service->writeLog("webhook[$tag]", $order->getId(), $message);
+        $this->log_service->writeLog("webhook[$tag]", $order->getId(), $message, true);
         $this->cancelOrder($komoju_order);
     }
     public function paymentUpdated($object){
@@ -134,7 +134,7 @@ class WebhookService{
         if(in_array($status, ["expired", "cancelled"])){
             $order = $komoju_order->getOrder();
             if($order){
-                $this->log_service->writeLog("webhook[updated]", $order->getId(), "payment status changed to $status");
+                $this->log_service->writeLog("webhook[updated]", $order->getId(), "payment status changed to $status", true);
             }
             $this->cancelOrder($komoju_order);
         }

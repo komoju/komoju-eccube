@@ -111,7 +111,7 @@ class OrderController extends AbstractController{
         $this->entityManager->persist($komoju_order);
         $this->entityManager->flush();
         $this->setOrderStatus($Order, OrderStatus::PAID);
-        $this->log_service->writeLog("capture", $Order->getId(), "capture successful");
+        $this->log_service->writeLog("capture", $Order->getId(), "capture successful", true);
         $this->addSuccess('komoju_multipay.admin.order.capture_success', 'admin');
         return $this->redirectToRoute('admin_order_edit', ['id' =>  $Order->getId()]);
     }
@@ -147,7 +147,7 @@ class OrderController extends AbstractController{
 
         // check if already refunded
         if ($komoju_order->getIsChargeRefunded()) {
-            $this->log_service->writeLog("refund", $Order->getId(), "rejected: already refunded");
+            $this->log_service->writeLog("refund", $Order->getId(), "rejected: already refunded", true);
             $this->addError('komoju_multipay.admin.order.error.refunded', 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
@@ -185,7 +185,7 @@ class OrderController extends AbstractController{
             }
 
             $this->addError('komoju_multipay.admin.order.error.refunded', 'admin');
-            $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)");
+            $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)", true);
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
 
@@ -236,7 +236,7 @@ class OrderController extends AbstractController{
             if(isset($refund['redirect_url'])){
                 $this->mail_ex_service->sendRefundRedirectMail($Order, $refund['redirect_url']);
             }
-            $this->log_service->writeLog("refund", $Order->getId(), "refund successful (amount=$refund_amount)");
+            $this->log_service->writeLog("refund", $Order->getId(), "refund successful (amount=$refund_amount)", true);
             $this->addSuccess('komoju_multipay.admin.order.refund.success', 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }else{
