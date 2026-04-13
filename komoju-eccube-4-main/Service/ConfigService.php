@@ -310,25 +310,60 @@ class ConfigService{
             }
         }
 
-        // Phase 2: Handle remaining orphans (no active equivalent) — fresh state after DQL
-        $this->entityManager->clear();
-        $linkedPaymentIds = $this->getLinkedPaymentIds();
+        // Phase 2: Handle remaining orphans (no active equivalent) using DQL
+        // Re-query linked IDs from DB to get fresh state after Phase 1 DQL deletes
+        $linkedIds = $this->entityManager->createQueryBuilder()
+            ->select('IDENTITY(kp.Payment)')
+            ->from(KomojuPay::class, 'kp')
+            ->where('kp.Payment IS NOT NULL')
+            ->getQuery()
+            ->getSingleColumnResult();
+        $linkedIdSet = array_flip($linkedIds);
 
-        $orderRepo = $this->entityManager->getRepository(\Eccube\Entity\Order::class);
-        foreach($paymentRepository->findBy(['method_class' => KomojuMultiPay::class]) as $Payment){
-            if(isset($linkedPaymentIds[$Payment->getId()])){
+        $remainingPayments = $this->entityManager->createQueryBuilder()
+            ->select('p.id')
+            ->from(Payment::class, 'p')
+            ->where('p.method_class = :mc')
+            ->setParameter('mc', KomojuMultiPay::class)
+            ->getQuery()
+            ->getArrayResult();
+
+        foreach($remainingPayments as $row){
+            $pid = $row['id'];
+            if(isset($linkedIdSet[$pid])){
                 continue;
             }
-            $usedByOrder = $orderRepo->findOneBy(['Payment' => $Payment]);
-            if($usedByOrder){
-                $Payment->setVisible(false);
-                $this->entityManager->persist($Payment);
+            $usedByOrder = $this->entityManager->createQueryBuilder()
+                ->select('COUNT(o.id)')
+                ->from(\Eccube\Entity\Order::class, 'o')
+                ->where('o.Payment = :pid')
+                ->setParameter('pid', $pid)
+                ->getQuery()
+                ->getSingleScalarResult();
+            if($usedByOrder > 0){
+                $this->entityManager->createQueryBuilder()
+                    ->update(Payment::class, 'p')
+                    ->set('p.visible', ':vis')
+                    ->where('p.id = :pid')
+                    ->setParameter('vis', false)
+                    ->setParameter('pid', $pid)
+                    ->getQuery()
+                    ->execute();
             }else{
-                $this->removePaymentOptions($Payment);
-                $this->entityManager->remove($Payment);
+                $this->entityManager->createQueryBuilder()
+                    ->delete(PaymentOption::class, 'po')
+                    ->where('po.payment_id = :pid')
+                    ->setParameter('pid', $pid)
+                    ->getQuery()
+                    ->execute();
+                $this->entityManager->createQueryBuilder()
+                    ->delete(Payment::class, 'p')
+                    ->where('p.id = :pid')
+                    ->setParameter('pid', $pid)
+                    ->getQuery()
+                    ->execute();
             }
         }
-        $this->entityManager->flush();
     }
     private function insertMailTemplate(){
         $template_list = [
