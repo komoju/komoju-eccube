@@ -60,7 +60,16 @@ jobs:
       - name: Prepare plugin directory
         run: |
           mkdir -p staging
-          rsync -a --exclude='tests' --exclude='phpunit.xml' --exclude='.gitignore' \
+          rsync -a \
+            --exclude='tests' \
+            --exclude='phpunit.xml' \
+            --exclude='.gitignore' \
+            --exclude='README.md' \
+            --exclude='README.txt' \
+            --exclude='CHANGELOG.txt' \
+            --exclude='TECHNICAL.md' \
+            --exclude='LICENSE.txt' \
+            --exclude='composer.lock' \
             "${{ steps.meta.outputs.source_dir }}/" staging/
 
       - name: Build zip (for GitHub Release)
