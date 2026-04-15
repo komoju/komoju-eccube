@@ -7,7 +7,7 @@ use Eccube\Entity\Payment;
 
 /**
  * KomojuPay
- * @ORM\Table(name="plg_komoju_multi_pays")
+ * @ORM\Table(name="plg_komoju_payments")
  * @ORM\Entity(repositoryClass="Plugin\Komoju42\Repository\KomojuPayRepository")
  */
 

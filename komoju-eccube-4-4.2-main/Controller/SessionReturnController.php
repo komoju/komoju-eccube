@@ -50,7 +50,7 @@ class SessionReturnController extends AbstractController
         $session_id = $request->query->get('session_id');
         if(empty($session_id)){
             $this->log_service->writeLog("sessionReturn", 0, "no session_id in request");
-            $this->addFlash('eccube.front.shopping.error', trans('komoju_multipay.shopping.payment_failed'));
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
             return $this->redirectToRoute('shopping');
         }
 
@@ -59,14 +59,14 @@ class SessionReturnController extends AbstractController
 
         if(empty($komoju_order)){
             $this->log_service->writeLog("sessionReturn", 0, "no komoju_order found for session: $session_id");
-            $this->addFlash('eccube.front.shopping.error', trans('komoju_multipay.shopping.payment_failed'));
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
             return $this->redirectToRoute('shopping');
         }
 
         $Order = $komoju_order->getOrder();
         if(empty($Order)){
             $this->log_service->writeLog("sessionReturn", 0, "no EC-CUBE order for session: $session_id");
-            $this->addFlash('eccube.front.shopping.error', trans('komoju_multipay.shopping.payment_failed'));
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
             return $this->redirectToRoute('shopping');
         }
 
@@ -76,7 +76,7 @@ class SessionReturnController extends AbstractController
 
         if($komoju_client->getStatusCode() != 200 || empty($session)){
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to fetch session from KOMOJU API");
-            $this->addFlash('eccube.front.shopping.error', trans('komoju_multipay.shopping.payment_failed'));
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
             return $this->redirectToRoute('shopping');
         }
 
@@ -95,7 +95,7 @@ class SessionReturnController extends AbstractController
             $Order->setOrderStatus($OrderStatus);
             $this->entityManager->flush();
 
-            $this->addFlash('eccube.front.shopping.error', trans('komoju_multipay.shopping.payment_failed'));
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
             return $this->redirectToRoute('shopping');
         }
 
@@ -151,7 +151,7 @@ class SessionReturnController extends AbstractController
             }
         }
 
-        $this->addFlash('eccube.front.shopping.error', trans('komoju_multipay.shopping.payment_cancelled'));
+        $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_cancelled'));
         return $this->redirectToRoute('shopping');
     }
 

@@ -61,7 +61,7 @@ class ConfigController extends AbstractController
         }
 
         if(empty($secret_key)){
-            return new JsonResponse(['success' => false, 'message' => trans('komoju_multipay.admin.config.error.secret_key.empty')], 400);
+            return new JsonResponse(['success' => false, 'message' => trans('komoju_payment.admin.config.error.secret_key.empty')], 400);
         }
 
         try {
@@ -72,7 +72,7 @@ class ConfigController extends AbstractController
         if($result){
             return new JsonResponse(['success' => true, 'message' => 'Payment methods synced successfully.']);
         }
-        return new JsonResponse(['success' => false, 'message' => trans('komoju_multipay.admin.config.connect_failed')], 400);
+        return new JsonResponse(['success' => false, 'message' => trans('komoju_payment.admin.config.connect_failed')], 400);
     }
 
 }

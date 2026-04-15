@@ -1,6 +1,6 @@
 <?php
 
-namespace Plugin\Komoju\Service\Method;
+namespace Plugin\Komoju42\Service\Method;
 
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Master\OrderStatus;
@@ -16,16 +16,16 @@ use Eccube\Service\PurchaseFlow\PurchaseFlow;
 use Symfony\Component\Form\FormInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
-use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Eccube\Service\PurchaseFlow\PurchaseException;
-use Plugin\Komoju\Entity\KomojuOrder;
-use Plugin\Komoju\Entity\KomojuPay;
-use Plugin\Komoju\Service\ConfigService;
-use Plugin\Komoju\Service\LogService;
-use Plugin\Komoju\Service\KomojuClientFactory;
+use Plugin\Komoju42\Entity\KomojuOrder;
+use Plugin\Komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Service\ConfigService;
+use Plugin\Komoju42\Service\LogService;
+use Plugin\Komoju42\Service\KomojuClientFactory;
 
-class KomojuMultiPay implements PaymentMethodInterface{
+class KomojuPayment implements PaymentMethodInterface{
 
     protected $eccubeConfig;
     protected $entityManager;
@@ -37,8 +37,8 @@ class KomojuMultiPay implements PaymentMethodInterface{
     protected $client_factory;
 
     /**
-     * Komoju multipay constructor
-     * @param EccubeConfig @eccubeConfig
+     * Komoju payment constructor
+     * @param EccubeConfig $eccubeConfig
      * @param EntityManagerInterface $entityManager
      * @param PurchaseFlow $shoppingPurchaseFlow
      * @param OrderStatusRepository $order_status_repo
@@ -80,7 +80,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $config_data = $this->config_service->getConfigData($this->Order);
         if(empty($config_data['secret_key'])){
             $result->setSuccess(false);
-            $result->setErrors([trans('komoju_multipay.shopping.payment_failed')]);
+            $result->setErrors([trans('komoju_payment.shopping.payment_failed')]);
             return $result;
         }
 
@@ -89,7 +89,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
             ->findOneBy(['Payment' => $selectedPayment]);
         if(!$komojuPay){
             $result->setSuccess(false);
-            $result->setErrors([trans('komoju_multipay.shopping.payment_failed')]);
+            $result->setErrors([trans('komoju_payment.shopping.payment_failed')]);
             return $result;
         }
 
@@ -100,12 +100,12 @@ class KomojuMultiPay implements PaymentMethodInterface{
 
         if(null !== $min && $total < $min){
             $result->setSuccess(false);
-            $result->setErrors(['komoju_multipay.shopping.verify.error.payment_total.too_small']);
+            $result->setErrors(['komoju_payment.shopping.verify.error.payment_total.too_small']);
             return $result;
         }
         if(null !== $max && $total > $max){
             $result->setSuccess(false);
-            $result->setErrors(['komoju_multipay.shopping.verify.error.payment_total.too_much']);
+            $result->setErrors(['komoju_payment.shopping.verify.error.payment_total.too_much']);
             return $result;
         }
         $result->setSuccess(true);
@@ -138,8 +138,8 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $enabled_methods = $komojuPay ? [$komojuPay->getName()] : [];
         $locale = $this->requestStack->getCurrentRequest()->getLocale() ?: 'ja';
 
-        $return_url = $this->router->generate('Komoju_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
-        $cancel_url = $this->router->generate('Komoju_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
+        $return_url = $this->router->generate('Komoju42_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
+        $cancel_url = $this->router->generate('Komoju42_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
 
         $session_data = [
             'amount' => $total_amount,
@@ -160,7 +160,7 @@ class KomojuMultiPay implements PaymentMethodInterface{
         $session = $komoju_client->createSession($session_data);
 
         if($komoju_client->getStatusCode() != 200 || empty($session['id'])){
-            $error = $komoju_client->getLastError() ?: trans('komoju_multipay.shopping.payment_failed');
+            $error = $komoju_client->getLastError() ?: trans('komoju_payment.shopping.payment_failed');
             $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error");
 
             $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);

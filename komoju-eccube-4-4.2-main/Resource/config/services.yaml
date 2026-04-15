@@ -54,9 +54,9 @@ services:
         class: Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber
         tags:
             - { name: doctrine.event_subscriber }
-    Plugin\Komoju42\Service\Method\KomojuMultiPay:
+    Plugin\Komoju42\Service\Method\KomojuPayment:
         public: true
-        class: Plugin\Komoju42\Service\Method\KomojuMultiPay
+        class: Plugin\Komoju42\Service\Method\KomojuPayment
         tags:
             - { name: eccube.payment.method }
     Plugin\Komoju42\KomojuEvent:

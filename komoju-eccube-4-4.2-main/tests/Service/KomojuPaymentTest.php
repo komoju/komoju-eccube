@@ -7,7 +7,7 @@ use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
-use Plugin\Komoju42\Service\Method\KomojuMultiPay;
+use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Plugin\Komoju42\KomojuClient;
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Order;
@@ -22,7 +22,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use PHPUnit\Framework\TestCase;
 
-class KomojuMultiPayTest extends TestCase
+class KomojuPaymentTest extends TestCase
 {
     private $entityManager;
     private $configService;
@@ -32,7 +32,7 @@ class KomojuMultiPayTest extends TestCase
     private $requestStack;
     private $router;
     private $purchaseFlow;
-    private $multiPay;
+    private $payment;
 
     protected function setUp(): void
     {
@@ -45,7 +45,7 @@ class KomojuMultiPayTest extends TestCase
         $this->router = $this->createMock(UrlGeneratorInterface::class);
         $this->purchaseFlow = $this->createMock(PurchaseFlow::class);
 
-        $this->multiPay = new KomojuMultiPay(
+        $this->payment = new KomojuPayment(
             new EccubeConfig(),
             $this->entityManager,
             $this->purchaseFlow,
@@ -80,7 +80,7 @@ class KomojuMultiPayTest extends TestCase
     public function testVerifySuccess()
     {
         $order = $this->makeOrder(1000);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test']);
 
@@ -91,18 +91,18 @@ class KomojuMultiPayTest extends TestCase
         $repo->method('findOneBy')->willReturn($komojuPay);
         $this->entityManager->method('getRepository')->willReturn($repo);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertTrue($result->getSuccess());
     }
 
     public function testVerifyNoSecretKey()
     {
         $order = $this->makeOrder();
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => '']);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertFalse($result->getSuccess());
         $this->assertNotEmpty($result->getErrors());
     }
@@ -110,18 +110,18 @@ class KomojuMultiPayTest extends TestCase
     public function testVerifyNullSecretKey()
     {
         $order = $this->makeOrder();
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => null]);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertFalse($result->getSuccess());
     }
 
     public function testVerifyNoKomojuPay()
     {
         $order = $this->makeOrder();
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test']);
 
@@ -129,7 +129,7 @@ class KomojuMultiPayTest extends TestCase
         $repo->method('findOneBy')->willReturn(null);
         $this->entityManager->method('getRepository')->willReturn($repo);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertFalse($result->getSuccess());
     }
 
@@ -141,7 +141,7 @@ class KomojuMultiPayTest extends TestCase
         $payment->setRuleMax(null);
 
         $order = $this->makeOrder(100, $payment);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test']);
 
@@ -150,9 +150,9 @@ class KomojuMultiPayTest extends TestCase
         $repo->method('findOneBy')->willReturn($komojuPay);
         $this->entityManager->method('getRepository')->willReturn($repo);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertFalse($result->getSuccess());
-        $this->assertContains('komoju_multipay.shopping.verify.error.payment_total.too_small', $result->getErrors());
+        $this->assertContains('komoju_payment.shopping.verify.error.payment_total.too_small', $result->getErrors());
     }
 
     public function testVerifyAboveMaximum()
@@ -163,7 +163,7 @@ class KomojuMultiPayTest extends TestCase
         $payment->setRuleMax(500);
 
         $order = $this->makeOrder(1000, $payment);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test']);
 
@@ -172,9 +172,9 @@ class KomojuMultiPayTest extends TestCase
         $repo->method('findOneBy')->willReturn($komojuPay);
         $this->entityManager->method('getRepository')->willReturn($repo);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertFalse($result->getSuccess());
-        $this->assertContains('komoju_multipay.shopping.verify.error.payment_total.too_much', $result->getErrors());
+        $this->assertContains('komoju_payment.shopping.verify.error.payment_total.too_much', $result->getErrors());
     }
 
     public function testVerifyExactMinimumPasses()
@@ -185,7 +185,7 @@ class KomojuMultiPayTest extends TestCase
         $payment->setRuleMax(null);
 
         $order = $this->makeOrder(1000, $payment);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test']);
 
@@ -194,7 +194,7 @@ class KomojuMultiPayTest extends TestCase
         $repo->method('findOneBy')->willReturn($komojuPay);
         $this->entityManager->method('getRepository')->willReturn($repo);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertTrue($result->getSuccess());
     }
 
@@ -206,7 +206,7 @@ class KomojuMultiPayTest extends TestCase
         $payment->setRuleMax(null);
 
         $order = $this->makeOrder(99999, $payment);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test']);
 
@@ -215,7 +215,7 @@ class KomojuMultiPayTest extends TestCase
         $repo->method('findOneBy')->willReturn($komojuPay);
         $this->entityManager->method('getRepository')->willReturn($repo);
 
-        $result = $this->multiPay->verify();
+        $result = $this->payment->verify();
         $this->assertTrue($result->getSuccess());
     }
 
@@ -223,7 +223,7 @@ class KomojuMultiPayTest extends TestCase
 
     public function testCheckoutReturnsSuccess()
     {
-        $result = $this->multiPay->checkout();
+        $result = $this->payment->checkout();
         $this->assertTrue($result->getSuccess());
     }
 
@@ -232,7 +232,7 @@ class KomojuMultiPayTest extends TestCase
     public function testApplySuccess()
     {
         $order = $this->makeOrder(2000);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $pendingStatus = new OrderStatus();
         $pendingStatus->setId(OrderStatus::PENDING);
@@ -264,7 +264,7 @@ class KomojuMultiPayTest extends TestCase
 
         $this->entityManager->expects($this->atLeastOnce())->method('persist');
 
-        $dispatcher = $this->multiPay->apply();
+        $dispatcher = $this->payment->apply();
 
         $this->assertNotNull($dispatcher);
         $response = $dispatcher->getResponse();
@@ -274,7 +274,7 @@ class KomojuMultiPayTest extends TestCase
     public function testApplyApiFailureThrowsException()
     {
         $order = $this->makeOrder(2000);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $pendingStatus = new OrderStatus();
         $pendingStatus->setId(OrderStatus::PENDING);
@@ -307,13 +307,13 @@ class KomojuMultiPayTest extends TestCase
         $this->clientFactory->method('create')->willReturn($client);
 
         $this->expectException(PurchaseException::class);
-        $this->multiPay->apply();
+        $this->payment->apply();
     }
 
     public function testApplySessionMissingIdThrowsException()
     {
         $order = $this->makeOrder(2000);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $pendingStatus = new OrderStatus();
         $pendingStatus->setId(OrderStatus::PENDING);
@@ -346,13 +346,13 @@ class KomojuMultiPayTest extends TestCase
         $this->clientFactory->method('create')->willReturn($client);
 
         $this->expectException(PurchaseException::class);
-        $this->multiPay->apply();
+        $this->payment->apply();
     }
 
     public function testApplySendsCorrectPaymentType()
     {
         $order = $this->makeOrder(3000);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $pendingStatus = new OrderStatus();
         $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
@@ -385,7 +385,7 @@ class KomojuMultiPayTest extends TestCase
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
 
-        $this->multiPay->apply();
+        $this->payment->apply();
     }
 
     public function testApplyUsesCustomOrderNumberFormat()
@@ -393,7 +393,7 @@ class KomojuMultiPayTest extends TestCase
         $order = $this->makeOrder(1000);
         $order->setOrderNo('ORD-999');
         $order->setId(55);
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $pendingStatus = new OrderStatus();
         $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
@@ -423,14 +423,14 @@ class KomojuMultiPayTest extends TestCase
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
 
-        $this->multiPay->apply();
+        $this->payment->apply();
     }
 
     public function testApplyDefaultCurrencyWhenEmpty()
     {
         $order = $this->makeOrder(1000);
         $order->setCurrencyCode('');
-        $this->multiPay->setOrder($order);
+        $this->payment->setOrder($order);
 
         $pendingStatus = new OrderStatus();
         $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
@@ -460,6 +460,6 @@ class KomojuMultiPayTest extends TestCase
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
 
-        $this->multiPay->apply();
+        $this->payment->apply();
     }
 }

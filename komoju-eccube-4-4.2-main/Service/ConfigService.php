@@ -12,7 +12,7 @@ use Eccube\Common\EccubeConfig;
 use Plugin\Komoju42\Entity\KomojuPay;
 use Plugin\Komoju42\Entity\KomojuConfig;
 use Plugin\Komoju42\Entity\KomojuLog;
-use Plugin\Komoju42\Service\Method\KomojuMultiPay;
+use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 
 class ConfigService{
@@ -35,7 +35,7 @@ class ConfigService{
 
     public function disablePlugin(){
         $paymentRepository = $this->entityManager->getRepository(Payment::class);
-        $payments = $paymentRepository->findBy(['method_class' => KomojuMultiPay::class]);
+        $payments = $paymentRepository->findBy(['method_class' => KomojuPayment::class]);
         foreach($payments as $Payment){
             $Payment->setVisible(false);
             $this->entityManager->persist($Payment);
@@ -207,7 +207,7 @@ class ConfigService{
             $Payment->setSortNo($sortNo);
             $Payment->setVisible($komoju_pay->isEnabled());
             $Payment->setMethod($komoju_pay->getDispName());
-            $Payment->setMethodClass(KomojuMultiPay::class);
+            $Payment->setMethodClass(KomojuPayment::class);
             $this->entityManager->persist($Payment);
             $this->entityManager->flush();
 
@@ -275,7 +275,7 @@ class ConfigService{
         // Categorize all KOMOJU payments as active or orphaned (scalars only)
         $activeIdBySlug = [];
         $orphans = [];
-        foreach($paymentRepository->findBy(['method_class' => KomojuMultiPay::class]) as $Payment){
+        foreach($paymentRepository->findBy(['method_class' => KomojuPayment::class]) as $Payment){
             $slug = isset($slugByPaymentId[$Payment->getId()]) ? $slugByPaymentId[$Payment->getId()] : $Payment->getMethod();
             if(isset($linkedPaymentIds[$Payment->getId()])){
                 $activeIdBySlug[$slug] = $Payment->getId();
@@ -334,7 +334,7 @@ class ConfigService{
             ->select('p.id')
             ->from(Payment::class, 'p')
             ->where('p.method_class = :mc')
-            ->setParameter('mc', KomojuMultiPay::class)
+            ->setParameter('mc', KomojuPayment::class)
             ->getQuery()
             ->getArrayResult();
 
@@ -380,7 +380,7 @@ class ConfigService{
             [
                 'name'      =>  self::MAIL_TEMPLATE_REFUND_REDIRECT,
                 'file_name' =>  'Komoju42/Resource/template/mail/refund_redirect.twig',
-                'mail_subject'  => trans('komoju_multipay.mail.refund_subject'),
+                'mail_subject'  => trans('komoju_payment.mail.refund_subject'),
             ],
         ];
 

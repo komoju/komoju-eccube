@@ -134,7 +134,7 @@
 <script>
     $(function () {        
         var komoju_method = $("label[for='shopping_order_Payment_{{komoju_id}}'] span");
-        komoju_method.html(`{{ 'komoju_multipay.shopping.komoju_method_label'|trans }}（決済方法の詳細は<a class="komoju_method_detail">こちら</a>）`);
+        komoju_method.html(`{{ 'komoju_payment.shopping.komoju_method_label'|trans }}（決済方法の詳細は<a class="komoju_method_detail">こちら</a>）`);
 
         $(".komoju_method_detail").click(function(event){
             event.preventDefault();

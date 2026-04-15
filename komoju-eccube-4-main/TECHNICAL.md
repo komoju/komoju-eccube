@@ -28,7 +28,7 @@ Komoju EC-CUBE 4 プラグインは、EC-CUBE 4.0〜4.1に対応したKomoju決�
 - KomojuPay.php: 支払い情報エンティティ
 - KomojuLog.php: ログ管理エンティティ
 - KomojuConfigType.php: 設定フォームType
-- KomojuMultiPay.php: 複数決済方式の定義
+- KomojuPayment.php: 複数決済方式の定義
 
 ## 実装仕様
 - Komoju APIとの連携は `Resource/komoju_lib/` 配下の `KomojuApi.php` および `HttpClient.php` で実装。
@@ -38,7 +38,7 @@ Komoju EC-CUBE 4 プラグインは、EC-CUBE 4.0〜4.1に対応したKomoju決�
 - サービス定義は `Resource/config/services.yaml` で行い、DIコンテナで管理。
 
 ## 拡張ポイント
-- 決済方式追加: `Method/KomojuMultiPay.php` を拡張
+- 決済方式追加: `Method/KomojuPayment.php` を拡張
 - 管理画面拡張: `Controller/Admin/` 配下にコントローラ・Twigテンプレート追加
 - Webhookイベント拡張: `Resource/komoju_lib/WebhookEvent.php` を拡張
 
