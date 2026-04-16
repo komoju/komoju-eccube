@@ -22,14 +22,6 @@
             "Resource/komoju_lib/"
         ]
     },
-    "autoload-dev": {
-        "psr-4": {
-            "Tests\\Komoju42\\": "tests/"
-        },
-        "classmap": [
-            "tests/Stubs/"
-        ]
-    },
     "extra": {
         "code": "Komoju42"
     }
