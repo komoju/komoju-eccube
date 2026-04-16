@@ -4,7 +4,7 @@ namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Plugin\Komoju42\Entity\KomojuOrder;
-use Plugin\Komoju42\Service\Method\KomojuMultiPay;
+use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 use Eccube\Entity\Payment;

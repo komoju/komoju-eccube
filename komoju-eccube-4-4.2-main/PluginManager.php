@@ -136,7 +136,7 @@ class PluginManager extends AbstractPluginManager{
     public function disable(array $meta, ContainerInterface $container){
         $entityManager = $container->get('doctrine.orm.entity_manager');
         $paymentRepository = $entityManager->getRepository(Payment::class);
-        $payments = $paymentRepository->findBy(['method_class' => \Plugin\Komoju42\Service\Method\KomojuMultiPay::class]);
+        $payments = $paymentRepository->findBy(['method_class' => \Plugin\Komoju42\Service\Method\KomojuPayment::class]);
         foreach($payments as $Payment){
             $Payment->setVisible(false);
             $entityManager->persist($Payment);
@@ -153,7 +153,7 @@ class PluginManager extends AbstractPluginManager{
         $item = new MailTemplate();
         $item->setName("KOMOJU Refund Notification");
         $item->setFileName('Komoju42/Resource/template/mail/refund_redirect.twig');
-        $item->setMailSubject(trans('komoju_multipay.mail.refund_subject'));
+        $item->setMailSubject(trans('komoju_payment.mail.refund_subject'));
         $entityManager->persist($item);
         $entityManager->flush();
     }

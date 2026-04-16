@@ -10,7 +10,7 @@ use Eccube\Entity\Master\OrderStatus;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Doctrine\ORM\EntityManagerInterface;
-use Plugin\Komoju\Service\Method\KomojuMultiPay;
+use Plugin\Komoju\Service\Method\KomojuPayment;
 use Plugin\Komoju\Service\ConfigService;
 use Plugin\Komoju\Entity\KomojuOrder;
 use Plugin\Komoju\Entity\KomojuLog;
@@ -65,7 +65,7 @@ class KomojuEvent implements EventSubscriberInterface{
     public function onFrontShoppingCompleteInitialize(EventArgs $event){
         $Order=$event->getArgument('Order');
         if($Order) {
-            if ($Order->getPayment()->getMethodClass() === KomojuMultiPay::class) {
+            if ($Order->getPayment()->getMethodClass() === KomojuPayment::class) {
                 $komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
                 $komoju_order = $komoju_order_repo->findOneBy(array('Order'=>$Order));
                 if($komoju_order) {
@@ -134,7 +134,7 @@ class KomojuEvent implements EventSubscriberInterface{
         if(!$Order || empty($Order->getPayment())){
             return;
         }
-        if ($Order->getPayment()->getMethodClass() === KomojuMultiPay::class) {
+        if ($Order->getPayment()->getMethodClass() === KomojuPayment::class) {
             $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order]);
             if(empty($komoju_order)
                 || empty($komoju_order->getKomojuPaymentId())

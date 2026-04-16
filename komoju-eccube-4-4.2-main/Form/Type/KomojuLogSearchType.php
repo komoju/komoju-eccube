@@ -15,35 +15,35 @@ class KomojuLogSearchType extends AbstractType
         $builder
             ->add('order_id', TextType::class, [
                 'required' => false,
-                'label' => 'komoju_multipay.admin.log.search.order_id',
+                'label' => 'komoju_payment.admin.log.search.order_id',
             ])
             ->add('api', ChoiceType::class, [
                 'required' => false,
-                'label' => 'komoju_multipay.admin.log.search.api',
+                'label' => 'komoju_payment.admin.log.search.api',
                 'expanded' => false,
-                'placeholder' => 'komoju_multipay.admin.log.search.api.all',
+                'placeholder' => 'komoju_payment.admin.log.search.api.all',
                 'choices' => [
-                    'komoju_multipay.admin.log.search.api.webhook' => 'webhook',
-                    'komoju_multipay.admin.log.search.api.capture' => 'capture',
-                    'komoju_multipay.admin.log.search.api.refund' => 'refund',
-                    'komoju_multipay.admin.log.search.api.retrieve' => 'retrieve',
+                    'komoju_payment.admin.log.search.api.webhook' => 'webhook',
+                    'komoju_payment.admin.log.search.api.capture' => 'capture',
+                    'komoju_payment.admin.log.search.api.refund' => 'refund',
+                    'komoju_payment.admin.log.search.api.retrieve' => 'retrieve',
                 ],
             ])
             ->add('date_from', DateType::class, [
                 'required' => false,
-                'label' => 'komoju_multipay.admin.log.search.date_from',
+                'label' => 'komoju_payment.admin.log.search.date_from',
                 'widget' => 'single_text',
                 'input' => 'datetime',
             ])
             ->add('date_to', DateType::class, [
                 'required' => false,
-                'label' => 'komoju_multipay.admin.log.search.date_to',
+                'label' => 'komoju_payment.admin.log.search.date_to',
                 'widget' => 'single_text',
                 'input' => 'datetime',
             ])
             ->add('keyword', TextType::class, [
                 'required' => false,
-                'label' => 'komoju_multipay.admin.log.search.keyword',
+                'label' => 'komoju_payment.admin.log.search.keyword',
             ]);
     }
 }

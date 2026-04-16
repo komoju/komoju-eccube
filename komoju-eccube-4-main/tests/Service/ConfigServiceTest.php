@@ -6,7 +6,7 @@ use Plugin\Komoju\Entity\KomojuConfig;
 use Plugin\Komoju\Entity\KomojuPay;
 use Plugin\Komoju\Service\ConfigService;
 use Plugin\Komoju\Service\KomojuClientFactory;
-use Plugin\Komoju\Service\Method\KomojuMultiPay;
+use Plugin\Komoju\Service\Method\KomojuPayment;
 use Plugin\Komoju\KomojuClient;
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Payment;
@@ -157,7 +157,7 @@ class ConfigServiceTest extends TestCase
 
         $paymentRepo = $this->createMock(StubRepository::class);
         $paymentRepo->method('findBy')
-            ->with(['method_class' => KomojuMultiPay::class])
+            ->with(['method_class' => KomojuPayment::class])
             ->willReturn([$payment1, $payment2]);
 
         $this->entityManager->method('getRepository')

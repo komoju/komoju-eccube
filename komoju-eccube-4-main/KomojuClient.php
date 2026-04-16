@@ -65,15 +65,15 @@ class KomojuClient{
     public function getLastError(){
         if($this->api_obj){
             $error_code = $this->api_obj->getLastError();
-            $trans_key = 'komoju_multipay.error.' . $error_code;
+            $trans_key = 'komoju_payment.error.' . $error_code;
             $translated = trans($trans_key);
             if($translated !== $trans_key){
                 return $translated;
             }
             if(!empty($error_code)){
-                return trans('komoju_multipay.error.unknown_with_code', ['%code%' => $error_code]);
+                return trans('komoju_payment.error.unknown_with_code', ['%code%' => $error_code]);
             }
-            return trans('komoju_multipay.error.unknown');
+            return trans('komoju_payment.error.unknown');
         }
         return null;
     }

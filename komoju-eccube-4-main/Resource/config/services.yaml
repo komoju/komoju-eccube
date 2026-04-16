@@ -84,9 +84,9 @@ services:
             - '@Plugin\Komoju\Service\KomojuClientFactory'
         tags: ['controller.service_arguments']
 
-    Plugin\Komoju\Service\Method\KomojuMultiPay:
+    Plugin\Komoju\Service\Method\KomojuPayment:
         public: true
-        class: Plugin\Komoju\Service\Method\KomojuMultiPay
+        class: Plugin\Komoju\Service\Method\KomojuPayment
         arguments:
             - '@Eccube\Common\EccubeConfig'
             - '@Doctrine\ORM\EntityManagerInterface'

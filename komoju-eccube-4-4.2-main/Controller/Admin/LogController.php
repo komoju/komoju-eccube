@@ -109,7 +109,7 @@ class LogController extends AbstractController
     public function deleteAll(Request $request)
     {
         if (!$this->isCsrfTokenValid('komoju_log_delete_all', $request->request->get('_token'))) {
-            $this->addError('komoju_multipay.admin.order.error.invalid_request');
+            $this->addError('komoju_payment.admin.order.error.invalid_request');
             return $this->redirectToRoute('Komoju42_admin_log');
         }
 
@@ -121,9 +121,9 @@ class LogController extends AbstractController
 
         $request->getSession()->remove('komoju_log_search');
         if ($count > 0) {
-            $this->addSuccess('komoju_multipay.admin.log.delete_all.success');
+            $this->addSuccess('komoju_payment.admin.log.delete_all.success');
         } else {
-            $this->addWarning('komoju_multipay.admin.log.delete_all.nothing');
+            $this->addWarning('komoju_payment.admin.log.delete_all.nothing');
         }
 
         return $this->redirectToRoute('Komoju42_admin_log');
@@ -143,10 +143,10 @@ class LogController extends AbstractController
             fprintf($handle, "\xEF\xBB\xBF");
 
             fputcsv($handle, [
-                trans('komoju_multipay.admin.log.label.create_at'),
-                trans('komoju_multipay.admin.log.label.api'),
-                trans('komoju_multipay.admin.log.label.order_id'),
-                trans('komoju_multipay.admin.log.label.msg'),
+                trans('komoju_payment.admin.log.label.create_at'),
+                trans('komoju_payment.admin.log.label.api'),
+                trans('komoju_payment.admin.log.label.order_id'),
+                trans('komoju_payment.admin.log.label.msg'),
             ]);
 
             $results = $qb->setMaxResults(50000)->getQuery()->iterate();

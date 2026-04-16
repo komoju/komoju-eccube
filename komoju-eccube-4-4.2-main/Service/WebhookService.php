@@ -10,7 +10,7 @@ use Eccube\Common\EccubeConfig;
 use Plugin\Komoju42\Entity\KomojuPay;
 use Plugin\Komoju42\Entity\KomojuConfig;
 use Plugin\Komoju42\Entity\KomojuLog;
-use Plugin\Komoju42\Service\Method\KomojuMultiPay;
+use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Plugin\Komoju42\Repository\KomojuOrderRepository;
 use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Service\LogService;
