@@ -4,6 +4,10 @@ komoju_payment.admin.nav.log: ログ
 komoju_payment.admin.config.title: KOMOJU 設定
 komoju_payment.admin.config.subtitle: 設定
 komoju_payment.admin.config.header: 設定
+komoju_payment.admin.config.section.credentials: API認証情報
+komoju_payment.admin.config.section.payment: 決済設定
+komoju_payment.admin.config.section.webhook: Webhook設定
+komoju_payment.admin.config.section.advanced: ログ・詳細設定
 komoju_payment.admin.config.label:secret_key: 非公開鍵
 komoju_payment.admin.config.label:publishable_key: 公開用鍵
 komoju_payment.admin.config.label:merchant_uuid: クライアント UUID
@@ -17,7 +21,7 @@ komoju_payment.admin.config.label.komoju_pay_type: KOMOJU支払方法
 komoju_payment.admin.config.label.capture_on: 処理方法
 komoju_payment.admin.config.label.capture_on.auth_only: 認証のみ
 komoju_payment.admin.config.label.capture_on.auth_capture: 認証と売上処理
-komoju_payment.admin.config.label:webhook_secret: シークレットトークン
+komoju_payment.admin.config.label:webhook_secret: シークレットキー
 komoju_payment.admin.config.label.webhook_url: Webhook エンドポイントURL
 komoju_payment.admin.config.webhook_check_notice: KOMOJUダッシュボードからwebhookを登録してください。
 komoju_payment.admin.config.webhook_dashboard: KOMOJU管理画面を開く
@@ -113,6 +117,8 @@ komoju_payment.admin.config.connect_button: KOMOJUに接続
 komoju_payment.admin.config.connect_hint: 非公開鍵を入力してから「KOMOJUに接続」をクリックし、利用可能な決済方法を取得してください。
 komoju_payment.admin.config.connect_failed: KOMOJUへの接続に失敗しました。非公開鍵を確認してください。
 komoju_payment.admin.config.refresh_methods: 決済方法を更新
+komoju_payment.admin.config.payment_settings_hint: "決済方法の有効・無効は"
+komoju_payment.admin.config.payment_settings_link: 支払方法設定
 komoju_payment.admin.config.save: 登録
 komoju_payment.admin.config.sync_in_progress: 接続中...
 komoju_payment.admin.config.sync_complete: 接続完了。ページを再読み込みします...
