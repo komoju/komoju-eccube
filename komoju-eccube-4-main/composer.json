@@ -22,6 +22,11 @@
             "Resource/komoju_lib/"
         ]
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\Komoju\\": "tests/"
+        }
+    },
     "extra": {
         "code": "Komoju"
     }
