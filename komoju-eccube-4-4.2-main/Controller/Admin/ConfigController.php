@@ -10,6 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Doctrine\ORM\EntityManagerInterface;
 use Plugin\Komoju42\Service\ConfigService;
+use Plugin\Komoju42\Entity\KomojuPay;
 use Plugin\Komoju42\Form\Type\KomojuConfigType;
 
 class ConfigController extends AbstractController
@@ -34,9 +35,12 @@ class ConfigController extends AbstractController
             $this->config_service->saveConfig($config_data);
         }
 
+        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
+
         return [
             'form' => $form->createView(),
             'is_connected' => $this->config_service->hasPaymentMethods(),
+            'komoju_pays' => $komoju_pay_repo->findBy([], ['sort_no' => 'ASC']),
         ];
     }
     /**
