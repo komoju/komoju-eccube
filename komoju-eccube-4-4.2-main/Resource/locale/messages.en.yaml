@@ -4,6 +4,10 @@ komoju_payment.admin.nav.log: Logs
 komoju_payment.admin.config.title: KOMOJU Settings
 komoju_payment.admin.config.subtitle: Settings
 komoju_payment.admin.config.header: Settings
+komoju_payment.admin.config.section.credentials: API Credentials
+komoju_payment.admin.config.section.payment: Payment Settings
+komoju_payment.admin.config.section.webhook: Webhook Configuration
+komoju_payment.admin.config.section.advanced: Logging & Advanced
 komoju_payment.admin.config.label:secret_key: Secret Key
 komoju_payment.admin.config.label:publishable_key: Publishable Key
 komoju_payment.admin.config.label:merchant_uuid: Merchant UUID
@@ -113,6 +117,8 @@ komoju_payment.admin.config.connect_button: Connect to KOMOJU
 komoju_payment.admin.config.connect_hint: Enter your secret key above, then click "Connect to KOMOJU" to fetch your available payment methods.
 komoju_payment.admin.config.connect_failed: Failed to connect to KOMOJU. Please check your secret key.
 komoju_payment.admin.config.refresh_methods: Refresh payment methods
+komoju_payment.admin.config.payment_settings_hint: "To enable or disable payment methods, go to "
+komoju_payment.admin.config.payment_settings_link: Payment Method Settings
 komoju_payment.admin.config.save: Save
 komoju_payment.admin.config.sync_in_progress: Connecting...
 komoju_payment.admin.config.sync_complete: Connected. Reloading page...

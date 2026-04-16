@@ -8,16 +8,20 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Doctrine\ORM\EntityManagerInterface;
 use Plugin\Komoju\Service\ConfigService;
 use Plugin\Komoju\Repository\KomojuConfigRepository;
+use Plugin\Komoju\Entity\KomojuPay;
 use Plugin\Komoju\Form\Type\KomojuConfigType;
 
 class ConfigController extends AbstractController
 {
+    protected $entityManager;
     protected $config_service;
     protected $komoju_config_repo;
 
-    public function __construct(ConfigService $configService, KomojuConfigRepository $komoju_config_repo){
+    public function __construct(EntityManagerInterface $entityManager, ConfigService $configService, KomojuConfigRepository $komoju_config_repo){
+        $this->entityManager = $entityManager;
         $this->config_service = $configService;
         $this->komoju_config_repo = $komoju_config_repo;
     }
@@ -34,9 +38,12 @@ class ConfigController extends AbstractController
             $this->config_service->saveConfig($config_data);
         }
 
+        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
+
         return [
             'form' => $form->createView(),
             'is_connected' => $this->config_service->hasPaymentMethods(),
+            'komoju_pays' => $komoju_pay_repo->findBy([], ['sort_no' => 'ASC']),
         ];
     }
     /**

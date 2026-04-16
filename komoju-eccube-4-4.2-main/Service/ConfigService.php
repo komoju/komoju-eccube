@@ -73,32 +73,7 @@ class ConfigService{
         $this->entityManager->persist($config);
         $this->entityManager->flush();
 
-        // Collect enabled IDs before sync (which may clear the identity map)
-        $enabledPayIds = [];
-        foreach($config_data['komoju_pays'] as $kp){
-            $enabledPayIds[] = $kp->getId();
-        }
-
         $this->syncPaymentMethods($config_data['secret_key']);
-
-        $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
-        $all_komoju_pays = $komoju_pay_repo->findBy([]);
-        foreach($all_komoju_pays as $komoju_pay){
-            if(in_array($komoju_pay->getId(), $enabledPayIds, true)){
-                $komoju_pay->setEnabled(true);
-            }else{
-                $komoju_pay->setEnabled(false);
-            }
-            $this->entityManager->persist($komoju_pay);
-
-            $Payment = $komoju_pay->getPayment();
-            if($Payment){
-                $Payment->setVisible($komoju_pay->isEnabled());
-                $this->entityManager->persist($Payment);
-            }
-        }
-        $this->entityManager->flush();
-        return;
     }
     public function syncPaymentMethods($api_key){
         if(empty($api_key)){

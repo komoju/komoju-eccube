@@ -2,7 +2,6 @@
 
 namespace Plugin\Komoju\Form\Type;
 
-use Plugin\Komoju\Entity\KomojuPay;
 use Plugin\Komoju\Entity\KomojuConfig;
 use Symfony\Component\Form\AbstractType;
 use Symfony\Component\Form\FormBuilderInterface;
@@ -66,12 +65,6 @@ class KomojuConfigType extends AbstractType{
                     'komoju_payment.admin.config.label.capture_on.auth_only' => false,
                     'komoju_payment.admin.config.label.capture_on.auth_capture' => true,
                 ]
-            ])
-            ->add('komoju_pays', KomojuPayType::class, [
-                'required' => true,
-                'label' => 'komoju_payment.admin.config.label.komoju_pay_type',
-                'expanded' => true,
-                'multiple' => true,
             ])
             ->add('webhook_secret', TextType::class, [
                 'required'  =>  false,
