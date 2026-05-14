@@ -72,10 +72,11 @@ jobs:
             --exclude='composer.lock' \
             "${{ steps.meta.outputs.source_dir }}/" staging/
 
-      - name: Build zip (for GitHub Release)
+      - name: Build archives (for GitHub Release)
         run: |
           cd staging
           zip -r "../${{ steps.meta.outputs.zip_name }}.zip" .
+          tar czf "../${{ steps.meta.outputs.zip_name }}.tar.gz" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -88,4 +89,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.meta.outputs.zip_name }} v${{ steps.meta.outputs.version }}
-          files: ${{ steps.meta.outputs.zip_name }}.zip
+          files: |
+            ${{ steps.meta.outputs.zip_name }}.zip
+            ${{ steps.meta.outputs.zip_name }}.tar.gz
