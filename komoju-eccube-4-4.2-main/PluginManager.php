@@ -200,32 +200,70 @@ class PluginManager extends AbstractPluginManager{
         $conn = $container->get('doctrine.orm.entity_manager')->getConnection();
 
         try {
-            // Backup plg_komoju_order
-            if ($this->tableExists($conn, 'plg_komoju_order')) {
-                $conn->executeStatement('DROP TABLE IF EXISTS ' . self::BACKUP_ORDER_TABLE);
-                $conn->executeStatement(
-                    'CREATE TABLE ' . self::BACKUP_ORDER_TABLE . ' AS SELECT * FROM plg_komoju_order'
-                );
-            }
-
-            // Backup plg_komoju_config
-            if ($this->tableExists($conn, 'plg_komoju_config')) {
-                $conn->executeStatement('DROP TABLE IF EXISTS ' . self::BACKUP_CONFIG_TABLE);
-                $conn->executeStatement(
-                    'CREATE TABLE ' . self::BACKUP_CONFIG_TABLE . ' AS SELECT * FROM plg_komoju_config'
-                );
-            }
-
-            // Backup plg_komoju_payments (includes payment_id mapping)
-            if ($this->tableExists($conn, 'plg_komoju_payments')) {
-                $conn->executeStatement('DROP TABLE IF EXISTS ' . self::BACKUP_PAYMENTS_TABLE);
-                $conn->executeStatement(
-                    'CREATE TABLE ' . self::BACKUP_PAYMENTS_TABLE . ' AS SELECT * FROM plg_komoju_payments'
-                );
-            }
+            $this->backupTable($conn, 'plg_komoju_order', self::BACKUP_ORDER_TABLE);
+            $this->backupTable($conn, 'plg_komoju_config', self::BACKUP_CONFIG_TABLE);
+            $this->backupTable($conn, 'plg_komoju_payments', self::BACKUP_PAYMENTS_TABLE);
         } catch (\Exception $e) {
             log_error('KOMOJU: backup failed during uninstall: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Backup a table by creating a new table with safe column types.
+     * Uses TEXT/INTEGER only to avoid Doctrine schema introspection errors
+     * (e.g., SQLite's NUM type from NUMERIC columns is unrecognized by Doctrine).
+     */
+    private function backupTable(Connection $conn, string $sourceTable, string $backupTable){
+        if (!$this->tableExists($conn, $sourceTable)) {
+            return;
+        }
+
+        $conn->executeStatement('DROP TABLE IF EXISTS ' . $backupTable);
+
+        $columns = $this->getTableColumns($conn, $sourceTable);
+        if (empty($columns)) {
+            return;
+        }
+
+        // Build CREATE TABLE with safe types: INTEGER for int-like, TEXT for everything else
+        $colDefs = [];
+        foreach ($columns as $col) {
+            $type = strtoupper($col['type']);
+            if (preg_match('/INT/', $type)) {
+                $colDefs[] = $col['name'] . ' INTEGER';
+            } else {
+                $colDefs[] = $col['name'] . ' TEXT';
+            }
+        }
+
+        $conn->executeStatement(
+            'CREATE TABLE ' . $backupTable . ' (' . implode(', ', $colDefs) . ')'
+        );
+        $conn->executeStatement(
+            'INSERT INTO ' . $backupTable . ' SELECT * FROM ' . $sourceTable
+        );
+    }
+
+    /**
+     * Get column info from a table, compatible with SQLite and MySQL.
+     * Returns array of ['name' => ..., 'type' => ...]
+     */
+    private function getTableColumns(Connection $conn, string $tableName): array{
+        $platform = $conn->getDatabasePlatform();
+
+        if ($platform instanceof \Doctrine\DBAL\Platforms\SqlitePlatform) {
+            $rows = $conn->fetchAllAssociative("PRAGMA table_info($tableName)");
+            return array_map(function($row) {
+                return ['name' => $row['name'], 'type' => $row['type']];
+            }, $rows);
+        }
+
+        // MySQL / PostgreSQL
+        $rows = $conn->fetchAllAssociative(
+            "SELECT COLUMN_NAME as name, DATA_TYPE as type FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+            [$tableName]
+        );
+        return $rows;
     }
 
     /**
