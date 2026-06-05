@@ -79,9 +79,44 @@ class WebhookService{
         }
         $this->entityManager->flush();
     }
+    public function paymentAuthorized($object){
+        $komoju_payment_id = $object->data->id;
+        $komoju_order = $this->findKomojuOrder($object);
+        if(empty($komoju_order)){
+            $this->log_service->writeLog("webhook[authorized]", 0, "no order found for payment: $komoju_payment_id");
+            return;
+        }
+
+        // Populate payment ID if not already set (customer didn't return via session_return)
+        if(empty($komoju_order->getKomojuPaymentId())){
+            $komoju_order->setKomojuPaymentId($komoju_payment_id);
+            if(isset($object->data->payment_details->type)){
+                $komoju_order->setType($object->data->payment_details->type);
+            }
+            $this->entityManager->persist($komoju_order);
+        }
+
+        $order = $komoju_order->getOrder();
+        if(empty($order)){
+            $this->log_service->writeLog("webhook[authorized]", 0, "no EC-CUBE order for payment: $komoju_payment_id");
+            return;
+        }
+
+        $this->log_service->writeLog("webhook[authorized]", $order->getId(), "payment authorized", true);
+
+        // If order is still in pending/processing state, move to NEW so it appears in admin
+        $currentStatus = $order->getOrderStatus()->getId();
+        if(in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
+            $order->setOrderStatus($OrderStatus);
+            $this->entityManager->persist($order);
+        }
+        $this->entityManager->flush();
+    }
+
     public function paymentCaptured($object){
         $komoju_payment_id = $object->data->id;
-        $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
+        $komoju_order = $this->findKomojuOrder($object);
         if(empty($komoju_order)){
             $this->log_service->writeLog("webhook[captured]", 0, "no order found for payment: $komoju_payment_id");
             return;
@@ -89,6 +124,15 @@ class WebhookService{
         if($komoju_order->isCaptured()){
             return;
         }
+
+        // Populate payment ID if not already set
+        if(empty($komoju_order->getKomojuPaymentId())){
+            $komoju_order->setKomojuPaymentId($komoju_payment_id);
+            if(isset($object->data->payment_details->type)){
+                $komoju_order->setType($object->data->payment_details->type);
+            }
+        }
+
         $captured_at = new \DateTime($object->data->captured_at);
         $komoju_order->setCapturedAt($captured_at);
         $this->entityManager->persist($komoju_order);
@@ -177,4 +221,43 @@ class WebhookService{
         }
     }
 
+    /**
+     * Find a KomojuOrder by payment ID, or fall back to metadata.eccube_order_id.
+     * This handles cases where the customer didn't return via session_return
+     * (e.g., konbini instructions page with no redirect back to EC-CUBE).
+     */
+    private function findKomojuOrder($object){
+        $komoju_payment_id = $object->data->id;
+
+        // Try direct lookup by payment ID
+        $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
+        if($komoju_order){
+            return $komoju_order;
+        }
+
+        // Fall back: look up by eccube_order_id from payment metadata
+        if(isset($object->data->metadata->eccube_order_id)){
+            $eccube_order_id = $object->data->metadata->eccube_order_id;
+            $order = $this->entityManager->getRepository(Order::class)->find($eccube_order_id);
+            if($order){
+                // Find the most recent KomojuOrder for this EC-CUBE order
+                $komoju_order = $this->komoju_order_repo->findOneBy(
+                    ['Order' => $order],
+                    ['id' => 'DESC']
+                );
+                return $komoju_order;
+            }
+        }
+
+        // Fall back: look up by session_id from payment.session
+        if(isset($object->data->session)){
+            $session_id = $object->data->session;
+            $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_session_id' => $session_id]);
+            if($komoju_order){
+                return $komoju_order;
+            }
+        }
+
+        return null;
+    }
 }
