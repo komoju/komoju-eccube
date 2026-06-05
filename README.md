@@ -10,8 +10,8 @@ This repository contains two plugin packages. Use the one that matches your EC-C
 
 | Directory | EC-CUBE Version | Plugin Code | Latest Version |
 |---|---|---|---|
-| [`komoju-eccube-4-main/`](komoju-eccube-4-main/) | 4.0 - 4.1 | `Komoju` | 1.2.0 |
-| [`komoju-eccube-4-4.2-main/`](komoju-eccube-4-4.2-main/) | 4.2+ | `Komoju42` | 1.3.0 |
+| [`komoju-eccube-4-main/`](komoju-eccube-4-main/) | 4.0 - 4.1 | `Komoju` | 1.2.1 |
+| [`komoju-eccube-4-4.2-main/`](komoju-eccube-4-4.2-main/) | 4.2+ | `Komoju42` | 1.3.1 |
 
 Each directory is a self-contained EC-CUBE plugin with its own `composer.json`. See the README inside each directory for version-specific details (Japanese).
 
