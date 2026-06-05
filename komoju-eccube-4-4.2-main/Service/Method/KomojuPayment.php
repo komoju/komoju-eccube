@@ -150,7 +150,7 @@ class KomojuPayment implements PaymentMethodInterface{
             'payment_types' => $enabled_methods,
             'payment_data' => [
                 'capture' => $config_data['capture_on'] ? 'auto' : 'manual',
-                'external_order_num' => $this->formatOrderNumber($config_data),
+                'external_order_num' => $this->generateUniqueOrderNumber($config_data),
             ],
             'metadata' => [
                 'eccube_order_id' => (string)$this->Order->getId(),
@@ -209,6 +209,25 @@ class KomojuPayment implements PaymentMethodInterface{
      */
     public function setOrder(Order $order){
         $this->Order = $order;
+    }
+
+    /**
+     * Generate a unique external_order_num for KOMOJU.
+     * On retries (when the customer abandons payment and tries again),
+     * appends a suffix to avoid KOMOJU rejecting duplicate order numbers.
+     */
+    private function generateUniqueOrderNumber($config_data){
+        $baseNumber = $this->formatOrderNumber($config_data);
+
+        // Count existing KOMOJU sessions for this order to detect retries
+        $existingCount = $this->entityManager->getRepository(KomojuOrder::class)
+            ->count(['Order' => $this->Order]);
+
+        if ($existingCount > 0) {
+            return $baseNumber . '-' . ($existingCount + 1);
+        }
+
+        return $baseNumber;
     }
 
     private function formatOrderNumber($config_data){
