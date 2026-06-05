@@ -73,6 +73,7 @@ komoju_payment.admin.order.timeline.cancelled: 決済キャンセル
 komoju_payment.admin.order.timeline.expired: 決済期限切れ
 komoju_payment.admin.order.timeline.failed: 決済失敗
 komoju_payment.admin.order.timeline.capture_failed: 売上処理失敗
+komoju_payment.admin.order.timeline.refund_rejected: '返金失敗: %reason% KOMOJUダッシュボードから返金を行ってください。'
 komoju_payment.admin.order.timeline.already_refunded: 返金済みのため処理不可
 komoju_payment.admin.order.timeline.status_changed: '決済ステータスが「%status%」に変更'
 

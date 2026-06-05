@@ -213,8 +213,9 @@ class OrderController extends AbstractController{
 
         $payment_obj = $komoju_client->refundPayment($komoju_order->getKomojuPaymentId(), ['amount' => $refund_amount]);
         if($komoju_client->getStatusCode() != 200){
-            $this->log_service->writeLog("refund", $Order->getId(), "failed: code=" . $komoju_client->getStatusCode() . ", error=" . $komoju_client->getLastError());
-            $this->addError($komoju_client->getLastError(), 'admin');
+            $errorMsg = $komoju_client->getLastError();
+            $this->log_service->writeLog("refund", $Order->getId(), "refund rejected: " . $errorMsg);
+            $this->addError($errorMsg, 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
         if($payment_obj && isset($payment_obj["refunds"]) && count($payment_obj["refunds"])){

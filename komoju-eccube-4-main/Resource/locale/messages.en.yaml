@@ -73,6 +73,7 @@ komoju_payment.admin.order.timeline.cancelled: Payment cancelled
 komoju_payment.admin.order.timeline.expired: Payment expired
 komoju_payment.admin.order.timeline.failed: Payment failed
 komoju_payment.admin.order.timeline.capture_failed: Capture failed
+komoju_payment.admin.order.timeline.refund_rejected: 'Refund failed: %reason% Please refund from the KOMOJU dashboard.'
 komoju_payment.admin.order.timeline.already_refunded: Already refunded
 komoju_payment.admin.order.timeline.status_changed: 'Status changed to %status%'
 

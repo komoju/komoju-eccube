@@ -204,6 +204,9 @@
                                             <i class="fa fa-exclamation-circle text-danger me-1"></i>{{ 'komoju_payment.admin.order.timeline.failed'|trans }}
                                         {% elseif msg starts with 'capture failed' %}
                                             <i class="fa fa-exclamation-circle text-danger me-1"></i>{{ 'komoju_payment.admin.order.timeline.capture_failed'|trans }}
+                                        {% elseif msg starts with 'refund rejected' %}
+                                            {% set reason = msg|split('refund rejected: ')|last %}
+                                            <i class="fa fa-ban text-danger me-1"></i>{{ 'komoju_payment.admin.order.timeline.refund_rejected'|trans({'%reason%': reason}) }}
                                         {% elseif msg starts with 'rejected: already refunded' %}
                                             <i class="fa fa-ban text-secondary me-1"></i>{{ 'komoju_payment.admin.order.timeline.already_refunded'|trans }}
                                         {% elseif msg starts with 'payment status changed to' %}
