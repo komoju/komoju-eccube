@@ -118,6 +118,19 @@ class SessionReturnController extends AbstractController
         // Commit the purchase
         $this->purchase_flow->commit($Order, new PurchaseContext());
 
+        // Update order status based on payment state
+        if($payment_status === 'captured'){
+            $Order->setPaymentDate(new \DateTime());
+            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PAID);
+            $Order->setOrderStatus($OrderStatus);
+        } else {
+            // For authorized payments (konbini, bank transfer, etc.)
+            // set to NEW so the order appears in the admin order list
+            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
+            $Order->setOrderStatus($OrderStatus);
+        }
+        $this->entityManager->flush();
+
         // Clear the cart
         $this->cartService->clear();
 
