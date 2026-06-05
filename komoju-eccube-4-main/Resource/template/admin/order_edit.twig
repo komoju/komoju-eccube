@@ -184,6 +184,8 @@
                                         {% set api = log.api %}
                                         {% if msg starts with 'payment authorized' %}
                                             <i class="fa fa-check text-info ml-1"></i> {{ 'komoju_payment.admin.order.timeline.authorized'|trans }}
+                                        {% elseif msg starts with 'order accepted' %}
+                                            <i class="fa fa-clock text-info ml-1"></i> {{ 'komoju_payment.admin.order.timeline.order_accepted'|trans }}
                                         {% elseif msg starts with 'purchase completed' %}
                                             <i class="fa fa-shopping-cart text-success ml-1"></i> {{ 'komoju_payment.admin.order.timeline.purchase_completed'|trans }}
                                         {% elseif msg starts with 'payment captured' or msg starts with 'capture successful' %}

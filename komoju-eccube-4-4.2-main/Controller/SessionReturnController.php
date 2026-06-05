@@ -146,7 +146,11 @@ class SessionReturnController extends AbstractController
         // Set the order ID in session so shopping_complete can find it
         $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
 
-        $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase completed (payment=$payment_status)", true);
+        if($payment_status === 'captured'){
+            $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase completed (payment=captured)", true);
+        } else {
+            $this->log_service->writeLog("sessionReturn", $Order->getId(), "order accepted (awaiting payment)", true);
+        }
 
         return $this->redirectToRoute('shopping_complete');
     }

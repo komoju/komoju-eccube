@@ -63,6 +63,7 @@ komoju_payment.admin.order.capture_action: 支払いを受け取る
 komoju_payment.admin.order.capture_action_confirm: '%charge_amount%を請求してもよろしいですか？'
 komoju_payment.admin.order.capture_success: 支払いが正常に取得されました
 komoju_payment.admin.order.timeline.authorized: オーソリ済み（入金待ち）
+komoju_payment.admin.order.timeline.order_accepted: 注文受付済み（入金待ち）
 komoju_payment.admin.order.timeline.purchase_completed: 購入完了
 komoju_payment.admin.order.timeline.customer_cancelled: お客様によるキャンセル
 komoju_payment.admin.order.timeline.error: エラーが発生しました
