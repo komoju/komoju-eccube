@@ -99,6 +99,15 @@ class SessionReturnController extends AbstractController
             return $this->redirectToRoute('shopping');
         }
 
+        // If the webhook already processed this order (status is no longer PENDING),
+        // just redirect to completion without re-processing.
+        $currentStatus = $Order->getOrderStatus()->getId();
+        if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+            $this->cartService->clear();
+            $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
+            return $this->redirectToRoute('shopping_complete');
+        }
+
         // Extract payment info from session
         if(!empty($session['payment'])){
             $payment = $session['payment'];
