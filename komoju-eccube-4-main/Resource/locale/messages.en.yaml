@@ -62,6 +62,7 @@ komoju_payment.admin.order.refund.success: Refund completed successfully.
 komoju_payment.admin.order.capture_action: Capture Payment
 komoju_payment.admin.order.capture_action_confirm: 'Are you sure you want to capture %charge_amount%?'
 komoju_payment.admin.order.capture_success: Payment captured successfully.
+komoju_payment.admin.order.timeline.authorized: Authorized (awaiting payment)
 komoju_payment.admin.order.timeline.purchase_completed: Purchase completed
 komoju_payment.admin.order.timeline.customer_cancelled: Cancelled by customer
 komoju_payment.admin.order.timeline.error: An error occurred
