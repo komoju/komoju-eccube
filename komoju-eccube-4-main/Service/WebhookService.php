@@ -66,12 +66,17 @@ class WebhookService{
             $refund_amount += $refund->amount;
         }
 
+        // If the refund was already recorded by the admin action, skip duplicate logging
+        $alreadyRefunded = !empty($komoju_order->getRefundId());
+
         // Update KomojuOrder with refund data
         $komoju_order->setRefundId(implode(",", $refund_ids));
         $komoju_order->setRefundedAmount($refund_amount);
         $this->entityManager->persist($komoju_order);
 
-        $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$refund_amount)", true);
+        if(!$alreadyRefunded){
+            $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$refund_amount)", true);
+        }
 
         $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
         if ($this->order_state_machine->can($Order, $OrderStatus)) {
