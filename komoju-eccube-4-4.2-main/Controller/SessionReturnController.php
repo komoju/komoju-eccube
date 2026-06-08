@@ -108,49 +108,54 @@ class SessionReturnController extends AbstractController
             return $this->redirectToRoute('shopping_complete');
         }
 
-        // Extract payment info from session
-        if(!empty($session['payment'])){
-            $payment = $session['payment'];
-            $komoju_order->setKomojuPaymentId($payment['id']);
+        try {
+            // Extract payment info from session
+            if(!empty($session['payment'])){
+                $payment = $session['payment'];
+                $komoju_order->setKomojuPaymentId($payment['id']);
+
+                if($payment_status === 'captured'){
+                    $komoju_order->setCapturedAt(new \DateTime());
+                }
+                if(isset($payment['payment_details']['type'])){
+                    $komoju_order->setType($payment['payment_details']['type']);
+                }
+            }
+
+            $this->entityManager->persist($komoju_order);
+            $this->flushWithRetry();
+
+            // Commit the purchase
+            $this->purchase_flow->commit($Order, new PurchaseContext());
+
+            // Update order status based on payment state
+            if($payment_status === 'captured'){
+                $Order->setPaymentDate(new \DateTime());
+                $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PAID);
+                $Order->setOrderStatus($OrderStatus);
+            } else {
+                // For authorized payments (konbini, bank transfer, etc.)
+                // set to NEW so the order appears in the admin order list
+                $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
+                $Order->setOrderStatus($OrderStatus);
+            }
+            $this->entityManager->flush();
 
             if($payment_status === 'captured'){
-                $komoju_order->setCapturedAt(new \DateTime());
+                $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase completed (payment=captured)", true);
+            } else {
+                $this->log_service->writeLog("sessionReturn", $Order->getId(), "order accepted (awaiting payment)", true);
             }
-            if(isset($payment['payment_details']['type'])){
-                $komoju_order->setType($payment['payment_details']['type']);
-            }
+        } catch (\Exception $e) {
+            // If the EntityManager is closed or DB is locked, the webhook likely
+            // already processed this order. Just redirect to completion.
         }
-
-        $this->entityManager->persist($komoju_order);
-        $this->flushWithRetry();
-
-        // Commit the purchase
-        $this->purchase_flow->commit($Order, new PurchaseContext());
-
-        // Update order status based on payment state
-        if($payment_status === 'captured'){
-            $Order->setPaymentDate(new \DateTime());
-            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PAID);
-            $Order->setOrderStatus($OrderStatus);
-        } else {
-            // For authorized payments (konbini, bank transfer, etc.)
-            // set to NEW so the order appears in the admin order list
-            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
-            $Order->setOrderStatus($OrderStatus);
-        }
-        $this->entityManager->flush();
 
         // Clear the cart
         $this->cartService->clear();
 
         // Set the order ID in session so shopping_complete can find it
         $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
-
-        if($payment_status === 'captured'){
-            $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase completed (payment=captured)", true);
-        } else {
-            $this->log_service->writeLog("sessionReturn", $Order->getId(), "order accepted (awaiting payment)", true);
-        }
 
         return $this->redirectToRoute('shopping_complete');
     }
@@ -184,6 +189,11 @@ class SessionReturnController extends AbstractController
     private function flushWithRetry($maxRetries = 3){
         for ($i = 0; $i < $maxRetries; $i++) {
             try {
+                if (!$this->entityManager->isOpen()) {
+                    // EntityManager was closed by a previous error (e.g., webhook race condition).
+                    // The webhook likely already processed this order successfully.
+                    return;
+                }
                 $this->entityManager->flush();
                 return;
             } catch (\Doctrine\DBAL\Exception\LockWaitTimeoutException $e) {
