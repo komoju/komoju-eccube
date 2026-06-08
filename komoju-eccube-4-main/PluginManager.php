@@ -138,6 +138,7 @@ class PluginManager extends AbstractPluginManager{
         $this->insertMailTemplate($container);
         $this->getConfigService($container)->createPaymentsForKomojuPays();
         $this->restoreBackupData($container);
+        $this->consolidateOrphanedPayments($container);
     }
 
     public function disable(array $meta, ContainerInterface $container){
@@ -405,6 +406,76 @@ class PluginManager extends AbstractPluginManager{
                 $conn->executeStatement('DELETE FROM dtb_payment_option WHERE payment_id = ?', [$orphanId]);
                 $conn->executeStatement('DELETE FROM dtb_payment WHERE id = ?', [$orphanId]);
             }
+        }
+    }
+
+    /**
+     * Migrate orders from orphaned Komoju Payment records to current active ones.
+     * This handles leftovers from previous installs where the plugin was uninstalled
+     * without the backup/restore mechanism.
+     */
+    private function consolidateOrphanedPayments(ContainerInterface $container){
+        $conn = $container->get('doctrine.orm.entity_manager')->getConnection();
+
+        try {
+            // Get current active payment IDs (linked from plg_komoju_payments)
+            $activePayments = $conn->fetchAllAssociative(
+                'SELECT payment_id, name FROM plg_komoju_payments WHERE payment_id IS NOT NULL'
+            );
+            if (empty($activePayments)) {
+                return;
+            }
+
+            $activeByName = [];
+            $activeIds = [];
+            foreach ($activePayments as $row) {
+                $activeByName[$row['name']] = $row['payment_id'];
+                $activeIds[] = $row['payment_id'];
+            }
+
+            // Find all Komoju payment records NOT in the active set
+            $allKomoju = $conn->fetchAllAssociative(
+                "SELECT id, payment_method FROM dtb_payment WHERE method_class = ? AND id NOT IN (" . implode(',', $activeIds) . ")",
+                [KomojuPayment::class]
+            );
+
+            foreach ($allKomoju as $orphan) {
+                $orphanId = $orphan['id'];
+                $methodName = $orphan['payment_method'];
+
+                // Try to find the matching active payment by display name
+                $newId = null;
+                foreach ($activePayments as $active) {
+                    $activePaymentName = $conn->fetchOne(
+                        'SELECT payment_method FROM dtb_payment WHERE id = ?',
+                        [$active['payment_id']]
+                    );
+                    if ($activePaymentName === $methodName) {
+                        $newId = $active['payment_id'];
+                        break;
+                    }
+                }
+
+                if ($newId && $newId != $orphanId) {
+                    // Migrate orders to the active payment ID
+                    $conn->executeStatement(
+                        'UPDATE dtb_order SET payment_id = ? WHERE payment_id = ?',
+                        [$newId, $orphanId]
+                    );
+                }
+
+                // Delete orphan if no longer referenced
+                $orderCount = $conn->fetchOne(
+                    'SELECT COUNT(*) FROM dtb_order WHERE payment_id = ?',
+                    [$orphanId]
+                );
+                if ($orderCount == 0) {
+                    $conn->executeStatement('DELETE FROM dtb_payment_option WHERE payment_id = ?', [$orphanId]);
+                    $conn->executeStatement('DELETE FROM dtb_payment WHERE id = ?', [$orphanId]);
+                }
+            }
+        } catch (\Exception $e) {
+            log_error('KOMOJU: consolidate orphaned payments failed: ' . $e->getMessage());
         }
     }
 
