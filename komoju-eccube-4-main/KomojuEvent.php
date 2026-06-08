@@ -67,7 +67,7 @@ class KomojuEvent implements EventSubscriberInterface{
         if($Order) {
             if ($Order->getPayment()->getMethodClass() === KomojuPayment::class) {
                 $komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
-                $komoju_order = $komoju_order_repo->findOneBy(array('Order'=>$Order));
+                $komoju_order = $komoju_order_repo->findOneBy(['Order'=>$Order], ['id' => 'DESC']);
                 if($komoju_order) {
                     $payment_id = $komoju_order->getKomojuPaymentId();
                     if (!empty($payment_id) && $komoju_order->isCaptured()) {
@@ -135,7 +135,10 @@ class KomojuEvent implements EventSubscriberInterface{
             return;
         }
         if ($Order->getPayment()->getMethodClass() === KomojuPayment::class) {
-            $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order]);
+            $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(
+                ['Order' => $Order],
+                ['id' => 'DESC']
+            );
             if(empty($komoju_order)
                 || empty($komoju_order->getKomojuPaymentId())
                 ){
