@@ -154,8 +154,12 @@ class SessionReturnController extends AbstractController
             // already processed this order. Just redirect to completion.
         }
 
-        // Clear the cart
-        $this->cartService->clear();
+        // Clear the cart (non-critical — if EM is closed, cart clears on next visit)
+        try {
+            $this->cartService->clear();
+        } catch (\Exception $e) {
+            // EntityManager may be closed from webhook race condition
+        }
 
         // Set the order ID in session so shopping_complete can find it
         $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
