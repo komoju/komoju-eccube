@@ -48,6 +48,7 @@ class WebhookController extends AbstractController
                     $this->webhook_service->paymentAuthorized($data);
                 break;
                 case "payment.refunded":
+                case "payment.refund.created":
                     $this->webhook_service->paymentRefunded($data);
                     break;
                 case "payment.captured":
