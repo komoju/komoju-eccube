@@ -154,11 +154,14 @@ class SessionReturnController extends AbstractController
             // already processed this order. Just redirect to completion.
         }
 
-        // Clear the cart (non-critical — if EM is closed, cart clears on next visit)
+        // Clear the cart
         try {
             $this->cartService->clear();
         } catch (\Exception $e) {
-            // EntityManager may be closed from webhook race condition
+            // EntityManager may be closed from webhook race condition.
+            // Clear session cart keys so the customer doesn't see stale cart.
+            $this->requestStack->getSession()->remove('cart_keys');
+            $this->requestStack->getSession()->remove('cart_key');
         }
 
         // Set the order ID in session so shopping_complete can find it
