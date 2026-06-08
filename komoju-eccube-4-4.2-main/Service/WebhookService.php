@@ -66,21 +66,26 @@ class WebhookService{
             $refund_amount += $refund->amount;
         }
 
-        // If the refund was already recorded by the admin action, skip duplicate logging
-        $alreadyRefunded = !empty($komoju_order->getRefundId());
+        // Check if the refunded amount has changed (detects new refunds)
+        $previousAmount = (float) $komoju_order->getRefundedAmount();
 
         // Update KomojuOrder with refund data
         $komoju_order->setRefundId(implode(",", $refund_ids));
         $komoju_order->setRefundedAmount($refund_amount);
         $this->entityManager->persist($komoju_order);
 
-        if(!$alreadyRefunded){
-            $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$refund_amount)", true);
+        // Only log if the refund amount changed (avoids duplicates from admin-initiated refunds)
+        if($refund_amount > $previousAmount){
+            $newRefundAmount = $refund_amount - $previousAmount;
+            $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$newRefundAmount)", true);
         }
 
-        $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
-        if ($this->order_state_machine->can($Order, $OrderStatus)) {
-            $this->order_state_machine->apply($Order, $OrderStatus);
+        // Only cancel order if fully refunded
+        if($refund_amount >= $Order->getPaymentTotal()){
+            $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
+            if ($this->order_state_machine->can($Order, $OrderStatus)) {
+                $this->order_state_machine->apply($Order, $OrderStatus);
+            }
         }
         $this->entityManager->flush();
     }

@@ -155,9 +155,9 @@ class OrderController extends AbstractController{
             // Lock the row to prevent concurrent refund attempts
             $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
 
-            // check if already refunded
-            if ($komoju_order->getIsChargeRefunded()) {
-                $this->log_service->writeLog("refund", $Order->getId(), "rejected: already refunded", true);
+            // check if fully refunded (allow additional partial refunds)
+            if ($komoju_order->getRefundedAmount() >= $Order->getPaymentTotal()) {
+                $this->log_service->writeLog("refund", $Order->getId(), "rejected: already fully refunded", true);
                 $this->addError('komoju_payment.admin.order.error.refunded', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
@@ -169,6 +169,7 @@ class OrderController extends AbstractController{
                 $this->log_service->writeLog("refund", $Order->getId(), "retrieve failed: code=" . $komoju_client->getStatusCode());
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
+            // Sync refund state from KOMOJU
             $refunds = isset($payment_obj['refunds']) ? $payment_obj['refunds'] : null;
             if(!empty($refunds) && count($refunds) > 0){
                 $refund_ids = [];
@@ -178,24 +179,25 @@ class OrderController extends AbstractController{
                     $refund_ids[] = $refund['id'];
                 }
                 $komoju_order->setRefundId(implode(",", $refund_ids));
-                $komoju_order->setSelectedRefundOption(KomojuOrder::REFUND_UNKNOWN);
                 $komoju_order->setRefundedAmount($refund_amount);
                 $this->entityManager->persist($komoju_order);
                 $this->entityManager->flush();
 
-                $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
-                try{
-                    if ($this->orderStateMachine->can($Order, $OrderStatus)) {
-                        $this->orderStateMachine->apply($Order, $OrderStatus);
-                        $this->entityManager->flush();
+                // If fully refunded, block further refunds
+                if($refund_amount >= $Order->getPaymentTotal()){
+                    $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
+                    try{
+                        if ($this->orderStateMachine->can($Order, $OrderStatus)) {
+                            $this->orderStateMachine->apply($Order, $OrderStatus);
+                            $this->entityManager->flush();
+                        }
+                    } catch (\Exception $e) {
+                        log_error($e->getMessage());
                     }
-                } catch (\Exception $e) {
-                    log_error($e->getMessage());
+                    $this->addError('komoju_payment.admin.order.error.refunded', 'admin');
+                    $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)", true);
+                    return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
                 }
-
-                $this->addError('komoju_payment.admin.order.error.refunded', 'admin');
-                $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)", true);
-                return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
 
             $refund_option = $request->request->get('refund_option');
@@ -225,26 +227,36 @@ class OrderController extends AbstractController{
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
             if($payment_obj && isset($payment_obj["refunds"]) && count($payment_obj["refunds"])){
-                $refund = $payment_obj["refunds"][0];
+                // Collect all refund IDs and calculate total refunded
+                $all_refund_ids = [];
+                $total_refunded = 0;
+                foreach($payment_obj['refunds'] as $r){
+                    $all_refund_ids[] = $r['id'];
+                    $total_refunded += $r['amount'];
+                }
 
-                $komoju_order->setRefundId($refund['id']);
+                $komoju_order->setRefundId(implode(',', $all_refund_ids));
                 $komoju_order->setSelectedRefundOption($refund_option);
-                $komoju_order->setRefundedAmount($refund_amount);
+                $komoju_order->setRefundedAmount($total_refunded);
                 $this->entityManager->persist($komoju_order);
                 $this->entityManager->flush();
 
-                $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
-                try{
-                    if ($this->orderStateMachine->can($Order, $OrderStatus)) {
-                        $this->orderStateMachine->apply($Order, $OrderStatus);
-                        $this->entityManager->flush();
+                // Only cancel order if fully refunded
+                if($total_refunded >= $Order->getPaymentTotal()){
+                    $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
+                    try{
+                        if ($this->orderStateMachine->can($Order, $OrderStatus)) {
+                            $this->orderStateMachine->apply($Order, $OrderStatus);
+                            $this->entityManager->flush();
+                        }
+                    } catch (\Exception $e) {
+                        log_error($e->getMessage());
                     }
-                } catch (\Exception $e) {
-                    log_error($e->getMessage());
                 }
 
-                if(isset($refund['redirect_url'])){
-                    $this->mail_ex_service->sendRefundRedirectMail($Order, $refund['redirect_url']);
+                $latestRefund = end($payment_obj['refunds']);
+                if(isset($latestRefund['redirect_url'])){
+                    $this->mail_ex_service->sendRefundRedirectMail($Order, $latestRefund['redirect_url']);
                 }
                 $this->log_service->writeLog("refund", $Order->getId(), "refund successful (amount=$refund_amount)", true);
                 $this->addSuccess('komoju_payment.admin.order.refund.success', 'admin');
