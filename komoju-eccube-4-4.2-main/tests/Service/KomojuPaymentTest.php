@@ -462,4 +462,120 @@ class KomojuPaymentTest extends TestCase
 
         $this->payment->apply();
     }
+
+    // --- generateUniqueOrderNumber (retry suffix) ---
+
+    public function testApplyFirstAttemptUsesBaseOrderNumber()
+    {
+        $order = $this->makeOrder(1000);
+        $order->setOrderNo('100');
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
+
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+            'order_number_format' => null,
+        ]);
+
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('paypay');
+
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($komojuPay);
+        $repo->method('count')->willReturn(0);
+        $this->entityManager->method('getRepository')->willReturn($repo);
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+
+        $client = $this->createMock(KomojuClient::class);
+        $client->method('getStatusCode')->willReturn(200);
+        $client->expects($this->once())
+            ->method('createSession')
+            ->with($this->callback(function ($data) {
+                return $data['payment_data']['external_order_num'] === '100';
+            }))
+            ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->payment->apply();
+    }
+
+    public function testApplyRetryAppendsCountSuffix()
+    {
+        $order = $this->makeOrder(1000);
+        $order->setOrderNo('100');
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
+
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+            'order_number_format' => null,
+        ]);
+
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('paypay');
+
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($komojuPay);
+        $repo->method('count')->willReturn(1); // one previous attempt
+        $this->entityManager->method('getRepository')->willReturn($repo);
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+
+        $client = $this->createMock(KomojuClient::class);
+        $client->method('getStatusCode')->willReturn(200);
+        $client->expects($this->once())
+            ->method('createSession')
+            ->with($this->callback(function ($data) {
+                return $data['payment_data']['external_order_num'] === '100-2';
+            }))
+            ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->payment->apply();
+    }
+
+    public function testApplyMultipleRetriesIncrementSuffix()
+    {
+        $order = $this->makeOrder(1000);
+        $order->setOrderNo('100');
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
+
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+            'order_number_format' => null,
+        ]);
+
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('paypay');
+
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($komojuPay);
+        $repo->method('count')->willReturn(3); // three previous attempts
+        $this->entityManager->method('getRepository')->willReturn($repo);
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+
+        $client = $this->createMock(KomojuClient::class);
+        $client->method('getStatusCode')->willReturn(200);
+        $client->expects($this->once())
+            ->method('createSession')
+            ->with($this->callback(function ($data) {
+                return $data['payment_data']['external_order_num'] === '100-4';
+            }))
+            ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->payment->apply();
+    }
 }

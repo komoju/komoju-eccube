@@ -367,4 +367,320 @@ class WebhookServiceTest extends TestCase
 
         $this->assertNull($komojuOrder->getCanceledAt());
     }
+
+    // --- paymentAuthorized ---
+
+    public function testAuthorizedNoOrder()
+    {
+        $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
+        $this->logService->expects($this->once())->method('writeLog');
+        $this->entityManager->expects($this->never())->method('persist');
+
+        $this->service->paymentAuthorized($this->makeWebhookObject('pay_1'));
+    }
+
+    public function testAuthorizedPopulatesPaymentId()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PENDING);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(90);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $newStatus = new OrderStatus();
+        $newStatus->setId(OrderStatus::NEW);
+        $this->entityManager->method('find')->willReturn($newStatus);
+
+        $object = $this->makeWebhookObject('pay_auth_1', [
+            'payment_details' => (object)['type' => 'konbini'],
+        ]);
+
+        $this->service->paymentAuthorized($object);
+
+        $this->assertEquals('pay_auth_1', $komojuOrder->getKomojuPaymentId());
+        $this->assertEquals('konbini', $komojuOrder->getType());
+    }
+
+    public function testAuthorizedSetsOrderStatusToNew()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PENDING);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(91);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $newStatus = new OrderStatus();
+        $newStatus->setId(OrderStatus::NEW);
+        $this->entityManager->method('find')->willReturn($newStatus);
+
+        $object = $this->makeWebhookObject('pay_auth_2');
+        $this->service->paymentAuthorized($object);
+
+        $this->assertEquals(OrderStatus::NEW, $eccubeOrder->getOrderStatus()->getId());
+    }
+
+    public function testAuthorizedSkipsStatusChangeIfAlreadyNew()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::NEW);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(92);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_already_set');
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+        $this->entityManager->method('find')->willReturn($orderStatus);
+
+        $object = $this->makeWebhookObject('pay_already_set');
+        $this->service->paymentAuthorized($object);
+
+        // Status should remain NEW (not changed to something else)
+        $this->assertEquals(OrderStatus::NEW, $eccubeOrder->getOrderStatus()->getId());
+    }
+
+    public function testAuthorizedFallbackToMetadata()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PENDING);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(93);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+
+        $orderRepo = $this->createMock(StubRepository::class);
+        $orderRepo->method('find')->willReturn($eccubeOrder);
+
+        // findOneBy: payment_id lookup returns null, Order lookup returns the record
+        $komojuRepo = $this->createMock(StubRepository::class);
+        $komojuRepo->method('findOneBy')->willReturnCallback(function ($criteria, $orderBy = null) use ($komojuOrder) {
+            if (isset($criteria['komoju_payment_id'])) {
+                return null;
+            }
+            if (isset($criteria['Order'])) {
+                return $komojuOrder;
+            }
+            return null;
+        });
+
+        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em->method('getRepository')->willReturnCallback(function ($class) use ($orderRepo, $komojuRepo) {
+            if ($class === Order::class) return $orderRepo;
+            if ($class === KomojuOrder::class) return $komojuRepo;
+            return $this->createMock(StubRepository::class);
+        });
+
+        $newStatus = new OrderStatus();
+        $newStatus->setId(OrderStatus::NEW);
+        $em->method('find')->willReturn($newStatus);
+        $em->method('persist')->willReturn(null);
+        $em->method('flush')->willReturn(null);
+
+        $service = new WebhookService(
+            $em,
+            $this->orderStateMachine,
+            $this->logService
+        );
+
+        $object = (object) ['data' => (object) [
+            'id' => 'pay_new_1',
+            'metadata' => (object) ['eccube_order_id' => '93'],
+            'payment_details' => (object) ['type' => 'bank_transfer'],
+        ]];
+
+        $service->paymentAuthorized($object);
+
+        $this->assertEquals('pay_new_1', $komojuOrder->getKomojuPaymentId());
+        $this->assertEquals('bank_transfer', $komojuOrder->getType());
+    }
+
+    // --- partial refund handling ---
+
+    public function testRefundedPartialUpdatesAmount()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(94);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_partial_1');
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $object = $this->makeWebhookObject('pay_partial_1', [
+            'refunds' => [(object)['id' => 'ref_1', 'amount' => 300]]
+        ]);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(300, $komojuOrder->getRefundedAmount());
+        $this->assertEquals('ref_1', $komojuOrder->getRefundId());
+    }
+
+    public function testRefundedPartialDoesNotCancel()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(95);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_partial_2');
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+        $this->orderStateMachine->expects($this->never())->method('apply');
+
+        $object = $this->makeWebhookObject('pay_partial_2', [
+            'refunds' => [(object)['id' => 'ref_1', 'amount' => 300]]
+        ]);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(OrderStatus::PAID, $eccubeOrder->getOrderStatus()->getId());
+    }
+
+    public function testRefundedFullCancelsOrder()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(96);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_full_1');
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $cancelStatus = new OrderStatus();
+        $cancelStatus->setId(OrderStatus::CANCEL);
+
+        $statusRepo = $this->createMock(StubRepository::class);
+        $statusRepo->method('find')->willReturn($cancelStatus);
+
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) use ($statusRepo) {
+                if ($class === OrderStatus::class) return $statusRepo;
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                return $this->createMock(StubRepository::class);
+            });
+
+        $this->orderStateMachine->method('can')->willReturn(true);
+        $this->orderStateMachine->expects($this->once())->method('apply');
+
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService
+        );
+
+        $object = $this->makeWebhookObject('pay_full_1', [
+            'refunds' => [
+                (object)['id' => 'ref_1', 'amount' => 500],
+                (object)['id' => 'ref_2', 'amount' => 500],
+            ]
+        ]);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(1000, $komojuOrder->getRefundedAmount());
+    }
+
+    public function testRefundedSkipsLogWhenAmountUnchanged()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(97);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_dup_1');
+        $komojuOrder->setRefundId('ref_1');
+        $komojuOrder->setRefundedAmount(500); // already recorded
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        // writeLog should NOT be called for the refund (only amount unchanged)
+        $this->logService->expects($this->never())->method('writeLog');
+
+        $object = $this->makeWebhookObject('pay_dup_1', [
+            'refunds' => [(object)['id' => 'ref_1', 'amount' => 500]]
+        ]);
+
+        $this->service->paymentRefunded($object);
+    }
+
+    public function testRefundedLogsWhenAmountIncreases()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(98);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_inc_1');
+        $komojuOrder->setRefundId('ref_1');
+        $komojuOrder->setRefundedAmount(300); // previous partial
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        // writeLog should be called with the new refund amount (200)
+        $this->logService->expects($this->once())
+            ->method('writeLog')
+            ->with(
+                $this->equalTo('webhook[refund]'),
+                $this->equalTo(98),
+                $this->equalTo('refund confirmed (amount=200)'),
+                $this->equalTo(true)
+            );
+
+        $object = $this->makeWebhookObject('pay_inc_1', [
+            'refunds' => [
+                (object)['id' => 'ref_1', 'amount' => 300],
+                (object)['id' => 'ref_2', 'amount' => 200],
+            ]
+        ]);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(500, $komojuOrder->getRefundedAmount());
+    }
 }
