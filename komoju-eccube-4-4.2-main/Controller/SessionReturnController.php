@@ -99,6 +99,9 @@ class SessionReturnController extends AbstractController
             return $this->redirectToRoute('shopping');
         }
 
+        // Refresh order from DB to get latest status (webhook may have updated it)
+        $this->entityManager->refresh($Order);
+
         // If the webhook already processed this order (status is no longer PENDING),
         // just redirect to completion without re-processing.
         $currentStatus = $Order->getOrderStatus()->getId();
