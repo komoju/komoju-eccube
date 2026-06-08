@@ -36,14 +36,14 @@
             alert('{{ 'komoju_payment.admin.order.refund_amount.error.invalid'|trans }}');
             $("#refund_amount").focus();
             return false;
-        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && parseInt(refund_amount_val, 10)>{{ Order.payment_total }}){
+        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && parseInt(refund_amount_val, 10)>{{ (Order.payment_total - komoju_order.refundedAmount)|round(0, 'floor') }}){
             alert('{{ 'komoju_payment.admin.order.refund_amount.error.exceeded'|trans }}');
             $("#refund_amount").focus();
             return false;
         }
         var amount_to_display=formatter.format(refund_amount_val);        
         if(refund_option_val=={{ REFUND_FULL_OPTION }}) {
-            amount_to_display ='{{ Order.getPaymentTotal|round(0, 'floor')|price }}';
+            amount_to_display ='{{ (Order.getPaymentTotal - komoju_order.refundedAmount)|round(0, 'floor')|price }}';
         }
 
         if(confirm(amount_to_display+'{{ 'komoju_payment.admin.order.refund_action_confirm'|trans }}')){
@@ -139,7 +139,8 @@
                                             {{ 'komoju_payment.admin.order.capture_action'|trans }}
                                         </button>
                                     </form>
-                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.IsChargeRefunded==false %}
+                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.refundedAmount < Order.payment_total %}
+                                    {% set remaining = Order.payment_total - komoju_order.refundedAmount %}
                                     <div class="col-6 ml-n-15">
                                         <select id="refund_option" class="form-control">
                                             <option value="{{ REFUND_FULL_OPTION }}">{{ 'komoju_payment.admin.order.refund_option.full_refund'|trans }}</option>                                            
@@ -148,12 +149,12 @@
                                     </div>
                                     <div class="col-6">
                                         <div id="refund_amount_contained" style="display: none;">
-                                            <input type="number" id="refund_amount" min="1" max="{{ Order.payment_total|round(0, 'floor') }}" placeholder="{{ 'komoju_payment.admin.order.refund_amount_placeholder'|trans }}" class="form-control" />
+                                            <input type="number" id="refund_amount" min="1" max="{{ remaining|round(0, 'floor') }}" placeholder="{{ 'komoju_payment.admin.order.refund_amount_placeholder'|trans }}" class="form-control" />
                                             <br/>
                                         </div>
                                         <a id="refund_btn" href="javascript:void(0);"  class="btn btn-ec-regular komoju_txn_action_btn" onclick="refundConfirmDialog();">{{ 'komoju_payment.admin.order.refund_action'|trans }}</a>
                                     </div>
-                                {% elseif komoju_order.IsChargeRefunded %}
+                                {% elseif komoju_order.refundedAmount >= Order.payment_total %}
                                     <span style="background-color: #fff; color: #C04949; border-color: #C04949">{{ 'komoju_payment.admin.order.status.refunded'|trans }}</span>
                                 {% endif %}
                             </div>

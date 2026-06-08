@@ -204,13 +204,13 @@ class OrderController extends AbstractController{
             $refund_amount = 0;
 
             if((int)$refund_option === KomojuOrder::REFUND_FULL){
-                $refund_amount = floor($Order->getPaymentTotal());
+                $refund_amount = floor($Order->getPaymentTotal() - $komoju_order->getRefundedAmount());
             }else if((int)$refund_option === KomojuOrder::REFUND_PARTIAL){
                 $refund_amount = filter_var($request->request->get('refund_amount'), FILTER_VALIDATE_INT);
                 if ($refund_amount === false || $refund_amount <= 0) {
                     $this->addError('komoju_payment.admin.order.refund_amount.error.invalid', 'admin');
                     return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
-                } else if($refund_amount>$Order->getPaymentTotal()){
+                } else if($refund_amount > ($Order->getPaymentTotal() - $komoju_order->getRefundedAmount())){
                     $this->addError('komoju_payment.admin.order.refund_amount.error.exceeded', 'admin');
                     return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
                 }
