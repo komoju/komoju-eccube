@@ -113,13 +113,12 @@ class ConfigService{
                 $pay->setSortNo($sort_no);
                 $this->entityManager->persist($pay);
             }else{
+                // KomojuPay inherits GeneratedValue(strategy="NONE") from
+                // AbstractMasterEntity — the DB does not auto-assign ids —
+                // so we must compute one. Delegated to PluginManager::nextPayId
+                // so this lives in exactly one place.
                 $pay = new KomojuPay();
-                $max_id_result = $this->entityManager->createQueryBuilder()
-                    ->select('MAX(p.id)')
-                    ->from(KomojuPay::class, 'p')
-                    ->getQuery()
-                    ->getSingleScalarResult();
-                $pay->setId(($max_id_result ? $max_id_result : 0) + 1);
+                $pay->setId(\Plugin\Komoju42\PluginManager::nextPayId($this->entityManager));
                 $pay->setName($slug);
                 $pay->setDispName($disp_name);
                 $pay->setSortNo($sort_no);

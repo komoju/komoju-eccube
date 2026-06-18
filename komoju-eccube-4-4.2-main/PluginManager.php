@@ -20,6 +20,34 @@ class PluginManager extends AbstractPluginManager{
     const BACKUP_PAYMENTS_TABLE = 'plg_komoju_payments_backup';
 
     /**
+     * Default KOMOJU payment methods seeded on first install.
+     *
+     * IDs are intentionally NOT specified here. Hard-coding ids (1..N) is
+     * fragile because:
+     *   - a previous install may have already populated plg_komoju_payments
+     *     with those ids and different slugs (e.g. after a sync against the
+     *     KOMOJU API returned a renamed method), and
+     *   - on a re-install where the table is empty, the schema's id column
+     *     still uses GeneratedValue(strategy="NONE") inherited from
+     *     AbstractMasterEntity, so we must compute the id ourselves — but we
+     *     do it once, in PluginManager::nextPayId(), with a fresh MAX(id)+1
+     *     read after each persist, instead of relying on literal magic numbers.
+     */
+    const DEFAULT_METHODS = [
+        ['name' => 'credit_card',   'disp_name' => 'クレジットカード', 'sort_no' => 1],
+        ['name' => 'konbini',       'disp_name' => 'コンビニ決済',     'sort_no' => 2],
+        ['name' => 'bank_transfer', 'disp_name' => '銀行振込',         'sort_no' => 3],
+        ['name' => 'pay_easy',      'disp_name' => 'ペイジー',         'sort_no' => 4],
+        ['name' => 'web_money',     'disp_name' => 'ウェブマネー',     'sort_no' => 5],
+        ['name' => 'bit_cash',      'disp_name' => 'ビットキャッシュ', 'sort_no' => 6],
+        ['name' => 'net_cash',      'disp_name' => 'NET CASH',         'sort_no' => 7],
+        ['name' => 'japan_mobile',  'disp_name' => 'キャリア決済',     'sort_no' => 8],
+        ['name' => 'paypay',        'disp_name' => 'PayPay',           'sort_no' => 9],
+        ['name' => 'linepay',       'disp_name' => 'LINE Pay',         'sort_no' => 10],
+        ['name' => 'merpay',        'disp_name' => 'メルペイ',         'sort_no' => 11],
+    ];
+
+    /**
      * Tables this plugin must be able to read/write during enable().
      * Used by the pre-flight check to fail fast with a clear error rather than
      * letting a missing table corrupt EC-CUBE's outer transaction mid-way through.
@@ -60,83 +88,20 @@ class PluginManager extends AbstractPluginManager{
      * @param ContainerInterface $container
      */
     protected function registerMethods(ContainerInterface $container){
-        $methods_arr = [
-            [
-                'id'        =>  1,
-                'name'      =>  'credit_card'   ,
-                'disp_name' =>  'クレジットカード',
-                'sort_no'   =>  1,
-            ],
-            [
-                'id'        =>  2,
-                'name'      =>  'konbini'   ,
-                'disp_name' =>  'コンビニ決済',
-                'sort_no'   =>  2,
-            ],
-            [
-                'id'        =>  3,
-                'name'      =>  'bank_transfer'   ,
-                'disp_name' =>  '銀行振込',
-                'sort_no'   =>  3,
-            ],
-            [
-                'id'        =>  4,
-                'name'      =>  'pay_easy'   ,
-                'disp_name' =>  'ペイジー',
-                'sort_no'   =>  4,
-            ],
-            [
-                'id'        =>  5,
-                'name'      =>  'web_money'   ,
-                'disp_name' =>  'ウェブマネー',
-                'sort_no'   =>  5,
-            ],
-            [
-                'id'        =>  6,
-                'name'      =>  'bit_cash'   ,
-                'disp_name' =>  'ビットキャッシュ',
-                'sort_no'   =>  6,
-            ],
-            [
-                'id'        =>  7,
-                'name'      =>  'net_cash'   ,
-                'disp_name' =>  'NET CASH',
-                'sort_no'   =>  7,
-            ],
-            [
-                'id'        =>  8,
-                'name'      =>  'japan_mobile'   ,
-                'disp_name' =>  'キャリア決済',
-                'sort_no'   =>  8,
-            ],
-            [
-                'id'        =>  9,
-                'name'      =>  'paypay'   ,
-                'disp_name' =>  'PayPay',
-                'sort_no'   =>  9,
-            ],
-            [
-                'id'        =>  10,
-                'name'      =>  'linepay'   ,
-                'disp_name' =>  'LINE Pay',
-                'sort_no'   =>  10,
-            ],
-            [
-                'id'        =>  11,
-                'name'      =>  'merpay'   ,
-                'disp_name' =>  'メルペイ',
-                'sort_no'   =>  11,
-            ],
-        ];
         $entityManager = $container->get('doctrine.orm.entity_manager');
         $method_repo = $entityManager->getRepository(KomojuPay::class);
-        foreach($methods_arr as $method_data){
+        foreach(self::DEFAULT_METHODS as $method_data){
             $komoju_pay = $method_repo->findOneBy(['name' => $method_data['name']]);
             if($komoju_pay){
                 continue;
             }
             $komoju_pay = new KomojuPay;
-            $komoju_pay->setId($method_data['id']);
+            // KomojuPay inherits GeneratedValue(strategy="NONE") from
+            // AbstractMasterEntity, so we must assign the id ourselves. We
+            // compute MAX(id)+1 fresh per row; this is single-threaded by
+            // construction (registerMethods runs only inside the plugin
+            // install/enable lifecycle, never concurrently with itself).
+            $komoju_pay->setId(self::nextPayId($entityManager));
             $komoju_pay->setName($method_data['name']);
             $komoju_pay->setDispName($method_data['disp_name']);
             $komoju_pay->setSortNo($method_data['sort_no']);
@@ -144,6 +109,28 @@ class PluginManager extends AbstractPluginManager{
             $entityManager->persist($komoju_pay);
             $entityManager->flush();
         }
+    }
+
+    /**
+     * Return the next available KomojuPay id (MAX(id) + 1, or 1 if empty).
+     *
+     * KomojuPay extends Eccube\Entity\Master\AbstractMasterEntity which uses
+     * Doctrine GeneratedValue(strategy="NONE"); the database does NOT
+     * auto-assign ids, so the caller must provide one before persist().
+     *
+     * Centralising the computation here removes the two former duplicates
+     * (hard-coded 1..11 in registerMethods, MAX(id)+1 inline in
+     * ConfigService::syncPaymentMethods) and gives one place to upgrade if
+     * we later switch to a real IDENTITY column.
+     */
+    public static function nextPayId(\Doctrine\ORM\EntityManagerInterface $em): int
+    {
+        $max = $em->createQueryBuilder()
+            ->select('MAX(p.id)')
+            ->from(KomojuPay::class, 'p')
+            ->getQuery()
+            ->getSingleScalarResult();
+        return ((int)$max) + 1;
     }
 
     public function enable(array $meta, ContainerInterface $container){
@@ -347,6 +334,15 @@ class PluginManager extends AbstractPluginManager{
         }
     }
 
+    /**
+     * Restore plg_komoju_order rows from the backup table.
+     *
+     * Schema-drift safe: the column set in the backup table reflects whatever
+     * schema was active at uninstall time, but the current plg_komoju_order
+     * may have added/removed/renamed columns since. We intersect each row's
+     * keys with the *current* table's columns before insert; unknown columns
+     * are silently dropped, missing columns are left to the DB defaults.
+     */
     private function restoreOrderData(Connection $conn){
         if (!$this->tableExists($conn, self::BACKUP_ORDER_TABLE)) {
             return;
@@ -357,11 +353,17 @@ class PluginManager extends AbstractPluginManager{
             return;
         }
 
+        $currentColumns = $this->getCurrentColumnNames($conn, 'plg_komoju_order');
+        if (empty($currentColumns)) {
+            return;
+        }
+        $currentColumnSet = array_flip($currentColumns);
+
         foreach ($rows as $row) {
             // Check if this order_id already exists (avoid duplicates)
             $exists = $conn->fetchOne(
                 'SELECT COUNT(*) FROM plg_komoju_order WHERE order_id = ?',
-                [$row['order_id']]
+                [$row['order_id'] ?? null]
             );
             if ($exists > 0) {
                 continue;
@@ -369,7 +371,21 @@ class PluginManager extends AbstractPluginManager{
 
             // Remove the 'id' key so the auto-increment generates a new one
             unset($row['id']);
-            $conn->insert('plg_komoju_order', $row);
+
+            // Filter to columns that actually exist in the current schema.
+            // Drops keys that no longer have a matching column (column rename
+            // or drop between plugin versions); missing columns will receive
+            // the DB default.
+            $filtered = [];
+            foreach ($row as $col => $val) {
+                if (isset($currentColumnSet[$col])) {
+                    $filtered[$col] = $val;
+                }
+            }
+            if (empty($filtered)) {
+                continue;
+            }
+            $conn->insert('plg_komoju_order', $filtered);
         }
     }
 
@@ -390,7 +406,33 @@ class PluginManager extends AbstractPluginManager{
         }
 
         unset($backup['id']);
-        $conn->update('plg_komoju_config', $backup, ['id' => 1]);
+
+        // Same schema-drift filter as restoreOrderData() above.
+        $currentColumns = $this->getCurrentColumnNames($conn, 'plg_komoju_config');
+        $currentColumnSet = array_flip($currentColumns);
+        $filtered = [];
+        foreach ($backup as $col => $val) {
+            if (isset($currentColumnSet[$col])) {
+                $filtered[$col] = $val;
+            }
+        }
+        if (empty($filtered)) {
+            return;
+        }
+        $conn->update('plg_komoju_config', $filtered, ['id' => 1]);
+    }
+
+    private function getCurrentColumnNames(Connection $conn, string $table): array
+    {
+        try {
+            $sm = method_exists($conn, 'createSchemaManager')
+                ? $conn->createSchemaManager()
+                : $conn->getSchemaManager();
+            $columns = $sm->listTableColumns($table);
+            return array_keys($columns);
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 
     /**
