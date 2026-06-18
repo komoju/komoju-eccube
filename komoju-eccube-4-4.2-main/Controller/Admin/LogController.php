@@ -149,9 +149,13 @@ class LogController extends AbstractController
                 trans('komoju_payment.admin.log.label.msg'),
             ]);
 
-            $results = $qb->setMaxResults(50000)->getQuery()->iterate();
-            foreach ($results as $row) {
-                $log = $row[0];
+            // Query::iterate() was deprecated in Doctrine ORM 2.7 and removed
+            // in 3.0; toIterable() is the replacement. Note the iteration shape
+            // also changed: iterate() yielded [$entity] (1-element arrays) so
+            // the old code did `$log = $row[0]`, while toIterable() yields the
+            // entity directly.
+            $results = $qb->setMaxResults(50000)->getQuery()->toIterable();
+            foreach ($results as $log) {
                 fputcsv($handle, [
                     $log->getCreatedAt()->format('Y-m-d H:i:s'),
                     $log->getApi(),

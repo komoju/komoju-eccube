@@ -266,6 +266,8 @@ class OrderController extends AbstractController{
         $order_status = $this->order_status_repo->find($status);
         $order->setOrderStatus($order_status);
         $this->entityManager->persist($order);
-        $this->entityManager->flush($order);
+        // Argument-less flush(): single-entity flush($entity) is deprecated
+        // since Doctrine ORM 2.7 and removed in 3.0.
+        $this->entityManager->flush();
     }
 }
