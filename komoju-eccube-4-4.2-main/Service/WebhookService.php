@@ -16,14 +16,12 @@ use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Service\LogService;
 use Eccube\Entity\Master\OrderStatus;
 use Eccube\Service\OrderStateMachine;
-use Eccube\Entity\ProductStock;
 use Eccube\Entity\Order;
 class WebhookService{
     protected $entityManager;
     protected $log_service;
     protected $komoju_order_repo;
     protected $order_state_machine;
-    protected $productStockRepository;
 
 
     public function __construct(
@@ -35,7 +33,6 @@ class WebhookService{
         $this->komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
         $this->log_service = $logService;
         $this->order_state_machine = $orderStateMachine;
-        $this->productStockRepository = $this->entityManager->getRepository(ProductStock::class);
     }
     public function paymentRefunded($object){
         $komoju_payment_id = $object->data->id;
@@ -158,7 +155,12 @@ class WebhookService{
         $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::PAID);
         $order->setOrderStatus($OrderStatus);
         $this->entityManager->persist($order);
-        $this->entityManager->flush($order);
+        // flush() with no argument: flush($entity) was always semantically
+        // "compute changes for this entity only" and was deprecated in
+        // Doctrine ORM 2.7 / removed in 3.0. The argument-less form is the
+        // documented replacement and is the only form the EC-CUBE
+        // 4.2/4.3 ORM (^2.11) supports without a deprecation warning.
+        $this->entityManager->flush();
     }
     public function paymentCanceled($object){ $this->handleCancelEvent($object, 'canceled', 'payment cancelled'); }
     public function paymentExpired($object){ $this->handleCancelEvent($object, 'expired', 'payment expired'); }
@@ -199,7 +201,8 @@ class WebhookService{
         }
         $komoju_order->setCanceledAt(new \DateTime());
         $this->entityManager->persist($komoju_order);
-        $this->entityManager->flush($komoju_order);
+        // See note in paymentCaptured() above re: flush() vs flush($entity).
+        $this->entityManager->flush();
 
         $Order = $komoju_order->getOrder();
         if(empty($Order)){
@@ -213,20 +216,28 @@ class WebhookService{
         if ($this->order_state_machine->can($Order, $OrderStatus)) {
             $this->order_state_machine->apply($Order, $OrderStatus);
 
-            foreach ($Order->getOrderItems() as $OrderItem) {
-                $ProductClass = $OrderItem->getProductClass();
-                if ($OrderItem->isProduct() && !$ProductClass->isStockUnlimited()) {
-                    $this->entityManager->flush($ProductClass);
-                    $ProductStock = $this->productStockRepository->findOneBy(['ProductClass' => $ProductClass]);
-                    $this->entityManager->flush($ProductStock);
-                }
-            }
-            $this->entityManager->flush($Order);
+            // Stock and customer points are already restored at this point:
+            // OrderStateMachine::apply() above fires the workflow event
+            // `workflow.order.transition.cancel`, which EC-CUBE core's own
+            // OrderStateMachine listens to and runs `rollbackStock` and
+            // `rollbackUsePoint` against. Those listeners mutate ProductClass
+            // / ProductStock / Customer in the same EntityManager unit of
+            // work; we just need a single flush() to persist them, alongside
+            // the order-status change.
+            //
+            // The previous version of this code looped over OrderItems and
+            // called flush($ProductClass) / flush($ProductStock) per line,
+            // which was a no-op pattern (the entities were not directly
+            // modified here, and the flush had already been triggered by the
+            // single-entity-flush deprecation cleanup). The loop is removed
+            // because EC-CUBE's state-machine listeners already handle stock
+            // and point rollback.
+            $this->entityManager->flush();
 
             // 会員の場合、購入回数、購入金額などを更新
             if ($Customer = $Order->getCustomer()) {
                 $this->entityManager->getRepository(Order::class)->updateOrderSummary($Customer);
-                $this->entityManager->flush($Customer);
+                $this->entityManager->flush();
             }
         }
     }
