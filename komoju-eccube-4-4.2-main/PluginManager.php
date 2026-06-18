@@ -20,6 +20,20 @@ class PluginManager extends AbstractPluginManager{
     const BACKUP_PAYMENTS_TABLE = 'plg_komoju_payments_backup';
 
     /**
+     * Tables this plugin must be able to read/write during enable().
+     * Used by the pre-flight check to fail fast with a clear error rather than
+     * letting a missing table corrupt EC-CUBE's outer transaction mid-way through.
+     */
+    const REQUIRED_TABLES = [
+        'dtb_payment',
+        'dtb_payment_option',
+        'dtb_order',
+        'dtb_mail_template',
+        'plg_komoju_payments',
+        'plg_komoju_config',
+    ];
+
+    /**
      * プラグインアップデート時の処理
      *
      * @param array              $meta
@@ -133,12 +147,48 @@ class PluginManager extends AbstractPluginManager{
     }
 
     public function enable(array $meta, ContainerInterface $container){
+        // Pre-flight: fail fast if the environment isn't in the expected shape.
+        // This runs before any mutations so a failure here cannot poison
+        // EC-CUBE's outer transaction (PluginService::enable wraps this method
+        // in beginTransaction()/commit()).
+        $this->validateEnvironment($container);
+
         $this->createConfig($container);
         $this->registerMethods($container);
         $this->insertMailTemplate($container);
         $this->getConfigService($container)->createPaymentsForKomojuPays();
         $this->restoreBackupData($container);
-        $this->consolidateOrphanedPayments($container);
+    }
+
+    /**
+     * Verify that every table this plugin needs to operate on exists.
+     *
+     * On PostgreSQL, querying a missing relation aborts the surrounding
+     * transaction (SQLSTATE 25P02). Because PluginService::enable() wraps this
+     * method in its own transaction, even a caught exception poisons the
+     * connection for every later query in the request — including EC-CUBE's
+     * own findAllEnabled() in regenerateProxy(). To avoid that, we use
+     * Doctrine SchemaManager metadata (information_schema / sqlite_master),
+     * which never executes a statement against the missing table.
+     *
+     * If anything is missing we throw with a Japanese-friendly message; the
+     * caller (PluginService) will roll back cleanly and the merchant sees a
+     * comprehensible error in the admin UI.
+     */
+    private function validateEnvironment(ContainerInterface $container){
+        $conn = $container->get('doctrine.orm.entity_manager')->getConnection();
+        $missing = [];
+        foreach(self::REQUIRED_TABLES as $table){
+            if(!$this->tableExists($conn, $table)){
+                $missing[] = $table;
+            }
+        }
+        if(!empty($missing)){
+            throw new \RuntimeException(
+                'KOMOJU: required tables are missing — ' . implode(', ', $missing)
+                . '. Run schema update before enabling the plugin.'
+            );
+        }
     }
 
     public function disable(array $meta, ContainerInterface $container){
@@ -410,79 +460,28 @@ class PluginManager extends AbstractPluginManager{
     }
 
     /**
-     * Migrate orders from orphaned Komoju Payment records to current active ones.
-     * This handles leftovers from previous installs where the plugin was uninstalled
-     * without the backup/restore mechanism.
+     * Check whether a table exists, without executing any statement that would
+     * error on the live connection.
+     *
+     * IMPORTANT: a `SELECT 1 FROM <table>` style probe must NOT be used here.
+     * On PostgreSQL, a query against a missing relation aborts the surrounding
+     * transaction (SQLSTATE 25P02), and because EC-CUBE's PluginService::enable()
+     * runs PluginManager::enable() inside its own outer transaction, our PHP-level
+     * try/catch cannot recover that transaction. Every later query — including
+     * EC-CUBE's own PluginRepository::findAllEnabled() during regenerateProxy() —
+     * would then fail with `current transaction is aborted, commands ignored
+     * until end of transaction block` and the user sees "システムエラーが発生しました。".
+     *
+     * Doctrine's SchemaManager::tablesExist() reads metadata (information_schema /
+     * sqlite_master) without ever executing a statement against the missing table,
+     * so it is safe inside an outer transaction on PostgreSQL, MySQL and SQLite.
      */
-    private function consolidateOrphanedPayments(ContainerInterface $container){
-        $conn = $container->get('doctrine.orm.entity_manager')->getConnection();
-
-        try {
-            // Get current active payment IDs (linked from plg_komoju_payments)
-            $activePayments = $conn->fetchAllAssociative(
-                'SELECT payment_id, name FROM plg_komoju_payments WHERE payment_id IS NOT NULL'
-            );
-            if (empty($activePayments)) {
-                return;
-            }
-
-            $activeByName = [];
-            $activeIds = [];
-            foreach ($activePayments as $row) {
-                $activeByName[$row['name']] = $row['payment_id'];
-                $activeIds[] = $row['payment_id'];
-            }
-
-            // Find all Komoju payment records NOT in the active set
-            $allKomoju = $conn->fetchAllAssociative(
-                "SELECT id, payment_method FROM dtb_payment WHERE method_class = ? AND id NOT IN (" . implode(',', $activeIds) . ")",
-                [KomojuPayment::class]
-            );
-
-            foreach ($allKomoju as $orphan) {
-                $orphanId = $orphan['id'];
-                $methodName = $orphan['payment_method'];
-
-                // Try to find the matching active payment by display name
-                $newId = null;
-                foreach ($activePayments as $active) {
-                    $activePaymentName = $conn->fetchOne(
-                        'SELECT payment_method FROM dtb_payment WHERE id = ?',
-                        [$active['payment_id']]
-                    );
-                    if ($activePaymentName === $methodName) {
-                        $newId = $active['payment_id'];
-                        break;
-                    }
-                }
-
-                if ($newId && $newId != $orphanId) {
-                    // Migrate orders to the active payment ID
-                    $conn->executeStatement(
-                        'UPDATE dtb_order SET payment_id = ? WHERE payment_id = ?',
-                        [$newId, $orphanId]
-                    );
-                }
-
-                // Delete orphan if no longer referenced
-                $orderCount = $conn->fetchOne(
-                    'SELECT COUNT(*) FROM dtb_order WHERE payment_id = ?',
-                    [$orphanId]
-                );
-                if ($orderCount == 0) {
-                    $conn->executeStatement('DELETE FROM dtb_payment_option WHERE payment_id = ?', [$orphanId]);
-                    $conn->executeStatement('DELETE FROM dtb_payment WHERE id = ?', [$orphanId]);
-                }
-            }
-        } catch (\Exception $e) {
-            log_error('KOMOJU: consolidate orphaned payments failed: ' . $e->getMessage());
-        }
-    }
-
     private function tableExists(Connection $conn, string $tableName): bool{
         try {
-            $conn->fetchOne('SELECT 1 FROM ' . $tableName . ' LIMIT 1');
-            return true;
+            $sm = method_exists($conn, 'createSchemaManager')
+                ? $conn->createSchemaManager()
+                : $conn->getSchemaManager();
+            return $sm->tablesExist([$tableName]);
         } catch (\Exception $e) {
             return false;
         }
