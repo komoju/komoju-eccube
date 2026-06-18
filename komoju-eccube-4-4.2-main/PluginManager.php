@@ -10,14 +10,11 @@ use Psr\Container\ContainerInterface;
 use Plugin\Komoju42\Entity\KomojuConfig;
 use Plugin\Komoju42\Entity\KomojuPay;
 use Plugin\Komoju42\Service\ConfigService;
+use Plugin\Komoju42\Service\RepairService;
 use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Eccube\Common\EccubeConfig;
 
 class PluginManager extends AbstractPluginManager{
-
-    const BACKUP_ORDER_TABLE = 'plg_komoju_order_backup';
-    const BACKUP_CONFIG_TABLE = 'plg_komoju_config_backup';
-    const BACKUP_PAYMENTS_TABLE = 'plg_komoju_payments_backup';
 
     /**
      * Default KOMOJU payment methods seeded on first install.
@@ -144,7 +141,37 @@ class PluginManager extends AbstractPluginManager{
         $this->registerMethods($container);
         $this->insertMailTemplate($container);
         $this->getConfigService($container)->createPaymentsForKomojuPays();
-        $this->restoreBackupData($container);
+
+        // NOTE: backup/restore of historical KOMOJU data after an
+        // uninstall/reinstall is now an opt-in action triggered from the plugin
+        // settings page (see RepairService::repair()). It is intentionally NOT
+        // run here:
+        //   1. It mutates dtb_order and deletes from dtb_payment, which is too
+        //      heavy for the silent plugin-enable path.
+        //   2. Any failure inside enable() runs inside EC-CUBE's outer
+        //      transaction; on PostgreSQL, a failed query aborts the whole
+        //      transaction and breaks the request even with a try/catch.
+        //   3. Most enables don't need it. Merchants who do need it will be
+        //      pointed at the "支払方法を修復" button on the settings page.
+    }
+
+    public function disable(array $meta, ContainerInterface $container){
+        $entityManager = $container->get('doctrine.orm.entity_manager');
+        $paymentRepository = $entityManager->getRepository(Payment::class);
+        $payments = $paymentRepository->findBy(['method_class' => KomojuPayment::class]);
+        foreach($payments as $Payment){
+            $Payment->setVisible(false);
+            $entityManager->persist($Payment);
+        }
+        $entityManager->flush();
+    }
+
+    public function uninstall(array $meta, ContainerInterface $container){
+        $repair = new RepairService(
+            $container->get('doctrine.orm.entity_manager'),
+            $container->get(EccubeConfig::class)
+        );
+        $repair->backupBeforeUninstall();
     }
 
     /**
@@ -176,21 +203,6 @@ class PluginManager extends AbstractPluginManager{
                 . '. Run schema update before enabling the plugin.'
             );
         }
-    }
-
-    public function disable(array $meta, ContainerInterface $container){
-        $entityManager = $container->get('doctrine.orm.entity_manager');
-        $paymentRepository = $entityManager->getRepository(Payment::class);
-        $payments = $paymentRepository->findBy(['method_class' => KomojuPayment::class]);
-        foreach($payments as $Payment){
-            $Payment->setVisible(false);
-            $entityManager->persist($Payment);
-        }
-        $entityManager->flush();
-    }
-
-    public function uninstall(array $meta, ContainerInterface $container){
-        $this->backupPluginData($container);
     }
 
     protected function insertMailTemplate(ContainerInterface $container){
@@ -227,278 +239,6 @@ class PluginManager extends AbstractPluginManager{
         $entityManager = $container->get('doctrine.orm.entity_manager');
         $eccubeConfig = $container->get(EccubeConfig::class);
         return new ConfigService($entityManager, $eccubeConfig);
-    }
-
-    /**
-     * Backup plugin tables to non-entity tables before EC-CUBE drops them.
-     * These backup tables are not mapped to any Doctrine Entity, so EC-CUBE's
-     * schemaService->dropTable() will not touch them.
-     */
-    private function backupPluginData(ContainerInterface $container){
-        $conn = $container->get('doctrine.orm.entity_manager')->getConnection();
-
-        try {
-            $this->backupTable($conn, 'plg_komoju_order', self::BACKUP_ORDER_TABLE);
-            $this->backupTable($conn, 'plg_komoju_config', self::BACKUP_CONFIG_TABLE);
-            $this->backupTable($conn, 'plg_komoju_payments', self::BACKUP_PAYMENTS_TABLE);
-        } catch (\Exception $e) {
-            log_error('KOMOJU: backup failed during uninstall: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Backup a table by creating a new table with safe column types.
-     * Uses TEXT/INTEGER only to avoid Doctrine schema introspection errors
-     * (e.g., SQLite's NUM type from NUMERIC columns is unrecognized by Doctrine).
-     */
-    private function backupTable(Connection $conn, string $sourceTable, string $backupTable){
-        if (!$this->tableExists($conn, $sourceTable)) {
-            return;
-        }
-
-        $conn->executeStatement('DROP TABLE IF EXISTS ' . $backupTable);
-
-        $columns = $this->getTableColumns($conn, $sourceTable);
-        if (empty($columns)) {
-            return;
-        }
-
-        // Build CREATE TABLE with safe types: INTEGER for int-like, TEXT for everything else
-        $colDefs = [];
-        foreach ($columns as $col) {
-            $type = strtoupper($col['type']);
-            if (preg_match('/INT/', $type)) {
-                $colDefs[] = $col['name'] . ' INTEGER';
-            } else {
-                $colDefs[] = $col['name'] . ' TEXT';
-            }
-        }
-
-        $conn->executeStatement(
-            'CREATE TABLE ' . $backupTable . ' (' . implode(', ', $colDefs) . ')'
-        );
-        $conn->executeStatement(
-            'INSERT INTO ' . $backupTable . ' SELECT * FROM ' . $sourceTable
-        );
-    }
-
-    /**
-     * Get column info from a table, compatible with SQLite and MySQL.
-     * Returns array of ['name' => ..., 'type' => ...]
-     */
-    private function getTableColumns(Connection $conn, string $tableName): array{
-        $platform = $conn->getDatabasePlatform();
-
-        if ($platform instanceof \Doctrine\DBAL\Platforms\SqlitePlatform) {
-            $rows = $conn->fetchAllAssociative("PRAGMA table_info($tableName)");
-            return array_map(function($row) {
-                return ['name' => $row['name'], 'type' => $row['type']];
-            }, $rows);
-        }
-
-        // MySQL / PostgreSQL
-        $rows = $conn->fetchAllAssociative(
-            "SELECT COLUMN_NAME as name, DATA_TYPE as type FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
-            [$tableName]
-        );
-        return $rows;
-    }
-
-    /**
-     * Restore backed-up data after re-install and re-link orders to new Payment IDs.
-     */
-    private function restoreBackupData(ContainerInterface $container){
-        $entityManager = $container->get('doctrine.orm.entity_manager');
-        $conn = $entityManager->getConnection();
-
-        if (!$this->tableExists($conn, self::BACKUP_ORDER_TABLE)) {
-            return;
-        }
-
-        try {
-            // Restore order data
-            $this->restoreOrderData($conn);
-
-            // Restore config data
-            $this->restoreConfigData($conn);
-
-            // Re-link old Payment IDs in dtb_order to newly created Payment entities
-            $this->relinkOrderPayments($conn);
-
-            // Clean up backup tables
-            $conn->executeStatement('DROP TABLE IF EXISTS ' . self::BACKUP_ORDER_TABLE);
-            $conn->executeStatement('DROP TABLE IF EXISTS ' . self::BACKUP_CONFIG_TABLE);
-            $conn->executeStatement('DROP TABLE IF EXISTS ' . self::BACKUP_PAYMENTS_TABLE);
-        } catch (\Exception $e) {
-            log_error('KOMOJU: restore failed during enable: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Restore plg_komoju_order rows from the backup table.
-     *
-     * Schema-drift safe: the column set in the backup table reflects whatever
-     * schema was active at uninstall time, but the current plg_komoju_order
-     * may have added/removed/renamed columns since. We intersect each row's
-     * keys with the *current* table's columns before insert; unknown columns
-     * are silently dropped, missing columns are left to the DB defaults.
-     */
-    private function restoreOrderData(Connection $conn){
-        if (!$this->tableExists($conn, self::BACKUP_ORDER_TABLE)) {
-            return;
-        }
-
-        $rows = $conn->fetchAllAssociative('SELECT * FROM ' . self::BACKUP_ORDER_TABLE);
-        if (empty($rows)) {
-            return;
-        }
-
-        $currentColumns = $this->getCurrentColumnNames($conn, 'plg_komoju_order');
-        if (empty($currentColumns)) {
-            return;
-        }
-        $currentColumnSet = array_flip($currentColumns);
-
-        foreach ($rows as $row) {
-            // Check if this order_id already exists (avoid duplicates)
-            $exists = $conn->fetchOne(
-                'SELECT COUNT(*) FROM plg_komoju_order WHERE order_id = ?',
-                [$row['order_id'] ?? null]
-            );
-            if ($exists > 0) {
-                continue;
-            }
-
-            // Remove the 'id' key so the auto-increment generates a new one
-            unset($row['id']);
-
-            // Filter to columns that actually exist in the current schema.
-            // Drops keys that no longer have a matching column (column rename
-            // or drop between plugin versions); missing columns will receive
-            // the DB default.
-            $filtered = [];
-            foreach ($row as $col => $val) {
-                if (isset($currentColumnSet[$col])) {
-                    $filtered[$col] = $val;
-                }
-            }
-            if (empty($filtered)) {
-                continue;
-            }
-            $conn->insert('plg_komoju_order', $filtered);
-        }
-    }
-
-    private function restoreConfigData(Connection $conn){
-        if (!$this->tableExists($conn, self::BACKUP_CONFIG_TABLE)) {
-            return;
-        }
-
-        // Only restore if the current config is empty (freshly created)
-        $currentConfig = $conn->fetchOne('SELECT secret_key FROM plg_komoju_config WHERE id = 1');
-        if (!empty($currentConfig)) {
-            return;
-        }
-
-        $backup = $conn->fetchAssociative('SELECT * FROM ' . self::BACKUP_CONFIG_TABLE . ' LIMIT 1');
-        if (empty($backup)) {
-            return;
-        }
-
-        unset($backup['id']);
-
-        // Same schema-drift filter as restoreOrderData() above.
-        $currentColumns = $this->getCurrentColumnNames($conn, 'plg_komoju_config');
-        $currentColumnSet = array_flip($currentColumns);
-        $filtered = [];
-        foreach ($backup as $col => $val) {
-            if (isset($currentColumnSet[$col])) {
-                $filtered[$col] = $val;
-            }
-        }
-        if (empty($filtered)) {
-            return;
-        }
-        $conn->update('plg_komoju_config', $filtered, ['id' => 1]);
-    }
-
-    private function getCurrentColumnNames(Connection $conn, string $table): array
-    {
-        try {
-            $sm = method_exists($conn, 'createSchemaManager')
-                ? $conn->createSchemaManager()
-                : $conn->getSchemaManager();
-            $columns = $sm->listTableColumns($table);
-            return array_keys($columns);
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Re-link dtb_order rows that reference old Komoju Payment IDs to new ones.
-     * Uses the backup payments table to map old payment_id -> payment method name,
-     * then finds the newly created payment with the same name.
-     */
-    private function relinkOrderPayments(Connection $conn){
-        if (!$this->tableExists($conn, self::BACKUP_PAYMENTS_TABLE)) {
-            return;
-        }
-
-        // Build mapping: old_payment_id -> method_name from backup
-        $oldMappings = $conn->fetchAllAssociative(
-            'SELECT payment_id, name FROM ' . self::BACKUP_PAYMENTS_TABLE . ' WHERE payment_id IS NOT NULL'
-        );
-        if (empty($oldMappings)) {
-            return;
-        }
-
-        // Build mapping: method_name -> new_payment_id from current plg_komoju_payments
-        $newMappings = $conn->fetchAllAssociative(
-            'SELECT payment_id, name FROM plg_komoju_payments WHERE payment_id IS NOT NULL'
-        );
-        $newPaymentByName = [];
-        foreach ($newMappings as $row) {
-            $newPaymentByName[$row['name']] = $row['payment_id'];
-        }
-
-        // For each old payment_id, update orders to point to the new one
-        foreach ($oldMappings as $oldMapping) {
-            $oldPaymentId = $oldMapping['payment_id'];
-            $methodName = $oldMapping['name'];
-
-            if (!isset($newPaymentByName[$methodName])) {
-                continue;
-            }
-
-            $newPaymentId = $newPaymentByName[$methodName];
-            if ($oldPaymentId == $newPaymentId) {
-                continue;
-            }
-
-            // Update orders referencing the old payment ID
-            $conn->executeStatement(
-                'UPDATE dtb_order SET payment_id = ? WHERE payment_id = ?',
-                [$newPaymentId, $oldPaymentId]
-            );
-        }
-
-        // Clean up orphaned old Payment records that are no longer referenced
-        $allOldPaymentIds = array_column($oldMappings, 'payment_id');
-        $allNewPaymentIds = array_values($newPaymentByName);
-        $orphanIds = array_diff($allOldPaymentIds, $allNewPaymentIds);
-
-        foreach ($orphanIds as $orphanId) {
-            // Only delete if no orders reference it
-            $orderCount = $conn->fetchOne(
-                'SELECT COUNT(*) FROM dtb_order WHERE payment_id = ?',
-                [$orphanId]
-            );
-            if ($orderCount == 0) {
-                $conn->executeStatement('DELETE FROM dtb_payment_option WHERE payment_id = ?', [$orphanId]);
-                $conn->executeStatement('DELETE FROM dtb_payment WHERE id = ?', [$orphanId]);
-            }
-        }
     }
 
     /**

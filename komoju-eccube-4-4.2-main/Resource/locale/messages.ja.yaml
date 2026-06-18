@@ -8,6 +8,17 @@ komoju_payment.admin.config.section.credentials: API認証情報
 komoju_payment.admin.config.section.payment: 決済設定
 komoju_payment.admin.config.section.webhook: Webhook設定
 komoju_payment.admin.config.section.advanced: ログ・詳細設定
+komoju_payment.admin.config.section.maintenance: メンテナンス
+komoju_payment.admin.config.repair.label: KOMOJUの決済情報を再紐付け
+komoju_payment.admin.config.repair.hint: 一度プラグインをアンインストールして再インストールした後、過去の注文に支払方法が表示されない場合は、こちらから再紐付けできます。アンインストール時のバックアップから過去のKOMOJU決済情報を復元し、現在のKOMOJU決済方法に再紐付けします。
+komoju_payment.admin.config.repair.detected: アンインストール時に保存されたKOMOJU決済データが見つかりました。メンテナンスセクションから再紐付けを実行できます。
+komoju_payment.admin.config.repair.banner_action: メンテナンスを開く
+komoju_payment.admin.config.repair.button: 再紐付けを実行
+komoju_payment.admin.config.repair.confirm: 過去の注文を現在のKOMOJU決済情報に再紐付けします。この操作は取り消せません。続行してもよろしいですか？
+komoju_payment.admin.config.repair.in_progress: 再紐付け中...
+komoju_payment.admin.config.repair.done: 再紐付けが完了しました。
+komoju_payment.admin.config.repair.failed: 再紐付けに失敗しました。
+komoju_payment.admin.config.repair.success: '再紐付けが完了しました。注文 %orders_relinked% 件を再紐付け、%orders_restored% 件のKOMOJU注文データを復元、%orphans_deleted% 件の不要な支払方法を削除しました。'
 komoju_payment.admin.config.label:secret_key: 非公開鍵
 komoju_payment.admin.config.label:publishable_key: 公開用鍵
 komoju_payment.admin.config.label:merchant_uuid: クライアント UUID

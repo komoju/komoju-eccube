@@ -46,6 +46,12 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju42.service.config'
             - '@Plugin\Komoju42\Service\KomojuClientFactory'
+    plg_Komoju42.service.repair:
+        public: true
+        class: Plugin\Komoju42\Service\RepairService
+        arguments:
+            - '@Doctrine\ORM\EntityManagerInterface'
+            - '@Eccube\Common\EccubeConfig'
     Plugin\Komoju42\EventListener\SqliteBusyTimeoutListener:
         tags:
             - { name: doctrine.event_listener, event: postConnect }
@@ -71,3 +77,4 @@ services:
     Plugin\Komoju42\Service\WebhookService: '@plg_Komoju42.service.komoju_webhook'
     Plugin\Komoju42\Service\MailExService: '@plg_Komoju42.service.komoju_mail_service'
     Plugin\Komoju42\Service\KomojuService: '@plg_Komoju42.service.komoju_service'
+    Plugin\Komoju42\Service\RepairService: '@plg_Komoju42.service.repair'

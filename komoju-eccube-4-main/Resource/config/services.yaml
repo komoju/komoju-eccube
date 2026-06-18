@@ -41,6 +41,12 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju.service.config'
             - '@Plugin\Komoju\Service\KomojuClientFactory'
+    plg_Komoju.service.repair:
+        public: true
+        class: Plugin\Komoju\Service\RepairService
+        arguments:
+            - '@Doctrine\ORM\EntityManagerInterface'
+            - '@Eccube\Common\EccubeConfig'
 
     Plugin\Komoju\Doctrine\EventSubscriber\OrderEventSubscriber:
         public: true
@@ -106,3 +112,4 @@ services:
     Plugin\Komoju\Service\WebhookService: '@plg_Komoju.service.komoju_webhook'
     Plugin\Komoju\Service\MailExService: '@plg_Komoju.service.komoju_mail_service'
     Plugin\Komoju\Service\KomojuService: '@plg_Komoju.service.komoju_service'
+    Plugin\Komoju\Service\RepairService: '@plg_Komoju.service.repair'
