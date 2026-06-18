@@ -24,10 +24,18 @@ permissions:
 
 jobs:
   build:
-    name: Build Plugin Zip
+    name: Build Plugin Archive
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # PharData is bundled with PHP itself; we install a pinned PHP so the
+      # release-time PharData verification step uses the same PHP minor that
+      # the bug-report environments run on (8.1.27). Defaulting to whatever
+      # version `ubuntu-latest` ships could mask version-specific Phar quirks.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
 
       - name: Determine plugin and version
         id: meta
@@ -59,11 +67,21 @@ jobs:
 
       - name: Prepare plugin directory
         run: |
+          # NOTE: --exclude='vendor' is required. EC-CUBE's plugin loader
+          # auto-discovers services under app/Plugin/*/**/*.php; if vendor/
+          # ships with the archive it tries to register vendor/autoload.php
+          # as a Plugin\<Name>\vendor\autoload service class and the entire
+          # admin panel breaks with "Expected to find class ... in file ...
+          # vendor/autoload.php".
           mkdir -p staging
           rsync -a \
+            --exclude='vendor' \
             --exclude='tests' \
             --exclude='phpunit.xml' \
+            --exclude='phpunit.xml.dist' \
+            --exclude='.phpunit.result.cache' \
             --exclude='.gitignore' \
+            --exclude='.DS_Store' \
             --exclude='README.md' \
             --exclude='README.txt' \
             --exclude='CHANGELOG.txt' \
@@ -74,9 +92,29 @@ jobs:
 
       - name: Build archives (for GitHub Release)
         run: |
+          # NOTE: this archive must be loadable by PHP's PharData class,
+          # which is what EC-CUBE's PluginService::unpackPluginArchive() uses
+          # to extract .tar.gz uploads. Two requirements:
+          #
+          #   1. Use --format=ustar (classic POSIX), NOT pax. PharData
+          #      rejects pax extended headers (`PaxHeader/...` entries).
+          #      GNU tar's default on Linux happens to be ok, but pinning
+          #      to ustar is safer and matches how a developer would build
+          #      the archive locally on macOS, where BSD tar defaults to
+          #      pax and breaks PharData.
+          #
+          #   2. Do NOT include a `./` directory entry at the archive root.
+          #      PharData errors with `Cannot extract ".", internal error`
+          #      if such an entry is present. `tar -czf foo.tar.gz .`
+          #      *does* include `./`, so we enumerate the staging contents
+          #      explicitly with `ls -A` (lists all entries including
+          #      dotfiles, but excludes `.` and `..` themselves).
+          #
+          # We also drop the .zip archive: EC-CUBE 4.2+ rejects .zip plugin
+          # uploads with "プラグインファイルで許可されている形式は、tar.gzです。".
+          # Older 4.0/4.1 will accept either, so .tar.gz works for both.
           cd staging
-          zip -r "../${{ steps.meta.outputs.zip_name }}.zip" .
-          tar czf "../${{ steps.meta.outputs.zip_name }}.tar.gz" .
+          tar --format=ustar -czf "../${{ steps.meta.outputs.zip_name }}.tar.gz" $(ls -A)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -84,11 +122,20 @@ jobs:
           name: ${{ steps.meta.outputs.zip_name }}-${{ steps.meta.outputs.version }}
           path: staging/*
 
+      - name: Verify archive can be extracted by PharData
+        # PharData is what EC-CUBE uses on the merchant's server to unpack
+        # the .tar.gz upload. If our archive can't be extracted by PharData
+        # the merchant sees a generic "プラグインのアップロードに失敗しました。".
+        # Better to fail the release here than ship a broken tarball.
+        run: |
+          mkdir -p phartest
+          php -r '$p = new PharData("${{ steps.meta.outputs.zip_name }}.tar.gz"); $p->extractTo("phartest", null, true); echo "PharData extraction OK\n";'
+          rm -rf phartest
+
       - name: Create GitHub Release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.meta.outputs.zip_name }} v${{ steps.meta.outputs.version }}
           files: |
-            ${{ steps.meta.outputs.zip_name }}.zip
             ${{ steps.meta.outputs.zip_name }}.tar.gz
