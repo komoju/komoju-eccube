@@ -51,6 +51,7 @@ komoju_payment.admin.order.status.captured: '%date% に売上確定'
 komoju_payment.admin.order.status.fully_refunded: 全額返金済み
 komoju_payment.admin.order.status.partially_refunded: '一部返金済み（%refunded% / %total%）'
 komoju_payment.admin.order.status.refunded: 払い戻し済み
+komoju_payment.admin.order.status.canceled: キャンセル済み
 komoju_payment.admin.order.refunded_amount: 返金額
 komoju_payment.admin.order.error.invalid_request: 無効なリクエスト
 komoju_payment.admin.order.error.refunded: すでに返金されています

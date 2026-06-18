@@ -51,6 +51,7 @@ komoju_payment.admin.order.status.captured: 'Captured on %date%'
 komoju_payment.admin.order.status.fully_refunded: Fully Refunded
 komoju_payment.admin.order.status.partially_refunded: 'Partially Refunded (%refunded% / %total%)'
 komoju_payment.admin.order.status.refunded: Refunded
+komoju_payment.admin.order.status.canceled: Canceled
 komoju_payment.admin.order.refunded_amount: Refunded Amount
 komoju_payment.admin.order.error.invalid_request: Invalid request.
 komoju_payment.admin.order.error.refunded: This payment has already been refunded.

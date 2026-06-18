@@ -111,12 +111,20 @@
                         <div class="row">
                             <div class="col-3">{{ 'komoju_payment.admin.order.status'|trans }}</div>
                             <div class="col">
+                                {# Status badge: priority order is refund → canceled → captured → authorized.
+                                   `canceled_at` is set by WebhookService::cancelOrder() for
+                                   payment.expired / payment.cancelled / payment.failed events,
+                                   and after a full refund. Without this elseif, a canceled or
+                                   expired authorization (e.g. an unpaid konbini that timed out)
+                                   would incorrectly continue to display "オーソリ済み". #}
                                 {% if komoju_order.IsChargeRefunded %}
                                     {% if komoju_order.refundedAmount >= Order.payment_total %}
                                         <span class="badge bg-danger">{{ 'komoju_payment.admin.order.status.fully_refunded'|trans }}</span>
                                     {% else %}
                                         <span class="badge bg-warning text-dark">{{ 'komoju_payment.admin.order.status.partially_refunded'|trans({'%refunded%': komoju_order.refundedAmount|price, '%total%': Order.payment_total|price}) }}</span>
                                     {% endif %}
+                                {% elseif komoju_order.canceledAt %}
+                                    <span class="badge bg-secondary">{{ 'komoju_payment.admin.order.status.canceled'|trans }}</span>
                                 {% elseif komoju_order.Captured %}
                                     <span class="badge bg-success">{{ 'komoju_payment.admin.order.status.captured'|trans({'%date%': komoju_order.capturedAt|date('Y-m-d')}) }}</span>
                                 {% else %}
