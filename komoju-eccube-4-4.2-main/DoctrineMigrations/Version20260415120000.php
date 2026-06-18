@@ -22,8 +22,20 @@ final class Version20260415120000 extends AbstractMigration
             return;
         }
 
-        // Copy data from old table to new (created by SchemaUpdate)
-        $this->addSql('INSERT OR IGNORE INTO plg_komoju_payments SELECT * FROM plg_komoju_multi_pays');
+        // Copy data from old table to new (created by SchemaUpdate).
+        //
+        // We use `WHERE NOT EXISTS` instead of platform-specific
+        // upsert syntax (`INSERT OR IGNORE` is SQLite-only, `INSERT IGNORE`
+        // is MySQL-only, `ON CONFLICT DO NOTHING` is PG ≥ 9.5 and requires
+        // a unique constraint on the conflicting column). This portable form
+        // works on SQLite, MySQL, and PostgreSQL without branching.
+        $this->addSql(
+            'INSERT INTO plg_komoju_payments '
+            . 'SELECT * FROM plg_komoju_multi_pays src '
+            . 'WHERE NOT EXISTS ('
+            . '    SELECT 1 FROM plg_komoju_payments dst WHERE dst.id = src.id'
+            . ')'
+        );
         $this->addSql('DROP TABLE plg_komoju_multi_pays');
 
         // Update payment method_class from renamed KomojuMultiPay to KomojuPayment
