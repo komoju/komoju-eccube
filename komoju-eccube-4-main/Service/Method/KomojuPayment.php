@@ -148,9 +148,13 @@ class KomojuPayment implements PaymentMethodInterface{
             'cancel_url' => $cancel_url,
             'default_locale' => $locale,
             'payment_types' => $enabled_methods,
+            // NOTE: external_order_num is a TOP-LEVEL session parameter. KOMOJU's
+            // /sessions API rejects it inside payment_data with
+            // "invalid_parameter: Payment data is invalid" (422); only `capture`
+            // belongs in payment_data here.
+            'external_order_num' => $this->generateUniqueOrderNumber($config_data),
             'payment_data' => [
                 'capture' => $config_data['capture_on'] ? 'auto' : 'manual',
-                'external_order_num' => $this->generateUniqueOrderNumber($config_data),
             ],
             'metadata' => [
                 'eccube_order_id' => (string)$this->Order->getId(),

@@ -418,7 +418,7 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                return $data['payment_data']['external_order_num'] === 'SHOP-ORD-999-55';
+                return $data['external_order_num'] === 'SHOP-ORD-999-55';
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -495,7 +495,7 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                return $data['payment_data']['external_order_num'] === '100';
+                return $data['external_order_num'] === '100';
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -533,7 +533,7 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                return $data['payment_data']['external_order_num'] === '100-2';
+                return $data['external_order_num'] === '100-2';
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -571,7 +571,7 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                return $data['payment_data']['external_order_num'] === '100-4';
+                return $data['external_order_num'] === '100-4';
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);

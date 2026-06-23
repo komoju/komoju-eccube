@@ -175,7 +175,11 @@ class RepairServiceTest extends TestCase
         $this->assertArrayHasKey('order_id', $captured['data']);
         $this->assertArrayHasKey('komoju_session_id', $captured['data']);
         $this->assertArrayNotHasKey('legacy_field', $captured['data'], 'unknown columns must be filtered before INSERT');
-        $this->assertArrayNotHasKey('id', $captured['data'], 'id must be removed so the auto-increment generates a new PK');
+        // id must be assigned EXPLICITLY (computed MAX(id)+1 = 1 here), not
+        // omitted — plg_komoju_order.id has no sequence on PostgreSQL, so an
+        // INSERT without id fails there with a not-null violation.
+        $this->assertArrayHasKey('id', $captured['data'], 'id must be set explicitly for cross-DB portability');
+        $this->assertSame(1, $captured['data']['id'], 'id should be MAX(id)+1');
         $this->assertSame(1, $summary['orders_restored']);
     }
 }

@@ -229,6 +229,16 @@ class RepairService
         }
         $currentColumnSet = array_flip($currentColumns);
 
+        // Compute the next primary key ourselves and assign it explicitly.
+        //
+        // We must NOT omit `id` and rely on the database to auto-generate it:
+        // plg_komoju_order.id has no AUTO_INCREMENT/IDENTITY/sequence on
+        // PostgreSQL (the column is a plain NOT NULL integer), so an INSERT
+        // without `id` fails with a not-null violation there. MySQL/SQLite
+        // tolerate the omission, but assigning the id explicitly works
+        // identically on all three engines.
+        $nextId = ((int) $conn->fetchOne('SELECT MAX(id) FROM plg_komoju_order')) + 1;
+
         $inserted = 0;
         foreach ($rows as $row) {
             // Skip rows we'd duplicate
@@ -239,8 +249,6 @@ class RepairService
             if ($exists > 0) {
                 continue;
             }
-
-            unset($row['id']); // let auto-increment generate a fresh PK
 
             // Filter to columns that actually exist in the current schema.
             // If a column was dropped between versions we silently discard it
@@ -255,6 +263,9 @@ class RepairService
             if (empty($filtered)) {
                 continue;
             }
+
+            // Assign a fresh, explicit PK (portable across MySQL/PG/SQLite).
+            $filtered['id'] = $nextId++;
 
             $conn->insert('plg_komoju_order', $filtered);
             $inserted++;
