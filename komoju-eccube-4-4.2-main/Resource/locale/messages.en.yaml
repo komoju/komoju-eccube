@@ -110,6 +110,7 @@ komoju_payment.admin.log.delete_all.confirm: "Delete operational logs (error/deb
 komoju_payment.admin.log.delete_all.success: Operational logs deleted. Order history was kept.
 komoju_payment.admin.log.delete_all.nothing: No operational logs to delete. Order history (timeline events) is kept.
 komoju_payment.admin.log.delete_all.hint: 'Deletable operational logs: %count% (order history not included)'
+komoju_payment.admin.log.delete_all.disabled: 'No operational logs to delete. Order history (timeline events) is never deleted.'
 komoju_payment.admin.config.label.log_retention_days: Log Retention Period
 komoju_payment.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
 komoju_payment.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
