@@ -230,6 +230,7 @@ class PluginManager extends AbstractPluginManager{
         $config->setSecretKey('');
         $config->setMerchantUuid('');
         $config->setWebhookSecret(bin2hex(random_bytes(32)));
+        $config->setOrderNumberFormat(KomojuConfig::DEFAULT_ORDER_NUMBER_FORMAT);
 
         $entityManager->persist($config);
         $entityManager->flush();

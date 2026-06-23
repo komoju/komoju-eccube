@@ -81,7 +81,7 @@ class KomojuConfigType extends AbstractType{
             ])
             ->add('order_number_format', TextType::class, [
                 'required' => false,
-                'attr' => ['placeholder' => '{order_no}'],
+                'attr' => ['placeholder' => 'ECC-{order_no}'],
             ]);
     }
 

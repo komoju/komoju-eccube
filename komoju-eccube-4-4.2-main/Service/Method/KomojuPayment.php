@@ -21,6 +21,7 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Eccube\Service\PurchaseFlow\PurchaseException;
 use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Entity\KomojuConfig;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
@@ -148,13 +149,14 @@ class KomojuPayment implements PaymentMethodInterface{
             'cancel_url' => $cancel_url,
             'default_locale' => $locale,
             'payment_types' => $enabled_methods,
-            // NOTE: external_order_num is a TOP-LEVEL session parameter. KOMOJU's
-            // /sessions API rejects it inside payment_data with
-            // "invalid_parameter: Payment data is invalid" (422); only `capture`
-            // belongs in payment_data here.
-            'external_order_num' => $this->generateUniqueOrderNumber($config_data),
+            // external_order_num belongs INSIDE payment_data per KOMOJU's
+            // sessions API (payment_data[external_order_num]). It must be
+            // UNIQUE per session — KOMOJU returns 422 "Payment data is invalid"
+            // if the value was already used — so generateUniqueOrderNumber()
+            // appends a unique suffix on retries.
             'payment_data' => [
                 'capture' => $config_data['capture_on'] ? 'auto' : 'manual',
+                'external_order_num' => $this->generateUniqueOrderNumber($config_data),
             ],
             'metadata' => [
                 'eccube_order_id' => (string)$this->Order->getId(),
@@ -217,28 +219,43 @@ class KomojuPayment implements PaymentMethodInterface{
 
     /**
      * Generate a unique external_order_num for KOMOJU.
-     * On retries (when the customer abandons payment and tries again),
-     * appends a suffix to avoid KOMOJU rejecting duplicate order numbers.
+     *
+     * KOMOJU requires external_order_num to be unique per session and returns
+     * 422 "Payment data is invalid" if a value is reused. A customer who
+     * abandons a payment and retries (or any prior failed attempt) would
+     * otherwise collide on the same order number. The previous implementation
+     * derived the suffix from a count of KomojuOrder rows, which is not
+     * collision-proof (failed attempts may not advance the count predictably,
+     * and a re-submit of the same order can reuse a value KOMOJU already saw).
+     *
+     * We always append a short unique token on retries so each attempt sends a
+     * value KOMOJU has not seen, while keeping the readable base order number
+     * on the first attempt.
      */
     private function generateUniqueOrderNumber($config_data){
         $baseNumber = $this->formatOrderNumber($config_data);
 
-        // Count existing KOMOJU sessions for this order to detect retries
+        // Count existing KOMOJU sessions for this order to detect retries.
         $existingCount = $this->entityManager->getRepository(KomojuOrder::class)
             ->count(['Order' => $this->Order]);
 
         if ($existingCount > 0) {
-            return $baseNumber . '-' . ($existingCount + 1);
+            // Append a unique-per-attempt suffix (retry index + short random
+            // token) so a reused order number can never collide on KOMOJU.
+            $suffix = ($existingCount + 1) . '-' . substr(bin2hex(random_bytes(3)), 0, 5);
+            return $baseNumber . '-' . $suffix;
         }
 
         return $baseNumber;
     }
 
     private function formatOrderNumber($config_data){
-        $format = !empty($config_data['order_number_format']) ? $config_data['order_number_format'] : null;
-        if(empty($format)){
-            return (string)$this->Order->getOrderNo();
-        }
+        // Fall back to the default format (ECC-{order_no}) when the merchant
+        // has not set a custom one, so the external_order_num is always
+        // prefixed consistently.
+        $format = !empty($config_data['order_number_format'])
+            ? $config_data['order_number_format']
+            : KomojuConfig::DEFAULT_ORDER_NUMBER_FORMAT;
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$this->Order->getOrderNo(), (string)$this->Order->getId()],

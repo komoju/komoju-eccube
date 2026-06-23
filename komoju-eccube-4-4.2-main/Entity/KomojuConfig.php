@@ -13,6 +13,14 @@ use Doctrine\ORM\Mapping as ORM;
 class KomojuConfig
 {
     /**
+     * Default external_order_num format sent to KOMOJU. {order_no} is replaced
+     * with the EC-CUBE order number (and {order_id} with the internal id).
+     * Pre-populated on install and used as the fallback when the merchant
+     * leaves the setting blank.
+     */
+    const DEFAULT_ORDER_NUMBER_FORMAT = 'ECC-{order_no}';
+
+    /**
      * @var int
      *
      * @ORM\Column(name="id", type="integer", options={"unsigned":true})
@@ -74,7 +82,7 @@ class KomojuConfig
      *
      * @ORM\Column(name="order_number_format", type="string", length=255, nullable=true)
      */
-    private $order_number_format;
+    private $order_number_format = self::DEFAULT_ORDER_NUMBER_FORMAT;
 
     public function getWebhookSecret(){
         return $this->webhook_secret;
