@@ -18,8 +18,10 @@
                                 </a>
                                 <form method="post" action="{{ url('Komoju_admin_log_delete_all') }}" id="form-delete-all-logs" class="d-inline ml-2">
                                     <input type="hidden" name="_token" value="{{ csrf_token('komoju_log_delete_all') }}">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete-all-logs">
-                                        <i class="fas fa-trash"></i> {{ 'komoju_payment.admin.log.delete_all'|trans }}
+                                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete-all-logs"
+                                        title="{{ 'komoju_payment.admin.log.delete_all.hint'|trans({ '%count%': deletable_log_count }) }}"
+                                        {{ deletable_log_count > 0 ? '' : 'disabled' }}>
+                                        <i class="fas fa-trash"></i> {{ 'komoju_payment.admin.log.delete_all'|trans }}{% if deletable_log_count > 0 %} ({{ deletable_log_count }}){% endif %}
                                     </button>
                                 </form>
                             </div>

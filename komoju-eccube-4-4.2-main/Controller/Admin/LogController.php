@@ -91,7 +91,25 @@ class LogController extends AbstractController
         return [
             'pagination' => $pagination,
             'searchForm' => $searchForm->createView(),
+            // Number of operational (non-protected) logs the "delete
+            // operational logs" button would remove. Order-history events
+            // (is_protected = 1) are never counted/deleted here.
+            'deletable_log_count' => $this->countDeletableLogs(),
         ];
+    }
+
+    /**
+     * Count operational (non-protected) logs — the rows the bulk-delete button
+     * is allowed to remove. Order-timeline history (is_protected = 1) is excluded.
+     */
+    private function countDeletableLogs(): int
+    {
+        return (int) $this->entityManager->createQueryBuilder()
+            ->select('COUNT(s.id)')
+            ->from('Plugin\Komoju42\Entity\KomojuLog', 's')
+            ->where('s.is_protected = 0 OR s.is_protected IS NULL')
+            ->getQuery()
+            ->getSingleScalarResult();
     }
 
     /**

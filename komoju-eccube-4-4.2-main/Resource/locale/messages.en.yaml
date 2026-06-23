@@ -105,10 +105,11 @@ komoju_payment.admin.log.search.api.refund: Refund
 komoju_payment.admin.log.search.api.retrieve: Retrieve
 komoju_payment.admin.log.search.result_count: '%count% results'
 komoju_payment.admin.log.export_csv: Export CSV
-komoju_payment.admin.log.delete_all: Clear All Logs
-komoju_payment.admin.log.delete_all.confirm: Are you sure you want to delete all logs? This cannot be undone.
-komoju_payment.admin.log.delete_all.success: All logs have been deleted.
-komoju_payment.admin.log.delete_all.nothing: No deletable logs found. Order timeline logs are protected.
+komoju_payment.admin.log.delete_all: Delete operational logs
+komoju_payment.admin.log.delete_all.confirm: "Delete operational logs (error/debug logs)? Order history (timeline events) will be kept. This cannot be undone. Continue?"
+komoju_payment.admin.log.delete_all.success: Operational logs deleted. Order history was kept.
+komoju_payment.admin.log.delete_all.nothing: No operational logs to delete. Order history (timeline events) is kept.
+komoju_payment.admin.log.delete_all.hint: 'Deletable operational logs: %count% (order history not included)'
 komoju_payment.admin.config.label.log_retention_days: Log Retention Period
 komoju_payment.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
 komoju_payment.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
