@@ -683,4 +683,140 @@ class WebhookServiceTest extends TestCase
 
         $this->assertEquals(500, $komojuOrder->getRefundedAmount());
     }
+
+    // --- duplicate refund webhook handling ---
+    //
+    // KOMOJU emits two event types for a single refund (payment.refunded and
+    // payment.refund.created), both routed to paymentRefunded(). They carry the
+    // same refund id(s). The handler must log the refund exactly once.
+
+    public function testRefundedDuplicateEventLogsOnce()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(120);
+        $eccubeOrder->setPaymentTotal(6500);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_dup');
+
+        $cancelStatus = new OrderStatus();
+        $cancelStatus->setId(OrderStatus::CANCEL);
+        $statusRepo = $this->createMock(StubRepository::class);
+        $statusRepo->method('find')->willReturn($cancelStatus);
+
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) use ($statusRepo) {
+                if ($class === OrderStatus::class) return $statusRepo;
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                return $this->createMock(StubRepository::class);
+            });
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+        $this->orderStateMachine->method('can')->willReturn(true);
+
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService
+        );
+
+        // The refund log line must be written exactly once across BOTH events,
+        // even though both deliveries carry the same refund id 'ref_dup'.
+        $refundLogCalls = 0;
+        $this->logService->method('writeLog')
+            ->willReturnCallback(function ($api, $orderId, $msg) use (&$refundLogCalls) {
+                if ($api === 'webhook[refund]' && strpos($msg, 'refund confirmed') === 0) {
+                    $refundLogCalls++;
+                }
+            });
+
+        $payload = ['refunds' => [(object)['id' => 'ref_dup', 'amount' => 6500]]];
+
+        // First event (e.g. payment.refunded)
+        $this->service->paymentRefunded($this->makeWebhookObject('pay_dup', $payload));
+        // Second event (e.g. payment.refund.created) — same refund id
+        $this->service->paymentRefunded($this->makeWebhookObject('pay_dup', $payload));
+
+        $this->assertEquals(1, $refundLogCalls, 'refund must be logged exactly once across duplicate events');
+        $this->assertEquals(6500, $komojuOrder->getRefundedAmount());
+        $this->assertEquals('ref_dup', $komojuOrder->getRefundId());
+    }
+
+    public function testRefundedAcquiresPessimisticLock()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(121);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_lock');
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        // The KomojuOrder must be locked PESSIMISTIC_WRITE before mutation,
+        // mirroring the admin refund path, to serialize concurrent webhooks.
+        $this->entityManager->expects($this->once())
+            ->method('lock')
+            ->with(
+                $this->identicalTo($komojuOrder),
+                $this->equalTo(\Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE)
+            );
+
+        $object = $this->makeWebhookObject('pay_lock', [
+            'refunds' => [(object)['id' => 'ref_lock', 'amount' => 300]]
+        ]);
+
+        $this->service->paymentRefunded($object);
+    }
+
+    public function testRefundedNewPartialIdStillLogs()
+    {
+        // A genuinely new partial refund (new id) after a prior partial must
+        // still be logged, and only for the newly-added amount.
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(122);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_partial');
+        $komojuOrder->setRefundId('ref_a');          // already recorded
+        $komojuOrder->setRefundedAmount(300);
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $this->logService->expects($this->once())
+            ->method('writeLog')
+            ->with(
+                $this->equalTo('webhook[refund]'),
+                $this->equalTo(122),
+                $this->equalTo('refund confirmed (amount=200)'),
+                $this->equalTo(true)
+            );
+
+        $object = $this->makeWebhookObject('pay_partial', [
+            'refunds' => [
+                (object)['id' => 'ref_a', 'amount' => 300],
+                (object)['id' => 'ref_b', 'amount' => 200],
+            ]
+        ]);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(500, $komojuOrder->getRefundedAmount());
+        $this->assertEquals('ref_a,ref_b', $komojuOrder->getRefundId());
+    }
 }

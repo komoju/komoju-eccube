@@ -3,6 +3,7 @@
 namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\DBAL\LockMode;
 use Eccube\Repository\PaymentRepository;
 use Eccube\Entity\Payment;
 use Eccube\Entity\PaymentOption;
@@ -55,7 +56,27 @@ class WebhookService{
             return;
         }
 
-        // Calculate total refund amount and collect refund IDs from payload
+        // Serialize concurrent refund webhooks for this order.
+        //
+        // KOMOJU emits TWO event types for a single refund — payment.refunded
+        // AND payment.refund.created — and they arrive within microseconds of
+        // each other (the controller routes both here). Without a lock, both
+        // requests read the same stale refunded_amount / refund_id before
+        // either commits, so both think the refund is "new" and both write a
+        // log row, producing a duplicate "¥X 返金済み" entry. A PESSIMISTIC_WRITE
+        // lock makes the second handler block until the first commits, so it
+        // then sees the already-recorded refund id and skips. (Mirrors the
+        // admin refund path in OrderController.) The lock is best-effort: not
+        // all platforms/transactions support it, so we also dedupe by
+        // refund-id set below, which is correct even without the lock.
+        try {
+            $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
+        } catch (\Exception $e) {
+            // No active transaction or unsupported platform — fall through to
+            // the refund-id-set dedupe, which is the real safety net.
+        }
+
+        // Collect refund IDs + total amount from the payload.
         $refund_ids = [];
         $refund_amount = 0;
         foreach($refunds as $refund){
@@ -63,17 +84,35 @@ class WebhookService{
             $refund_amount += $refund->amount;
         }
 
-        // Check if the refunded amount has changed (detects new refunds)
-        $previousAmount = (float) $komoju_order->getRefundedAmount();
+        // Idempotency by refund-id set, NOT by amount.
+        //
+        // The reliable signal that "this refund is new" is its KOMOJU refund id,
+        // which is stable and identical across the duplicate event types. We
+        // compare the payload's refund ids against the ones we've already
+        // recorded on the KomojuOrder; only genuinely new ids count as a new
+        // refund to log. This is robust regardless of event type, ordering, or
+        // concurrency, and handles partial refunds (each new partial has its
+        // own id) correctly.
+        $previousIds = array_filter(array_map('trim', explode(',', (string) $komoju_order->getRefundId())));
+        $previousIdSet = array_flip($previousIds);
+        $newRefunds = [];
+        foreach($refunds as $refund){
+            if(!isset($previousIdSet[$refund->id])){
+                $newRefunds[] = $refund;
+            }
+        }
+        $newRefundAmount = 0;
+        foreach($newRefunds as $refund){
+            $newRefundAmount += $refund->amount;
+        }
 
-        // Update KomojuOrder with refund data
+        // Update KomojuOrder with the full refund state from the payload.
         $komoju_order->setRefundId(implode(",", $refund_ids));
         $komoju_order->setRefundedAmount($refund_amount);
         $this->entityManager->persist($komoju_order);
 
-        // Only log if the refund amount changed (avoids duplicates from admin-initiated refunds)
-        if($refund_amount > $previousAmount){
-            $newRefundAmount = $refund_amount - $previousAmount;
+        // Only log when there is at least one refund id we haven't seen before.
+        if(!empty($newRefunds)){
             $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$newRefundAmount)", true);
         }
 
