@@ -38,7 +38,7 @@ class KomojuPay extends \Eccube\Entity\Master\AbstractMasterEntity{
     /**
      * @var int|null
      *
-     * @ORM\Column(name="payment_id", type="integer", nullable=true)
+     * @ORM\Column(name="payment_id", type="integer", nullable=true, options={"unsigned":true})
      */
     private $payment_id;
 
