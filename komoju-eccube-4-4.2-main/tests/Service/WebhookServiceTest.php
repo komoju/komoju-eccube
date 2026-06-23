@@ -746,6 +746,95 @@ class WebhookServiceTest extends TestCase
         $this->assertEquals('ref_dup', $komojuOrder->getRefundId());
     }
 
+    public function testRefundedSecondConcurrentHandlerSeesRefreshedState()
+    {
+        // Models the real production race: the two refund events are handled by
+        // two separate requests, each with its OWN freshly-loaded KomojuOrder.
+        // The first commits refund_id='ref_dup'. The second loaded its copy
+        // (refund_id='') BEFORE the first committed; it only sees the committed
+        // value after the pessimistic lock + refresh(). This test fails if the
+        // handler does not refresh() the entity after locking, because the
+        // second copy's stale refund_id would make the refund look "new" again.
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(123);
+        $eccubeOrder->setPaymentTotal(6500);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        // The first handler's order (will be committed first).
+        $firstOrder = new KomojuOrder();
+        $firstOrder->setOrder($eccubeOrder);
+        $firstOrder->setKomojuPaymentId('pay_race');
+
+        // The second handler's SEPARATE copy — starts stale (refund_id='').
+        $secondOrder = new KomojuOrder();
+        $secondOrder->setOrder($eccubeOrder);
+        $secondOrder->setKomojuPaymentId('pay_race');
+
+        $cancelStatus = new OrderStatus();
+        $cancelStatus->setId(OrderStatus::CANCEL);
+        $statusRepo = $this->createMock(StubRepository::class);
+        $statusRepo->method('find')->willReturn($cancelStatus);
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) use ($statusRepo) {
+                if ($class === OrderStatus::class) return $statusRepo;
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                return $this->createMock(StubRepository::class);
+            });
+        $this->orderStateMachine->method('can')->willReturn(true);
+
+        // refresh() on the second copy simulates re-reading the row the first
+        // handler already committed: copy the committed refund_id across.
+        $this->entityManager->method('refresh')
+            ->willReturnCallback(function ($entity) use ($firstOrder) {
+                if ($entity instanceof KomojuOrder) {
+                    $entity->setRefundId($firstOrder->getRefundId());
+                    $entity->setRefundedAmount($firstOrder->getRefundedAmount());
+                }
+            });
+
+        $refundLogCalls = 0;
+        $this->logService->method('writeLog')
+            ->willReturnCallback(function ($api, $orderId, $msg) use (&$refundLogCalls) {
+                if ($api === 'webhook[refund]' && strpos($msg, 'refund confirmed') === 0) {
+                    $refundLogCalls++;
+                }
+            });
+
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService
+        );
+
+        $payload = ['refunds' => [(object)['id' => 'ref_race', 'amount' => 6500]]];
+
+        // First handler: findOneBy returns firstOrder, commits refund_id.
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($firstOrder);
+        $this->service->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
+
+        // Second handler: gets its own stale copy; refresh() pulls the committed
+        // state so it recognises the refund as already-recorded.
+        $this->komojuOrderRepo = $this->createMock(StubRepository::class);
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($secondOrder);
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) use ($statusRepo) {
+                if ($class === OrderStatus::class) return $statusRepo;
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                return $this->createMock(StubRepository::class);
+            });
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService
+        );
+        $this->service->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
+
+        $this->assertEquals(1, $refundLogCalls, 'second concurrent handler must not re-log after refresh()');
+    }
+
     public function testRefundedAcquiresPessimisticLock()
     {
         $orderStatus = new OrderStatus();

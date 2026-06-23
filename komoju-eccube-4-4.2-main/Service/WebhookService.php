@@ -71,6 +71,14 @@ class WebhookService{
         // refund-id set below, which is correct even without the lock.
         try {
             $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
+            // CRITICAL: lock() acquires SELECT ... FOR UPDATE but does NOT
+            // refresh the entity's in-memory state. The second handler loaded
+            // $komoju_order via findOneBy() BEFORE blocking on the lock, so it
+            // still holds the pre-refund refund_id. Without refresh() it would
+            // compute "new refund" against stale data and log a duplicate even
+            // though the first handler already committed. refresh() re-reads
+            // the row we now hold the lock on, so we see the committed refund_id.
+            $this->entityManager->refresh($komoju_order);
         } catch (\Exception $e) {
             // No active transaction or unsupported platform — fall through to
             // the refund-id-set dedupe, which is the real safety net.
