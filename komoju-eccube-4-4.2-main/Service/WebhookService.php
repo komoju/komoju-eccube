@@ -3,7 +3,6 @@
 namespace Plugin\Komoju42\Service;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\DBAL\LockMode;
 use Eccube\Repository\PaymentRepository;
 use Eccube\Entity\Payment;
 use Eccube\Entity\PaymentOption;
@@ -56,75 +55,75 @@ class WebhookService{
             return;
         }
 
-        // Serialize concurrent refund webhooks for this order.
+        // Collect refund IDs + total amount from the payload.
         //
         // KOMOJU emits TWO event types for a single refund — payment.refunded
         // AND payment.refund.created — and they arrive within microseconds of
-        // each other (the controller routes both here). Without a lock, both
-        // requests read the same stale refunded_amount / refund_id before
-        // either commits, so both think the refund is "new" and both write a
-        // log row, producing a duplicate "¥X 返金済み" entry. A PESSIMISTIC_WRITE
-        // lock makes the second handler block until the first commits, so it
-        // then sees the already-recorded refund id and skips. (Mirrors the
-        // admin refund path in OrderController.) The lock is best-effort: not
-        // all platforms/transactions support it, so we also dedupe by
-        // refund-id set below, which is correct even without the lock.
-        try {
-            $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
-            // CRITICAL: lock() acquires SELECT ... FOR UPDATE but does NOT
-            // refresh the entity's in-memory state. The second handler loaded
-            // $komoju_order via findOneBy() BEFORE blocking on the lock, so it
-            // still holds the pre-refund refund_id. Without refresh() it would
-            // compute "new refund" against stale data and log a duplicate even
-            // though the first handler already committed. refresh() re-reads
-            // the row we now hold the lock on, so we see the committed refund_id.
-            $this->entityManager->refresh($komoju_order);
-        } catch (\Exception $e) {
-            // No active transaction or unsupported platform — fall through to
-            // the refund-id-set dedupe, which is the real safety net.
-        }
-
-        // Collect refund IDs + total amount from the payload.
+        // each other (the controller routes both here). Both carry the same
+        // refund id(s). The handler must record the refund and log it exactly
+        // once across both deliveries.
         $refund_ids = [];
         $refund_amount = 0;
         foreach($refunds as $refund){
             $refund_ids[] = $refund->id;
             $refund_amount += $refund->amount;
         }
+        sort($refund_ids); // canonical order so the WHERE comparison is stable
+        $newRefundIdSet = implode(",", $refund_ids);
+        $previousAmount = (float) $komoju_order->getRefundedAmount();
 
-        // Idempotency by refund-id set, NOT by amount.
-        //
-        // The reliable signal that "this refund is new" is its KOMOJU refund id,
-        // which is stable and identical across the duplicate event types. We
-        // compare the payload's refund ids against the ones we've already
-        // recorded on the KomojuOrder; only genuinely new ids count as a new
-        // refund to log. This is robust regardless of event type, ordering, or
-        // concurrency, and handles partial refunds (each new partial has its
-        // own id) correctly.
-        $previousIds = array_filter(array_map('trim', explode(',', (string) $komoju_order->getRefundId())));
-        $previousIdSet = array_flip($previousIds);
-        $newRefunds = [];
-        foreach($refunds as $refund){
-            if(!isset($previousIdSet[$refund->id])){
-                $newRefunds[] = $refund;
-            }
-        }
-        $newRefundAmount = 0;
-        foreach($newRefunds as $refund){
-            $newRefundAmount += $refund->amount;
-        }
-
-        // Update KomojuOrder with the full refund state from the payload.
-        $komoju_order->setRefundId(implode(",", $refund_ids));
+        // Keep the managed entity in sync in-memory so the cancel check below
+        // and the rest of this request see the current refund state.
+        $komoju_order->setRefundId($newRefundIdSet);
         $komoju_order->setRefundedAmount($refund_amount);
         $this->entityManager->persist($komoju_order);
 
-        // Only log when there is at least one refund id we haven't seen before.
-        if(!empty($newRefunds)){
+        // Decide whether to LOG via an atomic compare-and-swap, decided by the
+        // database — not by the entity's (possibly stale) in-memory state.
+        //
+        // KOMOJU delivers two events for one refund (payment.refunded +
+        // payment.refund.created) microseconds apart; both reach this method.
+        // The UPDATE only matches the row when its STORED refund_id differs
+        // from this payload's id set, and we look at the affected-row count:
+        //
+        //   affected >= 1 -> this request actually changed the refund state;
+        //                    it is the one that should log.
+        //   affected == 0 -> a concurrent/duplicate delivery already recorded
+        //                    this exact id set; skip logging (no duplicate).
+        //
+        // This is robust on MySQL, PostgreSQL AND SQLite: the UPDATE re-checks
+        // its WHERE against committed data and row-locks for the duration of
+        // the statement, so a concurrent duplicate blocks until the first
+        // commits and then matches zero rows. It does NOT depend on
+        // SELECT ... FOR UPDATE, on isolation level, or on cross-transaction
+        // read visibility — all of which differ across the three engines and
+        // made the previous lock()+refresh() approach unreliable (SQLite has
+        // no row-level FOR UPDATE at all).
+        $claimed = false;
+        try {
+            $conn = $this->entityManager->getConnection();
+            $affected = $conn->executeStatement(
+                'UPDATE plg_komoju_order SET refund_id = ?, refunded_amount = ? '
+                . 'WHERE id = ? AND COALESCE(refund_id, ?) <> ?',
+                [$newRefundIdSet, $refund_amount, $komoju_order->getId(), '', $newRefundIdSet]
+            );
+            $claimed = ((int) $affected) > 0;
+        } catch (\Exception $e) {
+            // Direct UPDATE unavailable (e.g. stub/test context). Fall back to
+            // an amount/id comparison — best-effort, not concurrency-safe.
+            $claimed = ($refund_amount > $previousAmount);
+        }
+
+        // Only log when this request is the one that recorded the refund, and
+        // report the newly-added amount (handles partial refunds correctly).
+        if($claimed){
+            $newRefundAmount = $refund_amount - $previousAmount;
             $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$newRefundAmount)", true);
         }
 
-        // Only cancel order if fully refunded
+        // Only cancel order if fully refunded. Safe to run on every delivery:
+        // the state machine guard (can()) is idempotent — once the order is
+        // CANCEL, the transition is no longer allowed and is skipped.
         if($refund_amount >= $Order->getPaymentTotal()){
             $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
             if ($this->order_state_machine->can($Order, $OrderStatus)) {

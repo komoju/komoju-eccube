@@ -16,6 +16,7 @@ class WebhookServiceTest extends TestCase
     private $orderStateMachine;
     private $logService;
     private $komojuOrderRepo;
+    private $connection;
     private $service;
 
     protected function setUp(): void
@@ -24,6 +25,14 @@ class WebhookServiceTest extends TestCase
         $this->orderStateMachine = $this->createMock(OrderStateMachine::class);
         $this->logService = $this->createMock(LogService::class);
         $this->komojuOrderRepo = $this->createMock(StubRepository::class);
+
+        // The refund path performs an atomic compare-and-swap UPDATE via the
+        // DBAL connection and logs only when it affects >= 1 row. Default the
+        // connection so that the CAS "claims" the refund (affected = 1); tests
+        // that exercise the duplicate/no-op case override this to return 0.
+        $this->connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $this->connection->method('executeStatement')->willReturn(1);
+        $this->entityManager->method('getConnection')->willReturn($this->connection);
 
         $productStockRepo = $this->createMock(StubRepository::class);
 
@@ -634,7 +643,25 @@ class WebhookServiceTest extends TestCase
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
-        // writeLog should NOT be called for the refund (only amount unchanged)
+        // The CAS UPDATE matches zero rows because the stored refund_id already
+        // equals this payload's id set — i.e. a duplicate delivery. Model that
+        // by having executeStatement() report 0 affected rows.
+        $conn = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $conn->method('executeStatement')->willReturn(0);
+        $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $this->entityManager->method('getConnection')->willReturn($conn);
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) {
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                return $this->createMock(StubRepository::class);
+            });
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService
+        );
+
+        // writeLog should NOT be called for the refund (duplicate / no-op claim)
         $this->logService->expects($this->never())->method('writeLog');
 
         $object = $this->makeWebhookObject('pay_dup_1', [
@@ -688,7 +715,9 @@ class WebhookServiceTest extends TestCase
     //
     // KOMOJU emits two event types for a single refund (payment.refunded and
     // payment.refund.created), both routed to paymentRefunded(). They carry the
-    // same refund id(s). The handler must log the refund exactly once.
+    // same refund id(s). The handler must log the refund exactly once. The
+    // dedupe is decided by an atomic compare-and-swap UPDATE: it logs only when
+    // the UPDATE affects >= 1 row (the refund state actually changed).
 
     public function testRefundedDuplicateEventLogsOnce()
     {
@@ -704,11 +733,18 @@ class WebhookServiceTest extends TestCase
         $komojuOrder->setOrder($eccubeOrder);
         $komojuOrder->setKomojuPaymentId('pay_dup');
 
+        // Model the CAS UPDATE: the first delivery changes the row (1 affected),
+        // the second is a duplicate and changes nothing (0 affected).
+        $conn = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $conn->method('executeStatement')->willReturnOnConsecutiveCalls(1, 0);
+
         $cancelStatus = new OrderStatus();
         $cancelStatus->setId(OrderStatus::CANCEL);
         $statusRepo = $this->createMock(StubRepository::class);
         $statusRepo->method('find')->willReturn($cancelStatus);
 
+        $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $this->entityManager->method('getConnection')->willReturn($conn);
         $this->entityManager->method('getRepository')
             ->willReturnCallback(function ($class) use ($statusRepo) {
                 if ($class === OrderStatus::class) return $statusRepo;
@@ -736,9 +772,9 @@ class WebhookServiceTest extends TestCase
 
         $payload = ['refunds' => [(object)['id' => 'ref_dup', 'amount' => 6500]]];
 
-        // First event (e.g. payment.refunded)
+        // First event (e.g. payment.refunded) -> CAS affects 1 row -> logs.
         $this->service->paymentRefunded($this->makeWebhookObject('pay_dup', $payload));
-        // Second event (e.g. payment.refund.created) — same refund id
+        // Second event (e.g. payment.refund.created) -> CAS affects 0 -> skips.
         $this->service->paymentRefunded($this->makeWebhookObject('pay_dup', $payload));
 
         $this->assertEquals(1, $refundLogCalls, 'refund must be logged exactly once across duplicate events');
@@ -746,15 +782,15 @@ class WebhookServiceTest extends TestCase
         $this->assertEquals('ref_dup', $komojuOrder->getRefundId());
     }
 
-    public function testRefundedSecondConcurrentHandlerSeesRefreshedState()
+    public function testRefundedConcurrentDuplicateDoesNotDoubleLog()
     {
-        // Models the real production race: the two refund events are handled by
-        // two separate requests, each with its OWN freshly-loaded KomojuOrder.
-        // The first commits refund_id='ref_dup'. The second loaded its copy
-        // (refund_id='') BEFORE the first committed; it only sees the committed
-        // value after the pessimistic lock + refresh(). This test fails if the
-        // handler does not refresh() the entity after locking, because the
-        // second copy's stale refund_id would make the refund look "new" again.
+        // Models the real production race directly at the CAS layer: two
+        // separate requests, each with its OWN freshly-loaded (stale) copy of
+        // the KomojuOrder, both with refund_id=''. Whoever's UPDATE commits
+        // first affects 1 row (and logs); the other's UPDATE re-evaluates its
+        // WHERE against the now-committed row, matches 0 rows, and skips — with
+        // NO dependence on FOR UPDATE / refresh() / isolation level. This is
+        // what makes the fix correct on MySQL, PostgreSQL and SQLite alike.
         $orderStatus = new OrderStatus();
         $orderStatus->setId(OrderStatus::PAID);
 
@@ -763,13 +799,11 @@ class WebhookServiceTest extends TestCase
         $eccubeOrder->setPaymentTotal(6500);
         $eccubeOrder->setOrderStatus($orderStatus);
 
-        // The first handler's order (will be committed first).
         $firstOrder = new KomojuOrder();
         $firstOrder->setOrder($eccubeOrder);
         $firstOrder->setKomojuPaymentId('pay_race');
 
-        // The second handler's SEPARATE copy — starts stale (refund_id='').
-        $secondOrder = new KomojuOrder();
+        $secondOrder = new KomojuOrder();   // separate stale copy, refund_id=''
         $secondOrder->setOrder($eccubeOrder);
         $secondOrder->setKomojuPaymentId('pay_race');
 
@@ -777,23 +811,7 @@ class WebhookServiceTest extends TestCase
         $cancelStatus->setId(OrderStatus::CANCEL);
         $statusRepo = $this->createMock(StubRepository::class);
         $statusRepo->method('find')->willReturn($cancelStatus);
-        $this->entityManager->method('getRepository')
-            ->willReturnCallback(function ($class) use ($statusRepo) {
-                if ($class === OrderStatus::class) return $statusRepo;
-                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
-                return $this->createMock(StubRepository::class);
-            });
         $this->orderStateMachine->method('can')->willReturn(true);
-
-        // refresh() on the second copy simulates re-reading the row the first
-        // handler already committed: copy the committed refund_id across.
-        $this->entityManager->method('refresh')
-            ->willReturnCallback(function ($entity) use ($firstOrder) {
-                if ($entity instanceof KomojuOrder) {
-                    $entity->setRefundId($firstOrder->getRefundId());
-                    $entity->setRefundedAmount($firstOrder->getRefundedAmount());
-                }
-            });
 
         $refundLogCalls = 0;
         $this->logService->method('writeLog')
@@ -803,40 +821,46 @@ class WebhookServiceTest extends TestCase
                 }
             });
 
-        $this->service = new WebhookService(
-            $this->entityManager,
-            $this->orderStateMachine,
-            $this->logService
-        );
-
         $payload = ['refunds' => [(object)['id' => 'ref_race', 'amount' => 6500]]];
 
-        // First handler: findOneBy returns firstOrder, commits refund_id.
-        $this->komojuOrderRepo->method('findOneBy')->willReturn($firstOrder);
-        $this->service->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
+        // First handler: CAS wins (1 affected).
+        $conn1 = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $conn1->method('executeStatement')->willReturn(1);
+        $em1 = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em1->method('getConnection')->willReturn($conn1);
+        $repo1 = $this->createMock(StubRepository::class);
+        $repo1->method('findOneBy')->willReturn($firstOrder);
+        $em1->method('getRepository')->willReturnCallback(function ($class) use ($statusRepo, $repo1) {
+            if ($class === OrderStatus::class) return $statusRepo;
+            if ($class === KomojuOrder::class) return $repo1;
+            return $this->createMock(StubRepository::class);
+        });
+        (new WebhookService($em1, $this->orderStateMachine, $this->logService))
+            ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
 
-        // Second handler: gets its own stale copy; refresh() pulls the committed
-        // state so it recognises the refund as already-recorded.
-        $this->komojuOrderRepo = $this->createMock(StubRepository::class);
-        $this->komojuOrderRepo->method('findOneBy')->willReturn($secondOrder);
-        $this->entityManager->method('getRepository')
-            ->willReturnCallback(function ($class) use ($statusRepo) {
-                if ($class === OrderStatus::class) return $statusRepo;
-                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
-                return $this->createMock(StubRepository::class);
-            });
-        $this->service = new WebhookService(
-            $this->entityManager,
-            $this->orderStateMachine,
-            $this->logService
-        );
-        $this->service->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
+        // Second handler: CAS loses — row already has this id set (0 affected).
+        $conn2 = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $conn2->method('executeStatement')->willReturn(0);
+        $em2 = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em2->method('getConnection')->willReturn($conn2);
+        $repo2 = $this->createMock(StubRepository::class);
+        $repo2->method('findOneBy')->willReturn($secondOrder);
+        $em2->method('getRepository')->willReturnCallback(function ($class) use ($statusRepo, $repo2) {
+            if ($class === OrderStatus::class) return $statusRepo;
+            if ($class === KomojuOrder::class) return $repo2;
+            return $this->createMock(StubRepository::class);
+        });
+        (new WebhookService($em2, $this->orderStateMachine, $this->logService))
+            ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
 
-        $this->assertEquals(1, $refundLogCalls, 'second concurrent handler must not re-log after refresh()');
+        $this->assertEquals(1, $refundLogCalls, 'concurrent duplicate must not double-log');
     }
 
-    public function testRefundedAcquiresPessimisticLock()
+    public function testRefundedClaimsViaCompareAndSwapUpdate()
     {
+        // The dedupe must be driven by an atomic UPDATE on plg_komoju_order
+        // whose WHERE excludes rows already holding this refund id set, so the
+        // database (not stale in-memory state) decides if the refund is new.
         $orderStatus = new OrderStatus();
         $orderStatus->setId(OrderStatus::PAID);
 
@@ -847,24 +871,39 @@ class WebhookServiceTest extends TestCase
 
         $komojuOrder = new KomojuOrder();
         $komojuOrder->setOrder($eccubeOrder);
-        $komojuOrder->setKomojuPaymentId('pay_lock');
+        $komojuOrder->setKomojuPaymentId('pay_cas');
 
+        $capturedSql = null;
+        $conn = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $conn->method('executeStatement')
+            ->willReturnCallback(function ($sql, $params) use (&$capturedSql) {
+                $capturedSql = $sql;
+                return 1;
+            });
+        $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $this->entityManager->method('getConnection')->willReturn($conn);
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) {
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                return $this->createMock(StubRepository::class);
+            });
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
-        // The KomojuOrder must be locked PESSIMISTIC_WRITE before mutation,
-        // mirroring the admin refund path, to serialize concurrent webhooks.
-        $this->entityManager->expects($this->once())
-            ->method('lock')
-            ->with(
-                $this->identicalTo($komojuOrder),
-                $this->equalTo(\Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE)
-            );
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService
+        );
 
-        $object = $this->makeWebhookObject('pay_lock', [
-            'refunds' => [(object)['id' => 'ref_lock', 'amount' => 300]]
+        $object = $this->makeWebhookObject('pay_cas', [
+            'refunds' => [(object)['id' => 'ref_cas', 'amount' => 300]]
         ]);
-
         $this->service->paymentRefunded($object);
+
+        $this->assertNotNull($capturedSql, 'a compare-and-swap UPDATE must be issued');
+        $this->assertStringContainsString('UPDATE plg_komoju_order', $capturedSql);
+        $this->assertStringContainsStringIgnoringCase('where', $capturedSql);
+        $this->assertStringContainsStringIgnoringCase('refund_id', $capturedSql);
     }
 
     public function testRefundedNewPartialIdStillLogs()
