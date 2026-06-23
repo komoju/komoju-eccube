@@ -12,4 +12,6 @@ interface EntityManagerInterface
     public function clear($entityName = null);
     public function getConnection();
     public function createQueryBuilder();
+    public function lock($entity, $lockMode, $lockVersion = null);
+    public function refresh($entity);
 }

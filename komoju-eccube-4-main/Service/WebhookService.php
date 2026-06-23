@@ -55,29 +55,53 @@ class WebhookService{
             return;
         }
 
-        // Calculate total refund amount and collect refund IDs from payload
+        // KOMOJU sends two events for one refund (payment.refunded +
+        // payment.refund.created), both routed here. Record the refund and log
+        // it exactly once across both deliveries.
         $refund_ids = [];
         $refund_amount = 0;
         foreach($refunds as $refund){
             $refund_ids[] = $refund->id;
             $refund_amount += $refund->amount;
         }
-
-        // Check if the refunded amount has changed (detects new refunds)
+        sort($refund_ids); // canonical order so the WHERE comparison is stable
+        $newRefundIdSet = implode(",", $refund_ids);
         $previousAmount = (float) $komoju_order->getRefundedAmount();
 
-        // Update KomojuOrder with refund data
-        $komoju_order->setRefundId(implode(",", $refund_ids));
+        // Keep the in-memory entity current for the cancel check below.
+        $komoju_order->setRefundId($newRefundIdSet);
         $komoju_order->setRefundedAmount($refund_amount);
         $this->entityManager->persist($komoju_order);
 
-        // Only log if the refund amount changed (avoids duplicates from admin-initiated refunds)
-        if($refund_amount > $previousAmount){
+        // Decide whether to log via an atomic compare-and-swap: the UPDATE only
+        // matches when the stored refund_id differs from this payload's id set.
+        // affected >= 1 means this delivery recorded the refund (log it);
+        // affected == 0 means a duplicate delivery already did (skip). This is
+        // correct on MySQL, PostgreSQL and SQLite without relying on
+        // SELECT ... FOR UPDATE or isolation-level behaviour.
+        $claimed = false;
+        try {
+            $conn = $this->entityManager->getConnection();
+            $affected = $conn->executeStatement(
+                'UPDATE plg_komoju_order SET refund_id = ?, refunded_amount = ? '
+                . 'WHERE id = ? AND COALESCE(refund_id, ?) <> ?',
+                [$newRefundIdSet, $refund_amount, $komoju_order->getId(), '', $newRefundIdSet]
+            );
+            $claimed = ((int) $affected) > 0;
+        } catch (\Exception $e) {
+            // Fallback for non-DB (test/stub) contexts; not concurrency-safe.
+            $claimed = ($refund_amount > $previousAmount);
+        }
+
+        // Log only the delivery that recorded the refund, reporting the
+        // newly-added amount (correct for partial refunds).
+        if($claimed){
             $newRefundAmount = $refund_amount - $previousAmount;
             $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$newRefundAmount)", true);
         }
 
-        // Only cancel order if fully refunded
+        // Cancel the order once fully refunded. Idempotent: can() returns false
+        // once already cancelled, so repeat deliveries are no-ops.
         if($refund_amount >= $Order->getPaymentTotal()){
             $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
             if ($this->order_state_machine->can($Order, $OrderStatus)) {
