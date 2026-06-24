@@ -22,7 +22,7 @@ class ConfigService{
 
     const MAIL_TEMPLATE_REFUND_REDIRECT = "KOMOJU Refund Notification";
 
-    public function __construct(EntityManagerInterface $entityManager, EccubeConfig $eccubeConfig, KomojuClientFactory $clientFactory = null){
+    public function __construct(EntityManagerInterface $entityManager, EccubeConfig $eccubeConfig, ?KomojuClientFactory $clientFactory = null){
         $this->entityManager = $entityManager;
         $this->eccubeConfig = $eccubeConfig;
         $this->client_factory = $clientFactory ?: new KomojuClientFactory();

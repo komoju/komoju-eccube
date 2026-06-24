@@ -385,8 +385,12 @@ class RepairService
     {
         try {
             // Match by short-name so it works on both DBAL <4 (PostgreSqlPlatform)
-            // and DBAL ≥4 (PostgreSQLPlatform).
+            // and DBAL ≥4 (PostgreSQLPlatform). Bail if the platform is unknown
+            // (e.g. a mocked Connection in tests returns null).
             $platform = $conn->getDatabasePlatform();
+            if (!is_object($platform)) {
+                return;
+            }
             $platformName = strtolower((new \ReflectionClass($platform))->getShortName());
             if (strpos($platformName, 'postgres') === false) {
                 return;

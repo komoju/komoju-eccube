@@ -53,4 +53,12 @@ class Connection
     {
         return null;
     }
+
+    public function quoteIdentifier(string $str): string
+    {
+        // Default to double-quoting (Postgres/SQLite-compatible). Tests that
+        // care can override via the mock; production wiring uses the real
+        // Doctrine Connection which picks the right quote per platform.
+        return '"' . str_replace('"', '""', $str) . '"';
+    }
 }
