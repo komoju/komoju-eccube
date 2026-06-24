@@ -10,23 +10,15 @@ use Plugin\Komoju42\Service\Method\KomojuPayment;
 /**
  * Backup / restore / repair flow for the KOMOJU plugin.
  *
- * Lifecycle context:
- *   - On uninstall, backupBeforeUninstall() copies plg_komoju_* tables to
- *     non-entity backup tables so EC-CUBE's automatic schema drop won't
- *     destroy historical KOMOJU data (which links dtb_order rows to KOMOJU
- *     payment IDs, session IDs, capture/refund state, etc.).
- *   - After re-install + enable, the merchant clicks "支払方法を修復" on the
- *     plugin config page, which invokes repair(). That method restores the
- *     backed-up KOMOJU rows AND re-links dtb_order.payment_id from the
- *     destroyed Payment IDs to the freshly created ones.
+ * On uninstall, backupBeforeUninstall() copies plg_komoju_* tables to backup
+ * tables so EC-CUBE's schema drop won't destroy historical KOMOJU data. After
+ * reinstall, the admin "支払方法を修復" button invokes repair(), which restores
+ * those rows and re-links dtb_order.payment_id to the freshly created Payments.
  *
- * IMPORTANT: this service must NOT be called from PluginManager::enable().
- * EC-CUBE's PluginService::enable() wraps that call in its own transaction;
- * any query failure here would leave PostgreSQL's transaction aborted
- * (SQLSTATE 25P02), breaking every subsequent query — including EC-CUBE's
- * own PluginRepository::findAllEnabled() — and surface as
- * "システムエラーが発生しました。". The repair flow runs from a normal admin
- * controller action so it has its own request-scoped transaction.
+ * MUST NOT be called from PluginManager::enable(): EC-CUBE wraps enable() in
+ * a transaction, and any query failure here would abort it on PostgreSQL
+ * (SQLSTATE 25P02), breaking every later query in the request. Repair runs
+ * from a normal admin controller so it has its own request-scoped transaction.
  */
 class RepairService
 {
@@ -74,16 +66,9 @@ class RepairService
     }
 
     /**
-     * Triggered by the admin "支払方法を修復" button.
-     *
-     * Returns a structured summary so the controller can show the merchant
-     * exactly what changed:
-     *   [
-     *     'orders_restored'      => int,  // rows added to plg_komoju_order
-     *     'orders_relinked'      => int,  // dtb_order rows updated
-     *     'orphans_deleted'      => int,  // unreferenced dtb_payment rows deleted
-     *     'config_restored'      => bool,
-     *   ]
+     * Triggered by the admin "支払方法を修復" button. Returns a summary:
+     *   orders_restored (int), orders_relinked (int),
+     *   orphans_deleted (int), config_restored (bool).
      */
     public function repair(): array
     {
@@ -120,9 +105,8 @@ class RepairService
     // ------------------------------------------------------------------
 
     /**
-     * Backup a table by creating a new table with safe column types.
-     * Uses TEXT/INTEGER only to avoid Doctrine schema introspection errors
-     * (e.g., SQLite's NUM type from NUMERIC columns is unrecognized by Doctrine).
+     * Create a backup table using only TEXT/INTEGER types, to dodge Doctrine
+     * introspection errors (e.g. SQLite NUM from NUMERIC columns is unknown).
      */
     private function backupTable(Connection $conn, string $sourceTable, string $backupTable): void
     {
@@ -156,27 +140,15 @@ class RepairService
     }
 
     /**
-     * Return [['name' => ..., 'type' => ...], ...] for every column of $tableName.
+     * Return [['name' => ..., 'type' => ...], ...] for $tableName.
      *
-     * Uses Doctrine's SchemaManager rather than hand-rolled queries against
-     * `information_schema` / `PRAGMA table_info`. This matters for two reasons:
+     * Uses Doctrine SchemaManager rather than raw information_schema / PRAGMA:
+     *   - MySQL's information_schema is not auto-scoped to the current DB,
+     *     which corrupts backups on shared hosting with multiple DBs.
+     *   - Avoids interpolating table names into PRAGMA table_info(...).
      *
-     *   1. `INFORMATION_SCHEMA.COLUMNS` on MySQL is global to the connection —
-     *      a query without `AND TABLE_SCHEMA = DATABASE()` returns columns
-     *      from every database the user can see, which on shared hosting
-     *      (multiple DBs per user) corrupts the backup CREATE TABLE. PG and
-     *      SQLite scope information_schema to the current database, but
-     *      MySQL does not. SchemaManager::listTableColumns() handles this
-     *      scoping per backend.
-     *
-     *   2. The previous SQLite branch interpolated $tableName directly into
-     *      a `PRAGMA table_info($tableName)` string. Doctrine's API takes a
-     *      typed table name and quotes it correctly per platform.
-     *
-     * The 'type' string returned here is a Doctrine type name (e.g. 'integer',
-     * 'smallint', 'text', 'decimal'). backupTable() only inspects whether the
-     * type contains "INT" (case-insensitive) to decide INTEGER vs TEXT, so any
-     * of integer/smallint/bigint match correctly.
+     * 'type' is a Doctrine type name (integer/smallint/bigint/text/decimal/...);
+     * backupTable() just checks for "INT" substring to pick INTEGER vs TEXT.
      */
     private function getTableColumns(Connection $conn, string $tableName): array
     {
@@ -204,13 +176,11 @@ class RepairService
     // ------------------------------------------------------------------
 
     /**
-     * Restore plg_komoju_order rows from the backup table.
+     * Restore plg_komoju_order rows from backup.
      *
-     * Schema-drift safe: the column set in the backup table reflects whatever
-     * schema was active at uninstall time, but the current plg_komoju_order
-     * may have added/removed/renamed columns since. We intersect the row's
-     * keys with the *current* table's columns before insert; unknown columns
-     * are silently dropped, missing columns are left to the DB defaults.
+     * Schema-drift safe: intersect each row's keys with the current table's
+     * columns before insert. Dropped columns are silently discarded; new
+     * columns get the DB default.
      */
     private function restoreOrderData(Connection $conn): int
     {
@@ -229,19 +199,15 @@ class RepairService
         }
         $currentColumnSet = array_flip($currentColumns);
 
-        // Compute the next primary key ourselves and assign it explicitly.
-        //
-        // We must NOT omit `id` and rely on the database to auto-generate it:
-        // plg_komoju_order.id has no AUTO_INCREMENT/IDENTITY/sequence on
-        // PostgreSQL (the column is a plain NOT NULL integer), so an INSERT
-        // without `id` fails with a not-null violation there. MySQL/SQLite
-        // tolerate the omission, but assigning the id explicitly works
-        // identically on all three engines.
+        // Assign primary keys explicitly (predictable, contiguous, portable).
+        // Doctrine DOES back this column with a sequence on PostgreSQL via
+        // @GeneratedValue(strategy="AUTO"), but explicit ids on PG don't
+        // advance it — see resyncDoctrineSequence() below for the fix.
         $nextId = ((int) $conn->fetchOne('SELECT MAX(id) FROM plg_komoju_order')) + 1;
 
         $inserted = 0;
         foreach ($rows as $row) {
-            // Skip rows we'd duplicate
+            // Skip rows we'd duplicate.
             $exists = $conn->fetchOne(
                 'SELECT COUNT(*) FROM plg_komoju_order WHERE order_id = ?',
                 [$row['order_id'] ?? null]
@@ -250,10 +216,7 @@ class RepairService
                 continue;
             }
 
-            // Filter to columns that actually exist in the current schema.
-            // If a column was dropped between versions we silently discard it
-            // rather than failing the whole repair. If a new column was added
-            // it'll receive the DB default (likely NULL).
+            // Drop columns that no longer exist in the current schema.
             $filtered = [];
             foreach ($row as $col => $val) {
                 if (isset($currentColumnSet[$col])) {
@@ -264,19 +227,23 @@ class RepairService
                 continue;
             }
 
-            // Assign a fresh, explicit PK (portable across MySQL/PG/SQLite).
             $filtered['id'] = $nextId++;
-
             $conn->insert('plg_komoju_order', $filtered);
             $inserted++;
         }
+
+        // Explicit-id inserts bypass the PG sequence; resync or the next ORM
+        // INSERT will collide. No-op on MySQL/SQLite (they auto-advance).
+        if ($inserted > 0) {
+            $this->resyncDoctrineSequence($conn, 'plg_komoju_order', 'plg_komoju_order_id_seq', 'id');
+        }
+
         return $inserted;
     }
 
     /**
-     * Restore plg_komoju_config from the backup table.
-     * Only restores when the current config row is empty (freshly created),
-     * so we never overwrite credentials a merchant has already entered.
+     * Restore plg_komoju_config from backup. Skipped if the current config
+     * already has a secret_key, so merchant-entered credentials aren't lost.
      */
     private function restoreConfigData(Connection $conn): bool
     {
@@ -313,10 +280,8 @@ class RepairService
     }
 
     /**
-     * Re-link dtb_order rows that point at a destroyed Payment ID to the
-     * freshly created Payment ID for the same KOMOJU method (matched by
-     * stable slug from plg_komoju_payments).
-     *
+     * Re-link dtb_order rows from destroyed Payment IDs to the freshly
+     * created ones, matched by stable slug in plg_komoju_payments.
      * Returns [orders_relinked, orphan_payments_deleted].
      */
     private function relinkOrderPayments(Connection $conn): array
@@ -401,6 +366,53 @@ class RepairService
             return $sm->tablesExist([$tableName]);
         } catch (\Exception $e) {
             return false;
+        }
+    }
+
+    /**
+     * Resync the Doctrine-managed sequence to MAX(<column>) on PostgreSQL.
+     * Needed because explicit-id INSERTs don't advance the sequence, so the
+     * next ORM-driven INSERT would collide on the primary key.
+     *
+     * Sequence name is hard-coded by Doctrine convention (<table>_<column>_seq):
+     * pg_get_serial_sequence() returns NULL here because Doctrine creates the
+     * sequence as a standalone object (no DEFAULT nextval(), no pg_depend link)
+     * and calls NEXTVAL from PHP. The existence check below makes a rename safe.
+     *
+     * No-op on MySQL/SQLite (they auto-advance their own counter).
+     */
+    private function resyncDoctrineSequence(Connection $conn, string $table, string $sequence, string $column): void
+    {
+        try {
+            // Match by short-name so it works on both DBAL <4 (PostgreSqlPlatform)
+            // and DBAL ≥4 (PostgreSQLPlatform).
+            $platform = $conn->getDatabasePlatform();
+            $platformName = strtolower((new \ReflectionClass($platform))->getShortName());
+            if (strpos($platformName, 'postgres') === false) {
+                return;
+            }
+
+            $exists = (int) $conn->fetchOne(
+                "SELECT COUNT(*) FROM pg_class WHERE relkind = 'S' AND relname = ?",
+                [$sequence]
+            );
+            if ($exists === 0) {
+                return;
+            }
+
+            $maxId = $conn->fetchOne(
+                'SELECT MAX(' . $conn->quoteIdentifier($column) . ') FROM ' . $conn->quoteIdentifier($table)
+            );
+            if ($maxId === null || $maxId === false) {
+                return;
+            }
+
+            // setval(name, value) marks the sequence as already called, so the
+            // next NEXTVAL returns value + 1.
+            $conn->executeStatement('SELECT setval(?, ?)', [$sequence, (int) $maxId]);
+        } catch (\Exception $e) {
+            // Non-fatal: restore already succeeded; admin can re-run repair.
+            log_error('KOMOJU: failed to resync sequence ' . $sequence . ': ' . $e->getMessage());
         }
     }
 }
