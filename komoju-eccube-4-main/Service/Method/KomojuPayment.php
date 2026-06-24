@@ -36,6 +36,12 @@ class KomojuPayment implements PaymentMethodInterface{
     protected $requestStack;
     protected $router;
     protected $client_factory;
+    // Assigned in __construct / setOrder. Declared so PHP 8.2+ does not
+    // raise the "creation of dynamic property" deprecation, which becomes
+    // an error in PHP 9.
+    protected $purchase_flow;
+    protected $Order;
+    protected $form;
 
     /**
      * Komoju payment constructor

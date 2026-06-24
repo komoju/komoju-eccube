@@ -229,14 +229,10 @@ class RepairService
         }
         $currentColumnSet = array_flip($currentColumns);
 
-        // Compute the next primary key ourselves and assign it explicitly.
-        //
-        // We must NOT omit `id` and rely on the database to auto-generate it:
-        // plg_komoju_order.id has no AUTO_INCREMENT/IDENTITY/sequence on
-        // PostgreSQL (the column is a plain NOT NULL integer), so an INSERT
-        // without `id` fails with a not-null violation there. MySQL/SQLite
-        // tolerate the omission, but assigning the id explicitly works
-        // identically on all three engines.
+        // Assign primary keys explicitly (predictable, contiguous, portable).
+        // Doctrine DOES back this column with a sequence on PostgreSQL via
+        // @GeneratedValue(strategy="AUTO"), but explicit ids on PG don't
+        // advance it — see resyncDoctrineSequence() below for the fix.
         $nextId = ((int) $conn->fetchOne('SELECT MAX(id) FROM plg_komoju_order')) + 1;
 
         $inserted = 0;
@@ -270,6 +266,13 @@ class RepairService
             $conn->insert('plg_komoju_order', $filtered);
             $inserted++;
         }
+
+        // Explicit-id inserts bypass the PG sequence; resync or the next ORM
+        // INSERT will collide. No-op on MySQL/SQLite (they auto-advance).
+        if ($inserted > 0) {
+            $this->resyncDoctrineSequence($conn, 'plg_komoju_order', 'plg_komoju_order_id_seq', 'id');
+        }
+
         return $inserted;
     }
 
@@ -401,6 +404,57 @@ class RepairService
             return $sm->tablesExist([$tableName]);
         } catch (\Exception $e) {
             return false;
+        }
+    }
+
+    /**
+     * Resync the Doctrine-managed sequence to MAX(<column>) on PostgreSQL.
+     * Needed because explicit-id INSERTs don't advance the sequence, so the
+     * next ORM-driven INSERT would collide on the primary key.
+     *
+     * Sequence name is hard-coded by Doctrine convention (<table>_<column>_seq):
+     * pg_get_serial_sequence() returns NULL here because Doctrine creates the
+     * sequence as a standalone object (no DEFAULT nextval(), no pg_depend link)
+     * and calls NEXTVAL from PHP. The existence check below makes a rename safe.
+     *
+     * No-op on MySQL/SQLite (they auto-advance their own counter).
+     */
+    private function resyncDoctrineSequence(Connection $conn, string $table, string $sequence, string $column): void
+    {
+        try {
+            // Match by short-name so it works on both DBAL <4 (PostgreSqlPlatform)
+            // and DBAL ≥4 (PostgreSQLPlatform). Bail if the platform is unknown
+            // (e.g. a mocked Connection in tests returns null).
+            $platform = $conn->getDatabasePlatform();
+            if (!is_object($platform)) {
+                return;
+            }
+            $platformName = strtolower((new \ReflectionClass($platform))->getShortName());
+            if (strpos($platformName, 'postgres') === false) {
+                return;
+            }
+
+            $exists = (int) $conn->fetchOne(
+                "SELECT COUNT(*) FROM pg_class WHERE relkind = 'S' AND relname = ?",
+                [$sequence]
+            );
+            if ($exists === 0) {
+                return;
+            }
+
+            $maxId = $conn->fetchOne(
+                'SELECT MAX(' . $conn->quoteIdentifier($column) . ') FROM ' . $conn->quoteIdentifier($table)
+            );
+            if ($maxId === null || $maxId === false) {
+                return;
+            }
+
+            // setval(name, value) marks the sequence as already called, so the
+            // next NEXTVAL returns value + 1.
+            $conn->executeStatement('SELECT setval(?, ?)', [$sequence, (int) $maxId]);
+        } catch (\Exception $e) {
+            // Non-fatal: restore already succeeded; admin can re-run repair.
+            log_error('KOMOJU: failed to resync sequence ' . $sequence . ': ' . $e->getMessage());
         }
     }
 }
