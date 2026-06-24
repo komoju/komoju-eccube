@@ -95,7 +95,7 @@ class OrderController extends AbstractController{
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
 
-        if($payment_obj['status'] === "captured"){
+        if(isset($payment_obj['status']) && $payment_obj['status'] === "captured"){
             $komoju_order->setCapturedAt(new \DateTime($payment_obj['captured_at']));
             $this->entityManager->persist($komoju_order);
             $this->entityManager->flush();
@@ -257,7 +257,12 @@ class OrderController extends AbstractController{
                 if(isset($latestRefund['redirect_url'])){
                     $this->mail_ex_service->sendRefundRedirectMail($Order, $latestRefund['redirect_url']);
                 }
-                $this->log_service->writeLog("refund", $Order->getId(), "refund successful (amount=$refund_amount)", true);
+                // The state machine apply() above may have closed the EM (e.g. a
+                // constraint violation during stock rollback). Guard before writing
+                // the log so the success path doesn't crash.
+                if($this->entityManager->isOpen()){
+                    $this->log_service->writeLog("refund", $Order->getId(), "refund successful (amount=$refund_amount)", true);
+                }
                 $this->addSuccess('komoju_payment.admin.order.refund.success', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }else{
