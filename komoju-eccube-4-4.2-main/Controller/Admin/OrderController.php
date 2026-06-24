@@ -16,7 +16,6 @@ use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\MailExService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 use Symfony\Component\Routing\Annotation\Route;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Doctrine\DBAL\LockMode;

@@ -8,7 +8,6 @@ use Plugin\Komoju42\Repository\KomojuConfigRepository;
 use Plugin\Komoju42\Form\Type\KomojuLogSearchType;
 use Plugin\Komoju42\Service\LogService;
 use Symfony\Component\Routing\Annotation\Route;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -52,7 +51,6 @@ class LogController extends AbstractController
     /**
      * @Route("/%eccube_admin_route%/Komoju42/log", name="Komoju42_admin_log")
      * @Route("/%eccube_admin_route%/Komoju42/log/page/{page_no}", requirements={"page_no" = "\d+"}, name="Komoju42_admin_log_page")
-     * @Template("@Komoju42/admin/komoju_log.twig")
      */
     public function index(Request $request, PaginatorInterface $paginator, $page_no = null)
     {
@@ -88,14 +86,11 @@ class LogController extends AbstractController
             $page_no,
             $page_count
         );
-        return [
+        return $this->render('@Komoju42/admin/komoju_log.twig', [
             'pagination' => $pagination,
             'searchForm' => $searchForm->createView(),
-            // Number of operational (non-protected) logs the "delete
-            // operational logs" button would remove. Order-history events
-            // (is_protected = 1) are never counted/deleted here.
             'deletable_log_count' => $this->countDeletableLogs(),
-        ];
+        ]);
     }
 
     /**

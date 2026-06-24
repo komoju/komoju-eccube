@@ -4,7 +4,6 @@ include_once dirname(__FILE__) . '/../Resource/komoju_lib/init.php';
 
 use Eccube\Controller\AbstractController;
 use Symfony\Component\Routing\Annotation\Route;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Plugin\Komoju42\Service\LogService;

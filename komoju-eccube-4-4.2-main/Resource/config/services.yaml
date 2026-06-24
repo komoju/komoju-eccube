@@ -54,12 +54,12 @@ services:
             - '@Eccube\Common\EccubeConfig'
     Plugin\Komoju42\EventListener\SqliteBusyTimeoutListener:
         tags:
-            - { name: doctrine.event_listener, event: postConnect }
+            - { name: doctrine.middleware }
 
     Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber:
         class: Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber
         tags:
-            - { name: doctrine.event_subscriber }
+            - { name: doctrine.event_listener, event: postUpdate }
     Plugin\Komoju42\Service\Method\KomojuPayment:
         public: true
         class: Plugin\Komoju42\Service\Method\KomojuPayment

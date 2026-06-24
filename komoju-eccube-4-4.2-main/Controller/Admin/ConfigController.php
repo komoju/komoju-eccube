@@ -4,7 +4,6 @@ namespace Plugin\Komoju42\Controller\Admin;
 
 use Eccube\Controller\AbstractController;
 use Symfony\Component\Routing\Annotation\Route;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -31,7 +30,6 @@ class ConfigController extends AbstractController
     }
     /**
      * @Route("/%eccube_admin_route%/Komoju42/config", name="Komoju42_admin_config")
-     * @Template("@Komoju42/admin/komoju_config.twig")
      */
     public function index(Request $request){
         $config_data = $this->config_service->getConfigData();
@@ -44,12 +42,12 @@ class ConfigController extends AbstractController
 
         $komoju_pay_repo = $this->entityManager->getRepository(KomojuPay::class);
 
-        return [
+        return $this->render('@Komoju42/admin/komoju_config.twig', [
             'form' => $form->createView(),
             'is_connected' => $this->config_service->hasPaymentMethods(),
             'komoju_pays' => $komoju_pay_repo->findBy([], ['sort_no' => 'ASC']),
             'has_repair_data' => $this->repair_service->hasBackupData(),
-        ];
+        ]);
     }
     /**
      * @Route("/%eccube_admin_route%/Komoju42/config/sync", name="Komoju42_admin_sync_methods", methods={"POST"})
