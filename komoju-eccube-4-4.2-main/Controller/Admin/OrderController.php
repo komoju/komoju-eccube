@@ -72,7 +72,7 @@ class OrderController extends AbstractController{
             return $this->redirectToRoute('admin_order');
         }
         $config = $this->config_service->getConfigData($Order);
-        $komoju_order = $this->komoju_order_repo->findOneBy(['Order'    =>  $Order]);
+        $komoju_order = $this->komoju_order_repo->findOneBy(['Order' => $Order], ['id' => 'DESC']);
         if(empty($komoju_order)){
             $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
             return $this->redirectToRoute('admin_order');
@@ -143,7 +143,7 @@ class OrderController extends AbstractController{
                 return $this->redirectToRoute('admin_order');
             }
 
-            $komoju_order = $this->komoju_order_repo->findOneBy(['Order'    =>  $Order]);
+            $komoju_order = $this->komoju_order_repo->findOneBy(['Order' => $Order], ['id' => 'DESC']);
 
             if(empty($komoju_order) || empty($komoju_order->getKomojuPaymentId())){
                 $this->log_service->writeLog("refund", $Order->getId(), "failed: no KOMOJU payment record");
