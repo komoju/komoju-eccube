@@ -17,6 +17,7 @@ use Plugin\Komoju42\Service\ConfigService;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mailer\MailerInterface;
+use Psr\Container\ContainerInterface;
 
 class MailExService extends MailService{
 
@@ -32,11 +33,22 @@ class MailExService extends MailService{
         BaseInfoRepository $baseInfoRepository,
         EventDispatcherInterface $eventDispatcher,
         \Twig\Environment $twig,
-        EccubeConfig $eccubeConfig
+        EccubeConfig $eccubeConfig,
+        ?ContainerInterface $container = null
         ){
         $this->em = $entityManager;
 
-        parent::__construct( $mailer, $mailTemplateRepository, $mailHistoryRepository, $baseInfoRepository, $eventDispatcher, $twig, $eccubeConfig);
+        // MailService::__construct() takes 8 args on EC-CUBE 4.2 (last is
+        // $container) but 7 on 4.3. Forward $container only when needed.
+        $parentParamCount = (new \ReflectionMethod(MailService::class, '__construct'))
+            ->getNumberOfParameters();
+
+        $parentArgs = [$mailer, $mailTemplateRepository, $mailHistoryRepository, $baseInfoRepository, $eventDispatcher, $twig, $eccubeConfig];
+        if ($parentParamCount >= 8) {
+            $parentArgs[] = $container;
+        }
+
+        parent::__construct(...$parentArgs);
         $this->mailHistoryRepository = $mailHistoryRepository;
     }
 

@@ -33,7 +33,15 @@ class MailExService extends MailService{
         ){
         $this->em = $entityManager;
 
-        parent::__construct( $mailer, $mailTemplateRepository, $mailHistoryRepository, $baseInfoRepository, $eventDispatcher, $twig, $eccubeConfig);
+        // Forward only as many args as the parent constructor declares,
+        // in case MailService's arity changes across EC-CUBE versions.
+        $parentParamCount = (new \ReflectionMethod(MailService::class, '__construct'))
+            ->getNumberOfParameters();
+
+        $parentArgs = [$mailer, $mailTemplateRepository, $mailHistoryRepository, $baseInfoRepository, $eventDispatcher, $twig, $eccubeConfig];
+        $parentArgs = array_slice($parentArgs, 0, $parentParamCount);
+
+        parent::__construct(...$parentArgs);
         $this->mailHistoryRepository = $mailHistoryRepository;
     }
 

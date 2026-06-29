@@ -39,6 +39,8 @@ services:
             - '@Symfony\Component\EventDispatcher\EventDispatcherInterface'
             - '@twig'
             - '@Eccube\Common\EccubeConfig'
+            # Required by MailService on EC-CUBE 4.2; ignored on 4.3.
+            - '@service_container'
     plg_Komoju42.service.komoju_service:
         public: true
         class: Plugin\Komoju42\Service\KomojuService
