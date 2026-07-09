@@ -176,19 +176,13 @@ class KomojuEvent implements EventSubscriberInterface{
     }
 
     private function formatOrderNumber($Order){
-        try {
-            $config_data = $this->config_service->getConfigData($Order);
-            $format = !empty($config_data['order_number_format']) ? $config_data['order_number_format'] : null;
-        } catch (\Exception $e) {
-            $format = null;
-        }
-        if (empty($format)) {
-            return (string)$Order->getOrderNo();
-        }
+        // Mirror the fixed external_order_num format sent to KOMOJU in
+        // KomojuPayment so the admin order-edit display matches what KOMOJU
+        // received. This is intentionally not merchant-configurable.
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$Order->getOrderNo(), (string)$Order->getId()],
-            $format
+            \Plugin\Komoju42\Entity\KomojuConfig::DEFAULT_ORDER_NUMBER_FORMAT
         );
     }
 

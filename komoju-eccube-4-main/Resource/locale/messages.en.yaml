@@ -116,9 +116,6 @@ komoju_payment.admin.config.label.log_retention_days_hint: days (leave blank to 
 komoju_payment.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
 komoju_payment.admin.config.label.logging_enabled: Enable Logging
 komoju_payment.admin.config.label.logging_enabled_hint: When disabled, no new log entries will be recorded.
-komoju_payment.admin.config.label.order_number_format: Order Number Format
-komoju_payment.admin.config.label.order_number_format_hint: "Use {order_no} for the order number, {order_id} for the internal ID. Leave blank to use the default order number."
-komoju_payment.admin.config.label.order_number_format_tooltip: "Customize the order number sent to KOMOJU. Example: SHOP-{order_no}"
 
 komoju_payment.admin.config.back: Plugin List
 komoju_payment.badge.required: Required

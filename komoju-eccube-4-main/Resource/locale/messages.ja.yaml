@@ -116,9 +116,6 @@ komoju_payment.admin.config.label.log_retention_days_hint: 日間（空欄の場
 komoju_payment.admin.config.label.log_retention_days_tooltip: ログページを表示した際に、設定した保持期間を超えた古いログが自動的に削除されます。
 komoju_payment.admin.config.label.logging_enabled: ログ記録を有効にする
 komoju_payment.admin.config.label.logging_enabled_hint: 無効にすると、新しいログは記録されません。
-komoju_payment.admin.config.label.order_number_format: 注文番号フォーマット
-komoju_payment.admin.config.label.order_number_format_hint: "{order_no}で注文番号、{order_id}で内部IDに置換されます。空欄の場合はデフォルトの注文番号が使用されます。"
-komoju_payment.admin.config.label.order_number_format_tooltip: "KOMOJUに送信する注文番号をカスタマイズします。例：SHOP-{order_no}"
 
 komoju_payment.admin.config.back: プラグイン一覧
 komoju_payment.badge.required: 必須

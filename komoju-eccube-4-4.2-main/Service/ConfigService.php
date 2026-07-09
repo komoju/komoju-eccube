@@ -68,7 +68,6 @@ class ConfigService{
         }
 
         $config->setLoggingEnabled($newLoggingEnabled);
-        $config->setOrderNumberFormat(isset($config_data['order_number_format']) ? $config_data['order_number_format'] : null);
 
         $this->entityManager->persist($config);
         $this->entityManager->flush();

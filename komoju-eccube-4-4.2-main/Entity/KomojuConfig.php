@@ -18,7 +18,7 @@ class KomojuConfig
      * Pre-populated on install and used as the fallback when the merchant
      * leaves the setting blank.
      */
-    const DEFAULT_ORDER_NUMBER_FORMAT = 'ECC-{order_no}';
+    const DEFAULT_ORDER_NUMBER_FORMAT = 'ECC-{order_no}-{order_id}';
 
     /**
      * @var int

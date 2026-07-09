@@ -256,16 +256,18 @@ class KomojuPayment implements PaymentMethodInterface{
     }
 
     private function formatOrderNumber($config_data){
-        // Fall back to the default format (ECC-{order_no}) when the merchant
-        // has not set a custom one, so the external_order_num is always
-        // prefixed consistently.
-        $format = !empty($config_data['order_number_format'])
-            ? $config_data['order_number_format']
-            : KomojuConfig::DEFAULT_ORDER_NUMBER_FORMAT;
+        // external_order_num MUST be unique per session (KOMOJU returns 422
+        // invalid_parameter otherwise). We use a FIXED format that always
+        // includes the EC-CUBE internal order id, which is guaranteed present
+        // and unique once the order is persisted. This is intentionally not
+        // merchant-configurable: a custom format (or an empty {order_no}) could
+        // produce a non-unique value shared across orders, causing the second
+        // order onward to fail. {order_no} is kept for human readability in
+        // KOMOJU settlement reports; {order_id} guarantees uniqueness.
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$this->Order->getOrderNo(), (string)$this->Order->getId()],
-            $format
+            KomojuConfig::DEFAULT_ORDER_NUMBER_FORMAT
         );
     }
 }
