@@ -155,11 +155,8 @@ class KomojuPayment implements PaymentMethodInterface{
             'cancel_url' => $cancel_url,
             'default_locale' => $locale,
             'payment_types' => $enabled_methods,
-            // external_order_num belongs INSIDE payment_data per KOMOJU's
-            // sessions API (payment_data[external_order_num]). It must be
-            // UNIQUE per session — KOMOJU returns 422 "Payment data is invalid"
-            // if the value was already used — so generateUniqueOrderNumber()
-            // appends a unique suffix on retries.
+            // external_order_num goes inside payment_data and must be unique
+            // per session (KOMOJU returns 422 if reused).
             'payment_data' => [
                 'capture' => $config_data['capture_on'] ? 'auto' : 'manual',
                 'external_order_num' => $this->generateUniqueOrderNumber($config_data),
@@ -224,30 +221,17 @@ class KomojuPayment implements PaymentMethodInterface{
     }
 
     /**
-     * Generate a unique external_order_num for KOMOJU.
-     *
-     * KOMOJU requires external_order_num to be unique per session and returns
-     * 422 "Payment data is invalid" if a value is reused. A customer who
-     * abandons a payment and retries (or any prior failed attempt) would
-     * otherwise collide on the same order number. The previous implementation
-     * derived the suffix from a count of KomojuOrder rows, which is not
-     * collision-proof (failed attempts may not advance the count predictably,
-     * and a re-submit of the same order can reuse a value KOMOJU already saw).
-     *
-     * We always append a short unique token on retries so each attempt sends a
-     * value KOMOJU has not seen, while keeping the readable base order number
-     * on the first attempt.
+     * Build a unique external_order_num, appending a per-attempt suffix on
+     * retries so KOMOJU never sees a reused value.
      */
     private function generateUniqueOrderNumber($config_data){
         $baseNumber = $this->formatOrderNumber($config_data);
 
-        // Count existing KOMOJU sessions for this order to detect retries.
+        // A prior session for this order means this is a retry.
         $existingCount = $this->entityManager->getRepository(KomojuOrder::class)
             ->count(['Order' => $this->Order]);
 
         if ($existingCount > 0) {
-            // Append a unique-per-attempt suffix (retry index + short random
-            // token) so a reused order number can never collide on KOMOJU.
             $suffix = ($existingCount + 1) . '-' . substr(bin2hex(random_bytes(3)), 0, 5);
             return $baseNumber . '-' . $suffix;
         }
@@ -256,14 +240,8 @@ class KomojuPayment implements PaymentMethodInterface{
     }
 
     private function formatOrderNumber($config_data){
-        // external_order_num MUST be unique per session (KOMOJU returns 422
-        // invalid_parameter otherwise). We use a FIXED format that always
-        // includes the EC-CUBE internal order id, which is guaranteed present
-        // and unique once the order is persisted. This is intentionally not
-        // merchant-configurable: a custom format (or an empty {order_no}) could
-        // produce a non-unique value shared across orders, causing the second
-        // order onward to fail. {order_no} is kept for human readability in
-        // KOMOJU settlement reports; {order_id} guarantees uniqueness.
+        // Fixed, non-configurable format. {order_id} guarantees uniqueness
+        // per order; {order_no} is kept for readability in KOMOJU reports.
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$this->Order->getOrderNo(), (string)$this->Order->getId()],

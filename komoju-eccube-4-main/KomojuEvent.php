@@ -176,9 +176,7 @@ class KomojuEvent implements EventSubscriberInterface{
     }
 
     private function formatOrderNumber($Order){
-        // Mirror the fixed external_order_num format sent to KOMOJU in
-        // KomojuPayment so the admin order-edit display matches what KOMOJU
-        // received. This is intentionally not merchant-configurable.
+        // Mirror the fixed external_order_num format sent in KomojuPayment.
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$Order->getOrderNo(), (string)$Order->getId()],

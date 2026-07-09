@@ -23,7 +23,8 @@ class KomojuService{
 
     public function cancelKomojuOrderByOrder($Order){
 
-        $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order]);
+        // Latest session row carries the komoju_payment_id needed to void auth.
+        $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order], ['id' => 'DESC']);
 
         if(empty($komoju_order) || $komoju_order->isCaptured() || $komoju_order->getCanceledAt()){
             return;
