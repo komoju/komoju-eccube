@@ -391,9 +391,9 @@ class KomojuPaymentTest extends TestCase
     public function testApplyIgnoresStoredOrderNumberFormat()
     {
         // The order-number customization feature was removed: external_order_num
-        // always uses the fixed ECC-{order_no}-{order_id} format regardless of
-        // any legacy order_number_format value still stored in the DB. The
-        // internal order id guarantees uniqueness per session.
+        // always uses the fixed ECC-{order_id} format regardless of any legacy
+        // order_number_format value still stored in the DB. The internal order
+        // id guarantees uniqueness per session.
         $order = $this->makeOrder(1000);
         $order->setOrderNo('ORD-999');
         $order->setId(55);
@@ -423,7 +423,7 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                return $data['payment_data']['external_order_num'] === 'ECC-ORD-999-55';
+                return $data['payment_data']['external_order_num'] === 'ECC-55';
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -500,8 +500,8 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                // Fixed format ECC-{order_no}-{order_id}; makeOrder id is 1.
-                return $data['payment_data']['external_order_num'] === 'ECC-100-1';
+                // Fixed format ECC-{order_id}; makeOrder id is 1.
+                return $data['payment_data']['external_order_num'] === 'ECC-1';
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -539,9 +539,9 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                // Fixed base ECC-{order_no}-{order_id} (id 1), then retry suffix
-                // "-2-<token>", e.g. "ECC-100-1-2-a1b2c".
-                return preg_match('/^ECC-100-1-2-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
+                // Fixed base ECC-{order_id} (id 1), then random retry token,
+                // e.g. "ECC-1-a1b2c".
+                return preg_match('/^ECC-1-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -579,9 +579,9 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                // Fixed base ECC-{order_no}-{order_id} (id 1), then retry suffix
-                // "-4-<token>", e.g. "ECC-100-1-4-a1b2c".
-                return preg_match('/^ECC-100-1-4-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
+                // Fixed base ECC-{order_id} (id 1), then random retry token,
+                // e.g. "ECC-1-a1b2c".
+                return preg_match('/^ECC-1-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -591,10 +591,9 @@ class KomojuPaymentTest extends TestCase
 
     public function testApplyRetryUsesFixedFormatBase()
     {
-        // A retry uses the fixed base ECC-{order_no}-{order_id} (customization
-        // removed) and only appends the uniqueness suffix AFTER the base, e.g.
-        // "ECC-100-55" -> "ECC-100-55-2-a1b2c". Any legacy order_number_format
-        // is ignored.
+        // A retry uses the fixed base ECC-{order_id} (customization removed)
+        // and only appends a random token AFTER the base, e.g.
+        // "ECC-55" -> "ECC-55-a1b2c". Any legacy order_number_format is ignored.
         $order = $this->makeOrder(1000);
         $order->setOrderNo('100');
         $order->setId(55);
@@ -625,8 +624,8 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                // Fixed base preserved, then "-2-<token>" appended.
-                return preg_match('/^ECC-100-55-2-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
+                // Fixed base preserved, then "-<token>" appended.
+                return preg_match('/^ECC-55-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);

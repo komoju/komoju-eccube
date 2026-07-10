@@ -232,16 +232,17 @@ class KomojuPayment implements PaymentMethodInterface{
             ->count(['Order' => $this->Order]);
 
         if ($existingCount > 0) {
-            $suffix = ($existingCount + 1) . '-' . substr(bin2hex(random_bytes(3)), 0, 5);
-            return $baseNumber . '-' . $suffix;
+            // Append a short random token so the retry sends a value KOMOJU
+            // has not seen (it rejects a reused external_order_num).
+            return $baseNumber . '-' . substr(bin2hex(random_bytes(3)), 0, 5);
         }
 
         return $baseNumber;
     }
 
     private function formatOrderNumber($config_data){
-        // Fixed, non-configurable format. {order_id} guarantees uniqueness
-        // per order; {order_no} is kept for readability in KOMOJU reports.
+        // Fixed, non-configurable format. {order_id} is the internal EC-CUBE
+        // order id, which is always present and unique per order.
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$this->Order->getOrderNo(), (string)$this->Order->getId()],

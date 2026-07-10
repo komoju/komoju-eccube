@@ -86,14 +86,15 @@ class MailExService extends MailService{
 
         $MailHistory = new MailHistory();
         $MailHistory->setMailSubject($message->getSubject())
-            ->setMailBody($message->getBody())
+            ->setMailBody($message->getTextBody())
             ->setOrder($Order)
             ->setSendDate(new \DateTime());
 
-        // HTML用メールの設定
-        $multipart = $message->getChildren();
-        if (count($multipart) > 0) {
-            $MailHistory->setMailHtmlBody($multipart[0]->getBody());
+        // Symfony Mailer (EC-CUBE 4.2/4.3): store the rendered HTML body
+        // directly. The old SwiftMailer getChildren() API no longer exists.
+        $htmlBody = $message->getHtmlBody();
+        if (!empty($htmlBody)) {
+            $MailHistory->setMailHtmlBody($htmlBody);
         }
 
         $this->mailHistoryRepository->save($MailHistory);
