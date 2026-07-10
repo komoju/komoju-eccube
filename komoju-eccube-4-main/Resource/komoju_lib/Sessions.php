@@ -15,4 +15,7 @@ class Sessions extends KomojuApi{
     public function create($data){
         return $this->http_client->post($this->url, $data);
     }
+    public function cancel($session_id){
+        return $this->http_client->post($this->url . "/$session_id/cancel");
+    }
 }

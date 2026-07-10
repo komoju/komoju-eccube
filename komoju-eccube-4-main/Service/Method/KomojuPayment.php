@@ -150,6 +150,12 @@ class KomojuPayment implements PaymentMethodInterface{
         }
         $komoju_client = $this->client_factory->create($config_data['secret_key']);
 
+        // Cancel any still-open sessions from earlier attempts on this order so
+        // an abandoned hosted-page URL can't be paid a second time (KOMOJU
+        // allows multiple payments per order). Best-effort: never block a new
+        // attempt if cancellation fails.
+        $this->cancelPreviousSessions($komoju_client);
+
         $total_amount = $this->Order->getPaymentTotal();
         $currency_code = $this->Order->getCurrencyCode();
         if(empty($currency_code)){
@@ -235,6 +241,34 @@ class KomojuPayment implements PaymentMethodInterface{
      */
     public function setOrder(Order $order){
         $this->Order = $order;
+    }
+
+    /**
+     * Cancel previous pending KOMOJU sessions for this order via
+     * /sessions/{id}/cancel, so an abandoned hosted-page URL cannot be paid
+     * again. Skips sessions already captured/cancelled locally. Best-effort:
+     * failures are logged but never abort the new payment attempt.
+     */
+    private function cancelPreviousSessions($komoju_client){
+        $priorOrders = $this->entityManager->getRepository(KomojuOrder::class)
+            ->findBy(['Order' => $this->Order]);
+        if(empty($priorOrders)){
+            return;
+        }
+        foreach($priorOrders as $prior){
+            $sessionId = $prior->getKomojuSessionId();
+            if(empty($sessionId) || $prior->isCaptured() || $prior->getCanceledAt()){
+                continue;
+            }
+            try {
+                $komoju_client->cancelSession($sessionId);
+                $prior->setCanceledAt(new \DateTime());
+                $this->entityManager->persist($prior);
+                $this->entityManager->flush();
+            } catch (\Exception $e) {
+                $this->log_service->writeLog("cancelSession", $this->Order->getId(), "failed to cancel prior session $sessionId: " . $e->getMessage());
+            }
+        }
     }
 
     /**

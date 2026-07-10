@@ -50,6 +50,10 @@ class KomojuClient{
         $this->api_obj = new Sessions($this->secret_key);
         return $this->api_obj->getOne($session_id);
     }
+    public function cancelSession($session_id){
+        $this->api_obj = new Sessions($this->secret_key);
+        return $this->api_obj->cancel($session_id);
+    }
     public function getPaymentMethods(){
         $this->api_obj = new PaymentMethods($this->secret_key);
         return $this->api_obj->get();

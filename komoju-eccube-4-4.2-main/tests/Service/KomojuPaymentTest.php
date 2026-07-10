@@ -287,6 +287,106 @@ class KomojuPaymentTest extends TestCase
         $this->assertEquals('https://komoju.com/sessions/ses_abc123', $response->getTargetUrl());
     }
 
+    public function testApplyCancelsPreviousPendingSessions()
+    {
+        // A prior, still-open session for this order must be cancelled at KOMOJU
+        // before a new one is created, so an abandoned hosted-page URL cannot be
+        // paid a second time.
+        $order = $this->makeOrder(2000);
+        $order->setId(77);
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
+
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+            'order_number_format' => null,
+        ]);
+
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('credit_card');
+
+        // A previous attempt: pending session, not captured, not cancelled.
+        $priorOrder = new KomojuOrder();
+        $priorOrder->setOrder($order);
+        $priorOrder->setKomojuSessionId('ses_old_1');
+
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($komojuPay);
+        $repo->method('findBy')->willReturn([$priorOrder]);
+        $this->entityManager->method('getRepository')->willReturn($repo);
+
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+
+        $client = $this->createMock(KomojuClient::class);
+        // The old session must be cancelled.
+        $client->expects($this->once())->method('cancelSession')->with('ses_old_1');
+        $client->method('createSession')->willReturn([
+            'id' => 'ses_new_2',
+            'session_url' => 'https://komoju.com/sessions/ses_new_2',
+        ]);
+        $client->method('getStatusCode')->willReturn(200);
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->payment->apply();
+
+        // The prior KomojuOrder is marked cancelled locally too.
+        $this->assertNotNull($priorOrder->getCanceledAt());
+    }
+
+    public function testApplyDoesNotCancelCapturedOrCancelledSessions()
+    {
+        // Already-captured or already-cancelled prior sessions must be left
+        // alone (no cancel call).
+        $order = $this->makeOrder(2000);
+        $order->setId(78);
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
+
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+            'order_number_format' => null,
+        ]);
+
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('credit_card');
+
+        $captured = new KomojuOrder();
+        $captured->setOrder($order);
+        $captured->setKomojuSessionId('ses_captured');
+        $captured->setCapturedAt(new \DateTime());
+
+        $alreadyCancelled = new KomojuOrder();
+        $alreadyCancelled->setOrder($order);
+        $alreadyCancelled->setKomojuSessionId('ses_cancelled');
+        $alreadyCancelled->setCanceledAt(new \DateTime());
+
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($komojuPay);
+        $repo->method('findBy')->willReturn([$captured, $alreadyCancelled]);
+        $this->entityManager->method('getRepository')->willReturn($repo);
+
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+
+        $client = $this->createMock(KomojuClient::class);
+        $client->expects($this->never())->method('cancelSession');
+        $client->method('createSession')->willReturn([
+            'id' => 'ses_new_3',
+            'session_url' => 'https://komoju.com/sessions/ses_new_3',
+        ]);
+        $client->method('getStatusCode')->willReturn(200);
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->payment->apply();
+    }
+
     public function testApplyThrowsPurchaseExceptionWhenConfigMissing()
     {
         // If config disappears after prepare() reserved stock, apply() must
