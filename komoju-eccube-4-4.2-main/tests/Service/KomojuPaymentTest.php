@@ -118,6 +118,22 @@ class KomojuPaymentTest extends TestCase
         $this->assertFalse($result->getSuccess());
     }
 
+    public function testVerifyReturnsFailureWhenConfigMissing()
+    {
+        // Merchant enabled the plugin but never saved config: getConfigData()
+        // throws. verify() must catch and return a failed PaymentResult, NOT
+        // let the RuntimeException bubble up as an HTTP 500 on the confirm page.
+        $order = $this->makeOrder();
+        $this->payment->setOrder($order);
+
+        $this->configService->method('getConfigData')
+            ->willThrowException(new \RuntimeException('KOMOJU plugin configuration not found.'));
+
+        $result = $this->payment->verify();
+        $this->assertFalse($result->getSuccess());
+        $this->assertNotEmpty($result->getErrors());
+    }
+
     public function testVerifyNoKomojuPay()
     {
         $order = $this->makeOrder();
@@ -269,6 +285,32 @@ class KomojuPaymentTest extends TestCase
         $this->assertNotNull($dispatcher);
         $response = $dispatcher->getResponse();
         $this->assertEquals('https://komoju.com/sessions/ses_abc123', $response->getTargetUrl());
+    }
+
+    public function testApplyThrowsPurchaseExceptionWhenConfigMissing()
+    {
+        // If config disappears after prepare() reserved stock, apply() must
+        // roll back and throw PurchaseException (the type core catches), never
+        // let a raw RuntimeException escape as a 500 with stock left reserved.
+        $order = $this->makeOrder(2000);
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $processingStatus = new OrderStatus();
+        $processingStatus->setId(OrderStatus::PROCESSING);
+        $this->orderStatusRepo->method('find')->willReturnCallback(function ($id) use ($pendingStatus, $processingStatus) {
+            return $id === OrderStatus::PENDING ? $pendingStatus : $processingStatus;
+        });
+
+        $this->configService->method('getConfigData')
+            ->willThrowException(new \RuntimeException('KOMOJU plugin configuration not found.'));
+
+        // Order must be rolled back to PROCESSING before the exception.
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+
+        $this->expectException(PurchaseException::class);
+        $this->payment->apply();
     }
 
     public function testApplyApiFailureThrowsException()

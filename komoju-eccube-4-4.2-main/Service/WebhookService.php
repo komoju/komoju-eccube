@@ -22,17 +22,34 @@ class WebhookService{
     protected $log_service;
     protected $komoju_order_repo;
     protected $order_state_machine;
+    protected $purchase_flow;
 
 
     public function __construct(
         EntityManagerInterface $entityManager,
         OrderStateMachine $orderStateMachine,
-        LogService $logService
+        LogService $logService,
+        \Eccube\Service\PurchaseFlow\PurchaseFlow $shoppingPurchaseFlow
         ){
         $this->entityManager = $entityManager;
         $this->komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
         $this->log_service = $logService;
         $this->order_state_machine = $orderStateMachine;
+        $this->purchase_flow = $shoppingPurchaseFlow;
+    }
+
+    /**
+     * Run purchase-flow commit() when a webhook is first to finalize the order
+     * (customer never returned). Records buy stats + order date; stock/points
+     * were already applied in prepare(). Guarded by the caller's
+     * PENDING/PROCESSING check; must not abort webhook processing on failure.
+     */
+    private function commitPurchaseFlow($order){
+        try {
+            $this->purchase_flow->commit($order, new \Eccube\Service\PurchaseFlow\PurchaseContext());
+        } catch (\Exception $e) {
+            $this->log_service->writeLog("webhook", $order->getId(), "purchase flow commit skipped: " . $e->getMessage());
+        }
     }
     public function paymentRefunded($object){
         $komoju_payment_id = $object->data->id;
@@ -138,6 +155,8 @@ class WebhookService{
         // If order is still in pending/processing state, move to NEW so it appears in admin
         $currentStatus = $order->getOrderStatus()->getId();
         if(in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+            // First to finalize (customer did not return): record buy stats.
+            $this->commitPurchaseFlow($order);
             $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
             $order->setOrderStatus($OrderStatus);
             $this->entityManager->persist($order);
@@ -175,6 +194,13 @@ class WebhookService{
             return ;
         }
         $this->log_service->writeLog("webhook[captured]", $order->getId(), "payment captured", true);
+        // First to finalize (customer never returned): record buy stats.
+        // Guarded on PENDING/PROCESSING so we never double-commit an order
+        // SessionReturnController already committed.
+        $currentStatus = $order->getOrderStatus()->getId();
+        if(in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+            $this->commitPurchaseFlow($order);
+        }
         $order->setPaymentDate($captured_at);
         $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::PAID);
         $order->setOrderStatus($OrderStatus);
@@ -191,7 +217,10 @@ class WebhookService{
     public function paymentFailed($object){ $this->handleCancelEvent($object, 'failed', 'payment failed'); }
     private function handleCancelEvent($object, $tag, $message){
         $komoju_payment_id = $object->data->id;
-        $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
+        // Use findKomojuOrder() (payment id + metadata + session fallbacks):
+        // for failed/expired/cancelled the payment id may not be stored yet
+        // (customer never returned), else the order stays stuck in PENDING.
+        $komoju_order = $this->findKomojuOrder($object);
         if(empty($komoju_order)){
             $this->log_service->writeLog("webhook[$tag]", 0, "no order found for payment: $komoju_payment_id");
             return;
@@ -205,8 +234,9 @@ class WebhookService{
         $this->cancelOrder($komoju_order);
     }
     public function paymentUpdated($object){
-        $komoju_payment_id = $object->data->id;
-        $komoju_order = $this->komoju_order_repo->findOneBy(['komoju_payment_id' => $komoju_payment_id]);
+        // Multi-key lookup so an expired/cancelled change is not missed when
+        // the payment id was never persisted on the KomojuOrder.
+        $komoju_order = $this->findKomojuOrder($object);
         if(empty($komoju_order)){
             return;
         }

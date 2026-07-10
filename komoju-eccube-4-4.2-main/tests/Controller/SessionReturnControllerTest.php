@@ -157,21 +157,47 @@ class SessionReturnControllerTest extends TestCase
 
     public function testKomojuApiFailureRedirects()
     {
-        $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
 
         $this->komojuClient->method('getSession')->willReturn(null);
         $this->komojuClient->method('getStatusCode')->willReturn(500);
 
+        $processingStatus = new OrderStatus();
+        $processingStatus->setId(OrderStatus::PROCESSING);
+        $this->em->method('find')->willReturn($processingStatus);
+
+        // A transient API failure on return must NOT leave a PENDING order with
+        // the cart live (double-charge risk). It must roll back to a retryable
+        // PROCESSING state so the customer re-uses the SAME order.
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+
         $controller = $this->makeController();
-
-        $this->logService->expects($this->once())
-            ->method('writeLog')
-            ->with('sessionReturn', 42, $this->stringContains('failed to fetch session'));
-
         $req = new Request(['session_id' => 'sess_abc']);
         $controller->sessionReturn($req);
 
         $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame($processingStatus, $order->getOrderStatus(),
+            'API failure on a PENDING order must roll it back to PROCESSING (retryable)');
+    }
+
+    public function testApiFailureAfterWebhookFinalizedGoesToComplete()
+    {
+        // Customer paid; webhook already set the order PAID; then getSession()
+        // has a transient failure. The customer must land on completion, not be
+        // sent back to re-pay.
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PAID);
+
+        $this->komojuClient->method('getSession')->willReturn(null);
+        $this->komojuClient->method('getStatusCode')->willReturn(503);
+
+        // Must NOT roll back an already-finalized order.
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $req = new Request(['session_id' => 'sess_abc']);
+        $controller->sessionReturn($req);
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
     }
 
     // --- failed payment branch ---
@@ -329,15 +355,22 @@ class SessionReturnControllerTest extends TestCase
         $this->em->method('find')->willReturn($paidStatus);
 
         // First call to flush() (inside flushWithRetry) succeeds. The second
-        // (after commit + status update) throws. Use a counter so we don't
-        // bind to PHPUnit's consecutiveCalls (which is ordering-fragile).
-        $this->em->method('isOpen')->willReturn(true);
+        // (after commit + status update) throws because the webhook finalized
+        // the order concurrently and closed the EntityManager. isOpen() then
+        // reports false — the reliable signal the controller uses to treat this
+        // as a webhook race (fall through to completion) rather than a genuine
+        // business failure. Use a counter so we don't bind to PHPUnit's
+        // consecutiveCalls (which is ordering-fragile).
         $flushCount = 0;
         $this->em->method('flush')->willReturnCallback(function () use (&$flushCount) {
             $flushCount++;
             if ($flushCount >= 2) {
                 throw new \RuntimeException('EntityManager is closed');
             }
+        });
+        // Open for the first flush, closed once the second (racing) flush fails.
+        $this->em->method('isOpen')->willReturnCallback(function () use (&$flushCount) {
+            return $flushCount < 2;
         });
 
         $controller = $this->makeController();
@@ -418,6 +451,59 @@ class SessionReturnControllerTest extends TestCase
         $resp = $controller->sessionCancel(new Request([]));
 
         $this->assertSame('shopping', $controller->lastRedirect);
+    }
+
+    public function testSessionCancelDoesNotRollBackAlreadyPaidOrder()
+    {
+        // Race: payment.captured webhook set the order PAID, then the customer
+        // hits cancel_url via browser back. sessionCancel must NOT roll back a
+        // paid order (which would reverse stock/points on a paid purchase).
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PAID);
+
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->logService->expects($this->once())
+            ->method('writeLog')
+            ->with('sessionCancel', 42, $this->stringContains('already finalized'));
+
+        $controller = $this->makeController();
+        $req = new Request(['session_id' => 'sess_abc']);
+        $controller->sessionCancel($req);
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PAID, $order->getOrderStatus()->getId(),
+            'a paid order must keep its PAID status after a stray cancel');
+    }
+
+    public function testGenuineFinalizeFailureSendsCustomerBackNotToComplete()
+    {
+        // A real business failure (e.g. stock race PurchaseException) during
+        // commit(), with the EntityManager still OPEN, must NOT show the
+        // customer a success page. They are rolled back and sent to checkout.
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+
+        $processingStatus = new OrderStatus();
+        $processingStatus->setId(OrderStatus::PROCESSING);
+        $this->em->method('find')->willReturn($processingStatus);
+        $this->em->method('isOpen')->willReturn(true);
+
+        // commit() throws a genuine business exception; EM stays open.
+        $this->purchaseFlow->method('commit')
+            ->willThrowException(new \RuntimeException('over stock'));
+        // Controller must attempt a rollback to a retryable state.
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+
+        $controller = $this->makeController();
+        $req = new Request(['session_id' => 'sess_abc']);
+        $controller->sessionReturn($req);
+
+        $this->assertSame('shopping', $controller->lastRedirect,
+            'a genuine commit() failure must send the customer back to checkout, not to shopping_complete');
     }
 }
 

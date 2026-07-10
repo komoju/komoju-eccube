@@ -76,6 +76,23 @@ class SessionReturnController extends AbstractController
 
         if($komoju_client->getStatusCode() != 200 || empty($session)){
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to fetch session from KOMOJU API");
+
+            // The customer may already have paid. Don't leave the order PENDING
+            // with the cart live (double-charge risk): if a webhook finalized
+            // it, go to completion; otherwise roll back to PROCESSING so it is
+            // retryable as the same order.
+            $this->entityManager->refresh($Order);
+            $currentStatus = $Order->getOrderStatus()->getId();
+            if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+                $this->cartService->clear();
+                $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
+                return $this->redirectToRoute('shopping_complete');
+            }
+            $this->purchase_flow->rollback($Order, new PurchaseContext());
+            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
+            $Order->setOrderStatus($OrderStatus);
+            $this->entityManager->flush();
+
             $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
             return $this->redirectToRoute('shopping');
         }
@@ -150,8 +167,31 @@ class SessionReturnController extends AbstractController
                 $this->log_service->writeLog("sessionReturn", $Order->getId(), "order accepted (awaiting payment)", true);
             }
         } catch (\Exception $e) {
-            // If the EntityManager is closed or DB is locked, the webhook likely
-            // already processed this order. Just redirect to completion.
+            // (a) EM closed / DB busy: the webhook finalized this order
+            //     concurrently; safe to fall through to completion.
+            // (b) Genuine failure (e.g. PurchaseException from a stock race in
+            //     commit()): order NOT finalized, so roll back and send the
+            //     customer to checkout rather than a false success page.
+            // A closed EM is the reliable signal for (a).
+            $emClosed = !$this->entityManager->isOpen()
+                || $e instanceof \Doctrine\ORM\Exception\ORMException
+                || $e instanceof \Doctrine\DBAL\Exception;
+
+            if($emClosed){
+                $this->log_service->writeLog("sessionReturn", $Order->getId(), "finalize skipped (EM/DB busy, likely webhook race): " . $e->getMessage());
+            } else {
+                $this->log_service->writeLog("sessionReturn", $Order->getId(), "finalize failed: " . $e->getMessage());
+                try {
+                    $this->purchase_flow->rollback($Order, new PurchaseContext());
+                    $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
+                    $Order->setOrderStatus($OrderStatus);
+                    $this->entityManager->flush();
+                } catch (\Exception $inner) {
+                    $this->log_service->writeLog("sessionReturn", $Order->getId(), "rollback after finalize failure also failed: " . $inner->getMessage());
+                }
+                $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
+                return $this->redirectToRoute('shopping');
+            }
         }
 
         // Clear the cart
@@ -183,11 +223,20 @@ class SessionReturnController extends AbstractController
             if($komoju_order){
                 $Order = $komoju_order->getOrder();
                 if($Order){
-                    $this->purchase_flow->rollback($Order, new PurchaseContext());
-                    $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
-                    $Order->setOrderStatus($OrderStatus);
-                    $this->entityManager->flush();
-                    $this->log_service->writeLog("sessionCancel", $Order->getId(), "customer cancelled payment", true);
+                    // Only roll back an in-progress order. Rolling back a
+                    // captured/authorized order (e.g. browser back/forward
+                    // hitting cancel_url) would reverse stock/points on a paid
+                    // order.
+                    $currentStatus = $Order->getOrderStatus()->getId();
+                    if(in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+                        $this->purchase_flow->rollback($Order, new PurchaseContext());
+                        $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
+                        $Order->setOrderStatus($OrderStatus);
+                        $this->entityManager->flush();
+                        $this->log_service->writeLog("sessionCancel", $Order->getId(), "customer cancelled payment", true);
+                    } else {
+                        $this->log_service->writeLog("sessionCancel", $Order->getId(), "cancel ignored; order already finalized (status=$currentStatus)", true);
+                    }
                 }
             }
         }

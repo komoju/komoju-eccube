@@ -84,7 +84,15 @@ class KomojuPayment implements PaymentMethodInterface{
     public function verify(){
         $result = new PaymentResult();
 
-        $config_data = $this->config_service->getConfigData($this->Order);
+        // Config row missing (plugin enabled but never saved) -> friendly
+        // error instead of a raw 500 (core does not wrap verify() in try/catch).
+        try {
+            $config_data = $this->config_service->getConfigData($this->Order);
+        } catch (\Exception $e) {
+            $result->setSuccess(false);
+            $result->setErrors([trans('komoju_payment.shopping.payment_failed')]);
+            return $result;
+        }
         if(empty($config_data['secret_key'])){
             $result->setSuccess(false);
             $result->setErrors([trans('komoju_payment.shopping.payment_failed')]);
@@ -130,7 +138,16 @@ class KomojuPayment implements PaymentMethodInterface{
         // Prepare purchase flow
         $this->purchase_flow->prepare($this->Order, new PurchaseContext());
 
-        $config_data = $this->config_service->getConfigData($this->Order);
+        // Config missing: prepare() already reserved stock, so roll back and
+        // throw PurchaseException (the type core's checkout() catches).
+        try {
+            $config_data = $this->config_service->getConfigData($this->Order);
+        } catch (\Exception $e) {
+            $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
+            $this->Order->setOrderStatus($OrderStatus);
+            $this->purchase_flow->rollback($this->Order, new PurchaseContext());
+            throw new PurchaseException(trans('komoju_payment.shopping.payment_failed'));
+        }
         $komoju_client = $this->client_factory->create($config_data['secret_key']);
 
         $total_amount = $this->Order->getPaymentTotal();

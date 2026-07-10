@@ -17,6 +17,7 @@ class WebhookServiceTest extends TestCase
     private $logService;
     private $komojuOrderRepo;
     private $connection;
+    private $purchaseFlow;
     private $service;
 
     protected function setUp(): void
@@ -24,6 +25,7 @@ class WebhookServiceTest extends TestCase
         $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
         $this->orderStateMachine = $this->createMock(OrderStateMachine::class);
         $this->logService = $this->createMock(LogService::class);
+        $this->purchaseFlow = $this->createMock(\Eccube\Service\PurchaseFlow\PurchaseFlow::class);
         $this->komojuOrderRepo = $this->createMock(StubRepository::class);
 
         // The refund path performs an atomic compare-and-swap UPDATE via the
@@ -47,7 +49,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
     }
 
@@ -113,7 +116,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         $object = $this->makeWebhookObject('pay_1', ['captured_at' => '2024-01-15T10:00:00Z']);
@@ -191,7 +195,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         $object = $this->makeWebhookObject('pay_1', [
@@ -236,7 +241,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         $object = $this->makeWebhookObject('pay_1', [
@@ -506,7 +512,8 @@ class WebhookServiceTest extends TestCase
         $service = new WebhookService(
             $em,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         $object = (object) ['data' => (object) [
@@ -519,6 +526,70 @@ class WebhookServiceTest extends TestCase
 
         $this->assertEquals('pay_new_1', $komojuOrder->getKomojuPaymentId());
         $this->assertEquals('bank_transfer', $komojuOrder->getType());
+    }
+
+    public function testCancelEventFallsBackToMetadataWhenPaymentIdNotStored()
+    {
+        // payment.failed/expired can arrive before komoju_payment_id is stored
+        // (customer never returned). handleCancelEvent must use the
+        // metadata.eccube_order_id fallback, find the order, and cancel it
+        // rather than silently leaving it stuck in PENDING.
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PENDING);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(93);
+        $eccubeOrder->setOrderStatus($orderStatus);
+        $eccubeOrder->setOrderItems([]);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        // NOTE: no komoju_payment_id set.
+
+        $orderRepo = $this->createMock(StubRepository::class);
+        $orderRepo->method('find')->willReturn($eccubeOrder);
+
+        $komojuRepo = $this->createMock(StubRepository::class);
+        $komojuRepo->method('findOneBy')->willReturnCallback(function ($criteria) use ($komojuOrder) {
+            if (isset($criteria['komoju_payment_id'])) {
+                return null; // not stored yet
+            }
+            if (isset($criteria['Order'])) {
+                return $komojuOrder; // metadata fallback resolves the order
+            }
+            return null;
+        });
+
+        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em->method('getRepository')->willReturnCallback(function ($class) use ($orderRepo, $komojuRepo) {
+            if ($class === Order::class) return $orderRepo;
+            if ($class === KomojuOrder::class) return $komojuRepo;
+            return $this->createMock(StubRepository::class);
+        });
+        $cancelStatus = new OrderStatus();
+        $cancelStatus->setId(OrderStatus::CANCEL);
+        $em->method('find')->willReturn($cancelStatus);
+
+        $service = new WebhookService(
+            $em,
+            $this->orderStateMachine,
+            $this->logService,
+            $this->purchaseFlow
+        );
+
+        // The order must actually be cancelled (state machine invoked).
+        $this->orderStateMachine->method('can')->willReturn(true);
+        $this->orderStateMachine->expects($this->once())->method('apply');
+
+        $object = (object) ['data' => (object) [
+            'id' => 'pay_never_stored',
+            'metadata' => (object) ['eccube_order_id' => '93'],
+        ]];
+
+        $service->paymentFailed($object);
+
+        $this->assertNotNull($komojuOrder->getCanceledAt(),
+            'cancel event must resolve the order via metadata and cancel it');
     }
 
     // --- partial refund handling ---
@@ -610,7 +681,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         $object = $this->makeWebhookObject('pay_full_1', [
@@ -658,7 +730,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         // writeLog should NOT be called for the refund (duplicate / no-op claim)
@@ -757,7 +830,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         // The refund log line must be written exactly once across BOTH events,
@@ -835,7 +909,7 @@ class WebhookServiceTest extends TestCase
             if ($class === KomojuOrder::class) return $repo1;
             return $this->createMock(StubRepository::class);
         });
-        (new WebhookService($em1, $this->orderStateMachine, $this->logService))
+        (new WebhookService($em1, $this->orderStateMachine, $this->logService, $this->purchaseFlow))
             ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
 
         // Second handler: CAS loses — row already has this id set (0 affected).
@@ -850,7 +924,7 @@ class WebhookServiceTest extends TestCase
             if ($class === KomojuOrder::class) return $repo2;
             return $this->createMock(StubRepository::class);
         });
-        (new WebhookService($em2, $this->orderStateMachine, $this->logService))
+        (new WebhookService($em2, $this->orderStateMachine, $this->logService, $this->purchaseFlow))
             ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
 
         $this->assertEquals(1, $refundLogCalls, 'concurrent duplicate must not double-log');
@@ -892,7 +966,8 @@ class WebhookServiceTest extends TestCase
         $this->service = new WebhookService(
             $this->entityManager,
             $this->orderStateMachine,
-            $this->logService
+            $this->logService,
+            $this->purchaseFlow
         );
 
         $object = $this->makeWebhookObject('pay_cas', [

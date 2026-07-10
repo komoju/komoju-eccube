@@ -22,6 +22,7 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Service\OrderStateMachine'
             - '@plg_Komoju.service.komoju_log'
+            - '@eccube.purchase.flow.shopping'
     plg_Komoju.service.komoju_mail_service:
         public: true
         class: Plugin\Komoju\Service\MailExService
