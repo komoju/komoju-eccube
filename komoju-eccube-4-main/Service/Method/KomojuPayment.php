@@ -150,10 +150,8 @@ class KomojuPayment implements PaymentMethodInterface{
         }
         $komoju_client = $this->client_factory->create($config_data['secret_key']);
 
-        // Cancel any still-open sessions from earlier attempts on this order so
-        // an abandoned hosted-page URL can't be paid a second time (KOMOJU
-        // allows multiple payments per order). Best-effort: never block a new
-        // attempt if cancellation fails.
+        // Close abandoned sessions from earlier attempts so their hosted-page
+        // URL can't be paid again (KOMOJU allows multiple payments per order).
         $this->cancelPreviousSessions($komoju_client);
 
         $total_amount = $this->Order->getPaymentTotal();
@@ -244,10 +242,8 @@ class KomojuPayment implements PaymentMethodInterface{
     }
 
     /**
-     * Cancel previous pending KOMOJU sessions for this order via
-     * /sessions/{id}/cancel, so an abandoned hosted-page URL cannot be paid
-     * again. Skips sessions already captured/cancelled locally. Best-effort:
-     * failures are logged but never abort the new payment attempt.
+     * Cancel this order's still-open KOMOJU sessions so an abandoned hosted-page
+     * URL can't be paid again. Best-effort: failures never abort the new attempt.
      */
     private function cancelPreviousSessions($komoju_client){
         $priorOrders = $this->entityManager->getRepository(KomojuOrder::class)
