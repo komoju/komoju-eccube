@@ -258,6 +258,55 @@ class WebhookServiceTest extends TestCase
         $this->assertEquals(500, $komojuOrder->getRefundedAmount());
     }
 
+    public function testRefundedEditedOrderCancelsOnCapturedBasis()
+    {
+        // Order total was edited up (7160) after authorization, but only the
+        // captured amount (4080) was ever taken. A refund of 4080 must cancel
+        // the order, based on captured_amount rather than the order total.
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(59);
+        $eccubeOrder->setOrderStatus($orderStatus);
+        $eccubeOrder->setPaymentTotal(7160);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setCapturedAmount(4080);
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $cancelStatus = new OrderStatus();
+        $cancelStatus->setId(OrderStatus::CANCEL);
+        $statusRepo = $this->createMock(StubRepository::class);
+        $statusRepo->method('find')->willReturn($cancelStatus);
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) use ($statusRepo) {
+                if ($class === OrderStatus::class) return $statusRepo;
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                return $this->createMock(StubRepository::class);
+            });
+
+        $this->orderStateMachine->method('can')->willReturn(true);
+        $this->orderStateMachine->expects($this->once())->method('apply');
+
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService,
+            $this->purchaseFlow
+        );
+
+        $object = $this->makeWebhookObject('pay_1', [
+            'refunds' => [(object)['id' => 'ref_1', 'amount' => 4080]]
+        ]);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(4080, $komojuOrder->getRefundedAmount());
+    }
+
     // --- cancel events ---
 
     public function testCancelNoOrder()

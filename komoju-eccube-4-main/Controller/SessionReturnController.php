@@ -136,6 +136,9 @@ class SessionReturnController extends AbstractController
 
                 if($payment_status === 'captured'){
                     $komoju_order->setCapturedAt(new \DateTime());
+                    if(isset($payment['amount'])){
+                        $komoju_order->setCapturedAmount((int)$payment['amount']);
+                    }
                 }
                 if(isset($payment['payment_details']['type'])){
                     $komoju_order->setType($payment['payment_details']['type']);

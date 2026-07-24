@@ -117,9 +117,13 @@ class WebhookService{
             $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$newRefundAmount)", true);
         }
 
-        // Cancel the order once fully refunded. Idempotent: can() returns false
-        // once already cancelled, so repeat deliveries are no-ops.
-        if($refund_amount >= $Order->getPaymentTotal()){
+        // Cancel the order once fully refunded, based on the actually-captured
+        // amount (fall back to order total for rows without captured_amount).
+        // Idempotent: can() returns false once already cancelled.
+        $captured_basis = $komoju_order->getCapturedAmount() !== null
+            ? (int)$komoju_order->getCapturedAmount()
+            : (int)$Order->getPaymentTotal();
+        if($refund_amount >= $captured_basis){
             $OrderStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
             if ($this->order_state_machine->can($Order, $OrderStatus)) {
                 $this->order_state_machine->apply($Order, $OrderStatus);
@@ -185,6 +189,9 @@ class WebhookService{
 
         $captured_at = new \DateTime($object->data->captured_at);
         $komoju_order->setCapturedAt($captured_at);
+        if(isset($object->data->amount)){
+            $komoju_order->setCapturedAmount((int)$object->data->amount);
+        }
         $this->entityManager->persist($komoju_order);
         $this->entityManager->flush();
 

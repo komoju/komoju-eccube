@@ -98,6 +98,12 @@ class KomojuOrder
     private $captured_at;
 
     /**
+     * @var string
+     * @ORM\Column(name="captured_amount", type="decimal", precision=12, scale=2, options={"unsigned":true}, nullable=true)
+     */
+    private $captured_amount;
+
+    /**
      * @var \DateTime
      * @ORM\Column(name="canceled_at", type="datetime", nullable=true)
      */
@@ -115,6 +121,13 @@ class KomojuOrder
         return $this->type == "credit_card";
     }
 
+    public function getCapturedAmount(){
+        return $this->captured_amount;
+    }
+    public function setCapturedAmount($captured_amount){
+        $this->captured_amount = $captured_amount;
+        return $this;
+    }
     public function getCapturedAt(){
         return $this->captured_at;
     }

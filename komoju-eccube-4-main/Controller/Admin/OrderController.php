@@ -91,6 +91,9 @@ class OrderController extends AbstractController{
 
         if(isset($payment_obj['status']) && $payment_obj['status'] === "captured"){
             $komoju_order->setCapturedAt(new \DateTime($payment_obj['captured_at']));
+            if(isset($payment_obj['amount'])){
+                $komoju_order->setCapturedAmount((int)$payment_obj['amount']);
+            }
             $this->entityManager->persist($komoju_order);
             $this->entityManager->flush();
             $this->setOrderStatus($Order, OrderStatus::PAID);
@@ -122,6 +125,9 @@ class OrderController extends AbstractController{
         }
 
         $komoju_order->setCapturedAt(new \DateTime($payment_obj['captured_at']));
+        if(isset($payment_obj['amount'])){
+            $komoju_order->setCapturedAmount((int)$payment_obj['amount']);
+        }
         $this->entityManager->persist($komoju_order);
         $this->entityManager->flush();
         $this->setOrderStatus($Order, OrderStatus::PAID);
@@ -159,8 +165,15 @@ class OrderController extends AbstractController{
         // Lock the row to prevent concurrent refund attempts
         $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
 
+        // Base refund/cancel math on the actually-captured amount, not the
+        // (possibly-edited) order total. Fall back to order total for rows
+        // captured before captured_amount was tracked.
+        $captured_basis = $komoju_order->getCapturedAmount() !== null
+            ? (int)$komoju_order->getCapturedAmount()
+            : (int)$Order->getPaymentTotal();
+
         // check if fully refunded (allow additional partial refunds)
-        if ($komoju_order->getRefundedAmount() >= $Order->getPaymentTotal()) {
+        if ($komoju_order->getRefundedAmount() >= $captured_basis) {
             $this->log_service->writeLog("refund", $Order->getId(), "rejected: already fully refunded", true);
             $this->addError('komoju_payment.admin.order.error.refunded', 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
@@ -189,7 +202,7 @@ class OrderController extends AbstractController{
             $this->entityManager->flush();
 
             // If fully refunded, block further refunds
-            if($refund_amount >= $Order->getPaymentTotal()){
+            if($refund_amount >= $captured_basis){
                 $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
                 try{
                     if ($this->orderStateMachine->can($Order, $OrderStatus)) {
@@ -209,13 +222,13 @@ class OrderController extends AbstractController{
         $refund_amount = 0;
 
         if((int)$refund_option === KomojuOrder::REFUND_FULL){
-            $refund_amount = floor($Order->getPaymentTotal() - $komoju_order->getRefundedAmount());
+            $refund_amount = floor($captured_basis - $komoju_order->getRefundedAmount());
         }else if((int)$refund_option === KomojuOrder::REFUND_PARTIAL){
             $refund_amount = filter_var($request->request->get('refund_amount'), FILTER_VALIDATE_INT);
             if ($refund_amount === false || $refund_amount <= 0) {
                 $this->addError('komoju_payment.admin.order.refund_amount.error.invalid', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
-            } else if($refund_amount > ($Order->getPaymentTotal() - $komoju_order->getRefundedAmount())){
+            } else if($refund_amount > ($captured_basis - $komoju_order->getRefundedAmount())){
                 $this->addError('komoju_payment.admin.order.refund_amount.error.exceeded', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
             }
@@ -247,7 +260,7 @@ class OrderController extends AbstractController{
             $this->entityManager->flush();
 
             // Only cancel order if fully refunded
-            if($total_refunded >= $Order->getPaymentTotal()){
+            if($total_refunded >= $captured_basis){
                 $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
                 try{
                     if ($this->orderStateMachine->can($Order, $OrderStatus)) {
