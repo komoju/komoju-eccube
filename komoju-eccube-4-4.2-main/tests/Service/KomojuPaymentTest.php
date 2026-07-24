@@ -565,7 +565,7 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                return $data['payment_data']['external_order_num'] === 'ECC-55';
+                return preg_match('/^ECC-55-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -642,8 +642,7 @@ class KomojuPaymentTest extends TestCase
         $client->expects($this->once())
             ->method('createSession')
             ->with($this->callback(function ($data) {
-                // Fixed format ECC-{order_id}; makeOrder id is 1.
-                return $data['payment_data']['external_order_num'] === 'ECC-1';
+                return preg_match('/^ECC-1-[0-9a-f]+$/', $data['payment_data']['external_order_num']) === 1;
             }))
             ->willReturn(['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']);
         $this->clientFactory->method('create')->willReturn($client);
@@ -773,5 +772,52 @@ class KomojuPaymentTest extends TestCase
         $this->clientFactory->method('create')->willReturn($client);
 
         $this->payment->apply();
+    }
+
+    public function testApplyRetriesOnceOnInvalidParameter()
+    {
+        $order = $this->makeOrder(1000);
+        $order->setOrderNo('100');
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $this->orderStatusRepo->method('find')->willReturn($pendingStatus);
+
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+            'order_number_format' => null,
+        ]);
+
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('paypay');
+
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($komojuPay);
+        $repo->method('count')->willReturn(0);
+        $this->entityManager->method('getRepository')->willReturn($repo);
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+
+        $client = $this->createMock(KomojuClient::class);
+        $client->method('getLastError')->willReturn('invalid_parameter');
+        $client->method('getStatusCode')->willReturnOnConsecutiveCalls(422, 200);
+        $numbers = [];
+        $client->expects($this->exactly(2))
+            ->method('createSession')
+            ->with($this->callback(function ($data) use (&$numbers) {
+                $numbers[] = $data['payment_data']['external_order_num'];
+                return true;
+            }))
+            ->willReturnOnConsecutiveCalls(
+                [],
+                ['id' => 'ses_1', 'session_url' => 'https://komoju.com/s/1']
+            );
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->payment->apply();
+
+        $this->assertCount(2, $numbers);
+        $this->assertNotEquals($numbers[0], $numbers[1]);
     }
 }

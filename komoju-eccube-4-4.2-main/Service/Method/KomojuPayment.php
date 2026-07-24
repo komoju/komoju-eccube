@@ -189,6 +189,11 @@ class KomojuPayment implements PaymentMethodInterface{
 
         $session = $komoju_client->createSession($session_data);
 
+        if(($komoju_client->getStatusCode() != 200 || empty($session['id'])) && $komoju_client->getLastError() === 'invalid_parameter'){
+            $session_data['payment_data']['external_order_num'] = $this->generateUniqueOrderNumber($config_data);
+            $session = $komoju_client->createSession($session_data);
+        }
+
         if($komoju_client->getStatusCode() != 200 || empty($session['id'])){
             $error = $komoju_client->getLastError() ?: trans('komoju_payment.shopping.payment_failed');
             $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error");
@@ -272,19 +277,11 @@ class KomojuPayment implements PaymentMethodInterface{
      * retries so KOMOJU never sees a reused value.
      */
     private function generateUniqueOrderNumber($config_data){
-        $baseNumber = $this->formatOrderNumber($config_data);
-
-        // A prior session for this order means this is a retry.
-        $existingCount = $this->entityManager->getRepository(KomojuOrder::class)
-            ->count(['Order' => $this->Order]);
-
-        if ($existingCount > 0) {
-            // Append a short random token so the retry sends a value KOMOJU
-            // has not seen (it rejects a reused external_order_num).
-            return $baseNumber . '-' . substr(bin2hex(random_bytes(3)), 0, 5);
-        }
-
-        return $baseNumber;
+        // external_order_num must be unique per session; KOMOJU rejects reuse.
+        // It need not equal the EC-CUBE order id, so always append entropy.
+        // The eccube_order_id is still sent in metadata for traceability.
+        $baseNumber = rtrim($this->formatOrderNumber($config_data), '-');
+        return $baseNumber . '-' . substr(bin2hex(random_bytes(4)), 0, 8);
     }
 
     private function formatOrderNumber($config_data){
