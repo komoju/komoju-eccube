@@ -70,7 +70,7 @@ komoju_payment.admin.order.error.refund_option.invalid: Invalid refund option.
 komoju_payment.admin.order.error.already_captured: This payment has already been captured.
 komoju_payment.admin.order.error.not_credit_card: This is not a valid credit card payment.
 komoju_payment.admin.order.error.capture_failed: Capture failed.
-komoju_payment.admin.order.error.amount_mismatch: 'Capture blocked: the order total (%order_total%) does not match the authorized amount (%authorized%). Restore the order total to the authorized amount, or void the authorization and re-authorize.'
+komoju_payment.admin.order.error.amount_mismatch: "Capture blocked.\nThe order total (%order_total%) does not match the authorized amount (%authorized%).\nOption 1: Restore the order total to the authorized amount (%authorized%), then capture.\nOption 2: To change the amount, cancel this order and have the customer place a new one."
 komoju_payment.admin.order.refund.success: Refund completed successfully.
 komoju_payment.admin.order.capture_action: Capture Payment
 komoju_payment.admin.order.capture_action_confirm: 'Are you sure you want to capture %charge_amount%?'

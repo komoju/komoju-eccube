@@ -70,7 +70,7 @@ komoju_payment.admin.order.error.refund_option.invalid: 返金オプションが
 komoju_payment.admin.order.error.already_captured: 支払いは既に取得されています
 komoju_payment.admin.order.error.not_credit_card: 有効なクレジットカードタイプではありません。
 komoju_payment.admin.order.error.capture_failed: キャプチャ失敗
-komoju_payment.admin.order.error.amount_mismatch: 受注金額（%order_total%円）がオーソリ金額（%authorized%円）と一致しないため、売上処理を中止しました。受注金額をオーソリ時の金額に戻すか、オーソリを取り消して再決済してください。
+komoju_payment.admin.order.error.amount_mismatch: "売上処理を中止しました。\n受注金額（%order_total%円）がオーソリ金額（%authorized%円）と一致しません。\n対処法1: 受注金額をオーソリ金額（%authorized%円）に戻してから売上処理を行ってください。\n対処法2: 金額を変更する場合は、この注文を取り消し、新しい注文として購入し直していただく必要があります。"
 komoju_payment.admin.order.refund.success: 正常に返金されました
 komoju_payment.admin.order.capture_action: 支払いを受け取る
 komoju_payment.admin.order.capture_action_confirm: '%charge_amount%を請求してもよろしいですか？'
