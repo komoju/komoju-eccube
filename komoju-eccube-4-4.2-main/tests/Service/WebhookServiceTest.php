@@ -357,8 +357,43 @@ class WebhookServiceTest extends TestCase
         $cancelStatus->setId(OrderStatus::CANCEL);
 
         $this->entityManager->method('find')->willReturn($cancelStatus);
+
+        // PROCESSING orders cannot use the state-machine cancel transition, so
+        // the service must roll back the purchase flow (restoring stock/points)
+        // and force the terminal CANCEL status directly.
+        $this->orderStateMachine->expects($this->never())->method('apply');
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+
+        $this->service->paymentCanceled($this->makeWebhookObject('pay_1'));
+
+        $this->assertSame(OrderStatus::CANCEL, $eccubeOrder->getOrderStatus()->getId());
+        $this->assertNotNull($komojuOrder->getCanceledAt());
+    }
+
+    public function testCancelPaidOrderUsesStateMachine()
+    {
+        // A finalized (PAID) order CAN transition via the state machine, which
+        // fires the workflow cancel event so core restores stock/points.
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(79);
+        $eccubeOrder->setOrderStatus($orderStatus);
+        $eccubeOrder->setOrderItems([]);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $cancelStatus = new OrderStatus();
+        $cancelStatus->setId(OrderStatus::CANCEL);
+        $this->entityManager->method('find')->willReturn($cancelStatus);
+
         $this->orderStateMachine->method('can')->willReturn(true);
         $this->orderStateMachine->expects($this->once())->method('apply');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_1'));
 
@@ -626,9 +661,10 @@ class WebhookServiceTest extends TestCase
             $this->purchaseFlow
         );
 
-        // The order must actually be cancelled (state machine invoked).
-        $this->orderStateMachine->method('can')->willReturn(true);
-        $this->orderStateMachine->expects($this->once())->method('apply');
+        // A PENDING order (customer never returned) must be released via
+        // purchase-flow rollback + forced CANCEL, not the state machine.
+        $this->orderStateMachine->expects($this->never())->method('apply');
+        $this->purchaseFlow->expects($this->once())->method('rollback');
 
         $object = (object) ['data' => (object) [
             'id' => 'pay_never_stored',
@@ -637,6 +673,8 @@ class WebhookServiceTest extends TestCase
 
         $service->paymentFailed($object);
 
+        $this->assertSame(OrderStatus::CANCEL, $eccubeOrder->getOrderStatus()->getId(),
+            'cancel event must resolve the order via metadata and force CANCEL');
         $this->assertNotNull($komojuOrder->getCanceledAt(),
             'cancel event must resolve the order via metadata and cancel it');
     }

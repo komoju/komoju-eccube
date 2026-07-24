@@ -257,42 +257,47 @@ class WebhookService{
         }
     }
     private function cancelOrder($komoju_order){
+        // Idempotency guard: only skip once the cancel actually completed.
+        // canceled_at is set at the END of a successful cancel/rollback (not
+        // here), so a duplicate/redelivered webhook can retry if an earlier
+        // attempt could not act yet.
         if($komoju_order->getCanceledAt()){
             return;
         }
-        $komoju_order->setCanceledAt(new \DateTime());
-        $this->entityManager->persist($komoju_order);
-        // See note in paymentCaptured() above re: flush() vs flush($entity).
-        $this->entityManager->flush();
 
         $Order = $komoju_order->getOrder();
         if(empty($Order)){
             return;
         }
 
-        if ($Order->getOrderStatus()->getId() == OrderStatus::CANCEL) {
+        $currentStatus = $Order->getOrderStatus()->getId();
+        if ($currentStatus == OrderStatus::CANCEL) {
+            $this->markCanceled($komoju_order);
             return;
         }
+
+        if (in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])) {
+            // The order never finalized (customer abandoned the hosted page).
+            // The state machine forbids PENDING/PROCESSING -> CANCEL, so it
+            // would leave stock/points reserved forever. Release them by
+            // rolling back the purchase flow, then force the terminal CANCEL
+            // status directly (there is no core job that reaps stale
+            // PENDING/PROCESSING orders).
+            $this->purchase_flow->rollback($Order, new \Eccube\Service\PurchaseFlow\PurchaseContext());
+            $Order->setOrderStatus($this->entityManager->find(OrderStatus::class, OrderStatus::CANCEL));
+            $this->entityManager->persist($Order);
+            $this->entityManager->flush();
+            $this->markCanceled($komoju_order);
+            return;
+        }
+
+        // NEW / IN_PROGRESS / PAID: use the state machine, which fires the
+        // workflow cancel event so EC-CUBE core's own listeners run
+        // rollbackStock / rollbackUsePoint. A single flush persists those
+        // mutations alongside the status change.
         $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::CANCEL);
         if ($this->order_state_machine->can($Order, $OrderStatus)) {
             $this->order_state_machine->apply($Order, $OrderStatus);
-
-            // Stock and customer points are already restored at this point:
-            // OrderStateMachine::apply() above fires the workflow event
-            // `workflow.order.transition.cancel`, which EC-CUBE core's own
-            // OrderStateMachine listens to and runs `rollbackStock` and
-            // `rollbackUsePoint` against. Those listeners mutate ProductClass
-            // / ProductStock / Customer in the same EntityManager unit of
-            // work; we just need a single flush() to persist them, alongside
-            // the order-status change.
-            //
-            // The previous version of this code looped over OrderItems and
-            // called flush($ProductClass) / flush($ProductStock) per line,
-            // which was a no-op pattern (the entities were not directly
-            // modified here, and the flush had already been triggered by the
-            // single-entity-flush deprecation cleanup). The loop is removed
-            // because EC-CUBE's state-machine listeners already handle stock
-            // and point rollback.
             $this->entityManager->flush();
 
             // 会員の場合、購入回数、購入金額などを更新
@@ -300,7 +305,17 @@ class WebhookService{
                 $this->entityManager->getRepository(Order::class)->updateOrderSummary($Customer);
                 $this->entityManager->flush();
             }
+            $this->markCanceled($komoju_order);
         }
+    }
+
+    private function markCanceled($komoju_order){
+        if($komoju_order->getCanceledAt()){
+            return;
+        }
+        $komoju_order->setCanceledAt(new \DateTime());
+        $this->entityManager->persist($komoju_order);
+        $this->entityManager->flush();
     }
 
     /**
