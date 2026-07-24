@@ -104,6 +104,17 @@ class OrderController extends AbstractController{
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
 
+        $authorized_amount = isset($payment_obj['amount']) ? (int)$payment_obj['amount'] : null;
+        $order_total = (int)$Order->getPaymentTotal();
+        if($authorized_amount !== null && $authorized_amount !== $order_total){
+            $this->log_service->writeLog("capture", $Order->getId(), "blocked: order total $order_total != authorized $authorized_amount");
+            $this->addError(trans('komoju_payment.admin.order.error.amount_mismatch', [
+                '%authorized%' => number_format($authorized_amount),
+                '%order_total%' => number_format($order_total),
+            ]), 'admin');
+            return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
+        }
+
         $payment_obj = $komoju_client->capturePayment($komoju_order->getKomojuPaymentId());
         if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
             $this->addError($komoju_client->getLastError(), 'admin');
