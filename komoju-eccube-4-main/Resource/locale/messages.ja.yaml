@@ -125,6 +125,7 @@ komoju_payment.shopping.verify.error.payment_total.too_small: 支払額が小さ
 komoju_payment.shopping.verify.error.payment_total.too_much: 支払額が多すぎです。
 komoju_payment.shopping.payment_failed: KOMOJU支払いが失敗しました
 komoju_payment.shopping.payment_cancelled: お支払いがキャンセルされました。
+komoju_payment.shopping.payment_pending: お支払いを確認しています。完了までしばらくお待ちください。
 komoju_payment.shopping.komoju_method_label: KOMOJU決済
 komoju_payment.shopping.not_enough_error: 残高が不足です。
 

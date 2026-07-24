@@ -125,6 +125,7 @@ komoju_payment.shopping.verify.error.payment_total.too_small: The payment amount
 komoju_payment.shopping.verify.error.payment_total.too_much: The payment amount is too large.
 komoju_payment.shopping.payment_failed: KOMOJU payment failed.
 komoju_payment.shopping.payment_cancelled: Payment was cancelled.
+komoju_payment.shopping.payment_pending: We are confirming your payment. Please wait a moment for it to complete.
 komoju_payment.shopping.komoju_method_label: KOMOJU Payment
 komoju_payment.shopping.not_enough_error: Insufficient balance.
 

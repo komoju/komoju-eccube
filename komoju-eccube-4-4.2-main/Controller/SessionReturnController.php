@@ -77,23 +77,21 @@ class SessionReturnController extends AbstractController
         if($komoju_client->getStatusCode() != 200 || empty($session)){
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to fetch session from KOMOJU API");
 
-            // The customer may already have paid. Don't leave the order PENDING
-            // with the cart live (double-charge risk): if a webhook finalized
-            // it, go to completion; otherwise roll back to PROCESSING so it is
-            // retryable as the same order.
+            // The session lookup failed, but the customer may already have paid.
+            // We must NOT roll back here: if the payment actually succeeded, the
+            // webhook (authoritative) will finalize the order, and a rollback
+            // would restore stock the paid order still owns -> oversell.
             $this->entityManager->refresh($Order);
             $currentStatus = $Order->getOrderStatus()->getId();
             if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+                // A webhook already finalized it -> go to completion.
                 $this->cartService->clear();
                 $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
                 return $this->redirectToRoute('shopping_complete');
             }
-            $this->purchase_flow->rollback($Order, new PurchaseContext());
-            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
-            $Order->setOrderStatus($OrderStatus);
-            $this->entityManager->flush();
-
-            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
+            // Outcome unknown: leave the order PENDING for the webhook to resolve
+            // and tell the customer we're confirming their payment.
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_pending'));
             return $this->redirectToRoute('shopping');
         }
 
@@ -148,21 +146,26 @@ class SessionReturnController extends AbstractController
             $this->entityManager->persist($komoju_order);
             $this->flushWithRetry();
 
-            // Commit the purchase
-            $this->purchase_flow->commit($Order, new PurchaseContext());
+            // Atomically claim finalization so a concurrent webhook cannot also
+            // run commit() and double-count buy stats/points. Only the winner
+            // of the status compare-and-swap commits the purchase flow.
+            $targetStatus = $payment_status === 'captured' ? OrderStatus::PAID : OrderStatus::NEW;
+            if($this->claimFinalization($Order, $targetStatus)){
+                // Commit the purchase
+                $this->purchase_flow->commit($Order, new PurchaseContext());
 
-            // Update order status based on payment state
-            if($payment_status === 'captured'){
-                $Order->setPaymentDate(new \DateTime());
-                $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PAID);
-                $Order->setOrderStatus($OrderStatus);
-            } else {
-                // For authorized payments (konbini, bank transfer, etc.)
-                // set to NEW so the order appears in the admin order list
-                $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
-                $Order->setOrderStatus($OrderStatus);
+                if($payment_status === 'captured'){
+                    $Order->setPaymentDate(new \DateTime());
+                    $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PAID);
+                    $Order->setOrderStatus($OrderStatus);
+                } else {
+                    // For authorized payments (konbini, bank transfer, etc.)
+                    // set to NEW so the order appears in the admin order list
+                    $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
+                    $Order->setOrderStatus($OrderStatus);
+                }
+                $this->entityManager->flush();
             }
-            $this->entityManager->flush();
 
             if($payment_status === 'captured'){
                 $this->log_service->writeLog("sessionReturn", $Order->getId(), "purchase completed (payment=captured)", true);
@@ -246,6 +249,27 @@ class SessionReturnController extends AbstractController
 
         $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_cancelled'));
         return $this->redirectToRoute('shopping');
+    }
+
+    /**
+     * Atomically claim the right to finalize an order that is still
+     * PENDING/PROCESSING, moving it to $newStatusId in a single UPDATE. Returns
+     * true only for the caller that actually transitioned the row, so this
+     * controller and the webhook (or duplicate deliveries) cannot both run the
+     * non-idempotent purchase-flow commit. Falls back to an in-memory status
+     * check in non-DB (test/stub) contexts.
+     */
+    private function claimFinalization($Order, $newStatusId){
+        try {
+            $affected = $this->entityManager->getConnection()->executeStatement(
+                'UPDATE dtb_order SET order_status_id = ? WHERE id = ? AND order_status_id IN (?, ?)',
+                [$newStatusId, $Order->getId(), OrderStatus::PENDING, OrderStatus::PROCESSING]
+            );
+            return ((int) $affected) > 0;
+        } catch (\Throwable $e) {
+            $currentStatus = $Order->getOrderStatus()->getId();
+            return in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING]);
+        }
     }
 
     private function flushWithRetry($maxRetries = 3){

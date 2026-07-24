@@ -157,27 +157,25 @@ class SessionReturnControllerTest extends TestCase
 
     public function testKomojuApiFailureRedirects()
     {
-        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        [$order, , $status] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
 
         $this->komojuClient->method('getSession')->willReturn(null);
         $this->komojuClient->method('getStatusCode')->willReturn(500);
 
-        $processingStatus = new OrderStatus();
-        $processingStatus->setId(OrderStatus::PROCESSING);
-        $this->em->method('find')->willReturn($processingStatus);
-
-        // A transient API failure on return must NOT leave a PENDING order with
-        // the cart live (double-charge risk). It must roll back to a retryable
-        // PROCESSING state so the customer re-uses the SAME order.
-        $this->purchaseFlow->expects($this->once())->method('rollback');
+        // A transient API failure is INDETERMINATE: the customer may have paid.
+        // The controller must NOT roll back (that would restore stock a paid
+        // order still owns -> oversell). It leaves the order PENDING for the
+        // authoritative webhook to finalize and shows a "confirming payment"
+        // message.
+        $this->purchaseFlow->expects($this->never())->method('rollback');
 
         $controller = $this->makeController();
         $req = new Request(['session_id' => 'sess_abc']);
         $controller->sessionReturn($req);
 
         $this->assertSame('shopping', $controller->lastRedirect);
-        $this->assertSame($processingStatus, $order->getOrderStatus(),
-            'API failure on a PENDING order must roll it back to PROCESSING (retryable)');
+        $this->assertSame($status, $order->getOrderStatus(),
+            'API failure must leave the order in its PENDING status for the webhook');
     }
 
     public function testApiFailureAfterWebhookFinalizedGoesToComplete()

@@ -128,6 +128,54 @@ class WebhookServiceTest extends TestCase
         $this->assertNotNull($eccubeOrder->getPaymentDate());
     }
 
+    public function testCapturedDoesNotCommitWhenFinalizationAlreadyClaimed()
+    {
+        // Another path (customer return / duplicate delivery) already finalized
+        // the order: the atomic claim UPDATE affects 0 rows, so this webhook
+        // must NOT run the non-idempotent purchase-flow commit again.
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PROCESSING);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(99);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $paidStatus = new OrderStatus();
+        $paidStatus->setId(OrderStatus::PAID);
+        $statusRepo = $this->createMock(StubRepository::class);
+        $statusRepo->method('find')->willReturn($paidStatus);
+
+        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em->method('getRepository')->willReturnCallback(function ($class) use ($statusRepo) {
+            if ($class === OrderStatus::class) return $statusRepo;
+            if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+            return $this->createMock(StubRepository::class);
+        });
+        $conn = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $conn->method('executeStatement')->willReturn(0);
+        $em->method('getConnection')->willReturn($conn);
+
+        $this->purchaseFlow->expects($this->never())->method('commit');
+
+        $this->service = new WebhookService(
+            $em,
+            $this->orderStateMachine,
+            $this->logService,
+            $this->purchaseFlow
+        );
+
+        $object = $this->makeWebhookObject('pay_1', ['captured_at' => '2024-01-15T10:00:00Z']);
+        $this->service->paymentCaptured($object);
+
+        $this->assertTrue($komojuOrder->isCaptured());
+        $this->assertSame(OrderStatus::PAID, $eccubeOrder->getOrderStatus()->getId());
+    }
+
     public function testCapturedNoEccubeOrder()
     {
         $komojuOrder = new KomojuOrder();

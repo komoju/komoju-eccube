@@ -51,6 +51,27 @@ class WebhookService{
             $this->log_service->writeLog("webhook", $order->getId(), "purchase flow commit skipped: " . $e->getMessage());
         }
     }
+
+    /**
+     * Atomically claim the right to finalize an order that is still
+     * PENDING/PROCESSING, moving it to $newStatusId in a single UPDATE. Returns
+     * true only for the caller that actually transitioned the row, so the
+     * customer-return path and webhooks (or duplicate deliveries) cannot both
+     * run the non-idempotent purchase-flow commit. Falls back to an in-memory
+     * status check in non-DB (test/stub) contexts.
+     */
+    private function claimFinalization($order, $newStatusId){
+        try {
+            $affected = $this->entityManager->getConnection()->executeStatement(
+                'UPDATE dtb_order SET order_status_id = ? WHERE id = ? AND order_status_id IN (?, ?)',
+                [$newStatusId, $order->getId(), OrderStatus::PENDING, OrderStatus::PROCESSING]
+            );
+            return ((int) $affected) > 0;
+        } catch (\Throwable $e) {
+            $currentStatus = $order->getOrderStatus()->getId();
+            return in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING]);
+        }
+    }
     public function paymentRefunded($object){
         $komoju_payment_id = $object->data->id;
         $refunds = $object->data->refunds;
@@ -64,6 +85,14 @@ class WebhookService{
         if(empty($komoju_order)){
             $this->log_service->writeLog("webhook[refund]", 0, "no order found for payment: $komoju_payment_id");
             return;
+        }
+
+        // Serialize against the admin refund action (which also takes this lock)
+        // so concurrent refunds cannot overwrite each other's refunded_amount.
+        try {
+            $this->entityManager->lock($komoju_order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+        } catch (\Exception $e) {
+            // No active transaction (e.g. test/stub context): proceed without lock.
         }
 
         $Order = $komoju_order->getOrder();
@@ -156,13 +185,12 @@ class WebhookService{
 
         $this->log_service->writeLog("webhook[authorized]", $order->getId(), "payment authorized", true);
 
-        // If order is still in pending/processing state, move to NEW so it appears in admin
-        $currentStatus = $order->getOrderStatus()->getId();
-        if(in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
-            // First to finalize (customer did not return): record buy stats.
+        // Atomically claim finalization so a concurrent SessionReturnController
+        // (or duplicate webhook) cannot also run commitPurchaseFlow() and
+        // double-count buy stats/points. Only the winner proceeds.
+        if($this->claimFinalization($order, OrderStatus::NEW)){
             $this->commitPurchaseFlow($order);
-            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::NEW);
-            $order->setOrderStatus($OrderStatus);
+            $order->setOrderStatus($this->entityManager->find(OrderStatus::class, OrderStatus::NEW));
             $this->entityManager->persist($order);
         }
         $this->entityManager->flush();
@@ -201,11 +229,11 @@ class WebhookService{
             return ;
         }
         $this->log_service->writeLog("webhook[captured]", $order->getId(), "payment captured", true);
-        // First to finalize (customer never returned): record buy stats.
-        // Guarded on PENDING/PROCESSING so we never double-commit an order
-        // SessionReturnController already committed.
-        $currentStatus = $order->getOrderStatus()->getId();
-        if(in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+        // Atomically claim finalization so a concurrent SessionReturnController
+        // (or duplicate webhook) cannot also run commitPurchaseFlow() and
+        // double-count buy stats/points. Only the winner records buy stats;
+        // the status is set to PAID regardless (captured is terminal).
+        if($this->claimFinalization($order, OrderStatus::PAID)){
             $this->commitPurchaseFlow($order);
         }
         $order->setPaymentDate($captured_at);
