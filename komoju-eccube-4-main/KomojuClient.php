@@ -81,4 +81,10 @@ class KomojuClient{
         }
         return null;
     }
+    public function getLastErrorDetail(){
+        if($this->api_obj){
+            return $this->api_obj->getLastErrorDetail();
+        }
+        return null;
+    }
 }

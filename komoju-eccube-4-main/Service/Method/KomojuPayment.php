@@ -19,6 +19,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Eccube\Service\PurchaseFlow\PurchaseException;
+use Eccube\Exception\ShoppingException;
 use Plugin\Komoju\Entity\KomojuOrder;
 use Plugin\Komoju\Entity\KomojuConfig;
 use Plugin\Komoju\Entity\KomojuPay;
@@ -146,7 +147,7 @@ class KomojuPayment implements PaymentMethodInterface{
             $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
             $this->Order->setOrderStatus($OrderStatus);
             $this->purchase_flow->rollback($this->Order, new PurchaseContext());
-            throw new PurchaseException(trans('komoju_payment.shopping.payment_failed'));
+            throw new ShoppingException(trans('komoju_payment.shopping.payment_failed'));
         }
         $komoju_client = $this->client_factory->create($config_data['secret_key']);
 
@@ -196,13 +197,14 @@ class KomojuPayment implements PaymentMethodInterface{
 
         if($komoju_client->getStatusCode() != 200 || empty($session['id'])){
             $error = $komoju_client->getLastError() ?: trans('komoju_payment.shopping.payment_failed');
-            $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error");
+            $detail = $komoju_client->getLastErrorDetail();
+            $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error" . ($detail ? " ($detail)" : ""));
 
             $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
             $this->Order->setOrderStatus($OrderStatus);
             $this->purchase_flow->rollback($this->Order, new PurchaseContext());
 
-            throw new PurchaseException($error);
+            throw new ShoppingException($error);
         }
 
         // Store session record

@@ -14,6 +14,9 @@ class KomojuApi{
     public function getLastError(){
         return $this->http_client->getLastError();
     }
+    public function getLastErrorDetail(){
+        return $this->http_client->getLastErrorDetail();
+    }
     public function getStatusCode(){
         return $this->http_client->getStatusCode();
     }

@@ -17,6 +17,7 @@ use Eccube\Repository\Master\OrderStatusRepository;
 use Eccube\Service\Payment\PaymentResult;
 use Eccube\Service\PurchaseFlow\PurchaseFlow;
 use Eccube\Service\PurchaseFlow\PurchaseException;
+use Eccube\Exception\ShoppingException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -387,7 +388,7 @@ class KomojuPaymentTest extends TestCase
         $this->payment->apply();
     }
 
-    public function testApplyThrowsPurchaseExceptionWhenConfigMissing()
+    public function testApplyThrowsShoppingExceptionWhenConfigMissing()
     {
         // If config disappears after prepare() reserved stock, apply() must
         // roll back and throw PurchaseException (the type core catches), never
@@ -409,7 +410,7 @@ class KomojuPaymentTest extends TestCase
         // Order must be rolled back to PROCESSING before the exception.
         $this->purchaseFlow->expects($this->once())->method('rollback');
 
-        $this->expectException(PurchaseException::class);
+        $this->expectException(ShoppingException::class);
         $this->payment->apply();
     }
 
@@ -448,8 +449,54 @@ class KomojuPaymentTest extends TestCase
         $client->method('getLastError')->willReturn('invalid_request');
         $this->clientFactory->method('create')->willReturn($client);
 
-        $this->expectException(PurchaseException::class);
+        $this->expectException(ShoppingException::class);
         $this->payment->apply();
+    }
+
+    public function testApplyApiFailureSurfacesErrorAndLogsDetail()
+    {
+        $order = $this->makeOrder(2000);
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $processingStatus = new OrderStatus();
+        $processingStatus->setId(OrderStatus::PROCESSING);
+        $this->orderStatusRepo->method('find')->willReturnCallback(function ($id) use ($pendingStatus, $processingStatus) {
+            return $id === OrderStatus::PENDING ? $pendingStatus : $processingStatus;
+        });
+
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+            'order_number_format' => null,
+        ]);
+
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('credit_card');
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($komojuPay);
+        $this->entityManager->method('getRepository')->willReturn($repo);
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+
+        $client = $this->createMock(KomojuClient::class);
+        $client->method('createSession')->willReturn([]);
+        $client->method('getStatusCode')->willReturn(422);
+        $client->method('getLastError')->willReturn('パラメータの値が不正です。');
+        $client->method('getLastErrorDetail')->willReturn('Payment data is invalid payment_data');
+
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->logService->expects($this->once())
+            ->method('writeLog')
+            ->with('createSession', $this->anything(), $this->stringContains('Payment data is invalid'));
+
+        try {
+            $this->payment->apply();
+            $this->fail('Expected ShoppingException');
+        } catch (ShoppingException $e) {
+            $this->assertSame('パラメータの値が不正です。', $e->getMessage());
+        }
     }
 
     public function testApplySessionMissingIdThrowsException()
@@ -487,7 +534,7 @@ class KomojuPaymentTest extends TestCase
         $client->method('getLastError')->willReturn(null);
         $this->clientFactory->method('create')->willReturn($client);
 
-        $this->expectException(PurchaseException::class);
+        $this->expectException(ShoppingException::class);
         $this->payment->apply();
     }
 
