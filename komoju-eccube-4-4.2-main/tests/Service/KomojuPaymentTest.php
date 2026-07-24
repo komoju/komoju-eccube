@@ -847,7 +847,7 @@ class KomojuPaymentTest extends TestCase
         $this->router->method('generate')->willReturn('https://shop.test/return');
 
         $client = $this->createMock(KomojuClient::class);
-        $client->method('getLastError')->willReturn('invalid_parameter');
+        $client->method('getLastErrorCode')->willReturn('invalid_parameter');
         $client->method('getStatusCode')->willReturnOnConsecutiveCalls(422, 200);
         $numbers = [];
         $client->expects($this->exactly(2))

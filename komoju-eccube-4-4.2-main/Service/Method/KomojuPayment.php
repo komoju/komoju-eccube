@@ -190,7 +190,7 @@ class KomojuPayment implements PaymentMethodInterface{
 
         $session = $komoju_client->createSession($session_data);
 
-        if(($komoju_client->getStatusCode() != 200 || empty($session['id'])) && $komoju_client->getLastError() === 'invalid_parameter'){
+        if(($komoju_client->getStatusCode() != 200 || empty($session['id'])) && $komoju_client->getLastErrorCode() === 'invalid_parameter'){
             $session_data['payment_data']['external_order_num'] = $this->generateUniqueOrderNumber($config_data);
             $session = $komoju_client->createSession($session_data);
         }

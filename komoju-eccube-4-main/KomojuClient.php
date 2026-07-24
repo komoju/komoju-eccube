@@ -66,6 +66,12 @@ class KomojuClient{
         }
         return null;
     }
+    public function getLastErrorCode(){
+        if($this->api_obj){
+            return $this->api_obj->getLastError();
+        }
+        return null;
+    }
     public function getLastError(){
         if($this->api_obj){
             $error_code = $this->api_obj->getLastError();
