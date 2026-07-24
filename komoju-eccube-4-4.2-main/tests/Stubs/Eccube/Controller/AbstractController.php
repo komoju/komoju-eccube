@@ -41,4 +41,19 @@ class AbstractController
     {
         return new \Symfony\Component\HttpFoundation\JsonResponse($data, $status, $headers);
     }
+
+    public function addError($message, $type = 'front')
+    {
+        // no-op stub
+    }
+
+    public function addSuccess($message, $type = 'front')
+    {
+        // no-op stub
+    }
+
+    public function isCsrfTokenValid($id, $token)
+    {
+        return true;
+    }
 }

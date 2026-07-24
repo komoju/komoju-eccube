@@ -36,14 +36,14 @@
             alert('{{ 'komoju_payment.admin.order.refund_amount.error.invalid'|trans }}');
             $("#refund_amount").focus();
             return false;
-        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && parseInt(refund_amount_val, 10)>{{ (Order.payment_total - komoju_order.refundedAmount)|round(0, 'floor') }}){
+        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && parseInt(refund_amount_val, 10)>{{ (komoju_captured_basis - komoju_order.refundedAmount)|round(0, 'floor') }}){
             alert('{{ 'komoju_payment.admin.order.refund_amount.error.exceeded'|trans }}');
             $("#refund_amount").focus();
             return false;
         }
         var amount_to_display=formatter.format(refund_amount_val);        
         if(refund_option_val=={{ REFUND_FULL_OPTION }}) {
-            amount_to_display ='{{ (Order.getPaymentTotal - komoju_order.refundedAmount)|round(0, 'floor')|price }}';
+            amount_to_display ='{{ (komoju_captured_basis - komoju_order.refundedAmount)|round(0, 'floor')|price }}';
         }
 
         if(confirm(amount_to_display+'{{ 'komoju_payment.admin.order.refund_action_confirm'|trans }}')){
@@ -118,10 +118,10 @@
                                    expired authorization (e.g. an unpaid konbini that timed out)
                                    would incorrectly continue to display "オーソリ済み". #}
                                 {% if komoju_order.IsChargeRefunded %}
-                                    {% if komoju_order.refundedAmount >= Order.payment_total %}
+                                    {% if komoju_order.refundedAmount >= komoju_captured_basis %}
                                         <span class="badge bg-danger">{{ 'komoju_payment.admin.order.status.fully_refunded'|trans }}</span>
                                     {% else %}
-                                        <span class="badge bg-warning text-dark">{{ 'komoju_payment.admin.order.status.partially_refunded'|trans({'%refunded%': komoju_order.refundedAmount|price, '%total%': Order.payment_total|price}) }}</span>
+                                        <span class="badge bg-warning text-dark">{{ 'komoju_payment.admin.order.status.partially_refunded'|trans({'%refunded%': komoju_order.refundedAmount|price, '%total%': komoju_captured_basis|price}) }}</span>
                                     {% endif %}
                                 {% elseif komoju_order.canceledAt %}
                                     <span class="badge bg-secondary">{{ 'komoju_payment.admin.order.status.canceled'|trans }}</span>
@@ -147,8 +147,8 @@
                                             {{ 'komoju_payment.admin.order.capture_action'|trans }}
                                         </button>
                                     </form>
-                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.refundedAmount < Order.payment_total %}
-                                    {% set remaining = Order.payment_total - komoju_order.refundedAmount %}
+                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.refundedAmount < komoju_captured_basis %}
+                                    {% set remaining = komoju_captured_basis - komoju_order.refundedAmount %}
                                     <div class="col-6 ml-n-15">
                                         <select id="refund_option" class="form-control">
                                             <option value="{{ REFUND_FULL_OPTION }}">{{ 'komoju_payment.admin.order.refund_option.full_refund'|trans }}</option>                                            
@@ -162,7 +162,7 @@
                                         </div>
                                         <a id="refund_btn" href="javascript:void(0);"  class="btn btn-ec-regular komoju_txn_action_btn" onclick="refundConfirmDialog();">{{ 'komoju_payment.admin.order.refund_action'|trans }}</a>
                                     </div>
-                                {% elseif komoju_order.refundedAmount >= Order.payment_total %}
+                                {% elseif komoju_order.refundedAmount >= komoju_captured_basis %}
                                     <span style="background-color: #fff; color: #C04949; border-color: #C04949">{{ 'komoju_payment.admin.order.status.refunded'|trans }}</span>
                                 {% endif %}
                             </div>

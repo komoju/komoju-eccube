@@ -144,17 +144,17 @@ class KomojuEvent implements EventSubscriberInterface{
                 ){
                 return ;
             }
-            if(!$komoju_order->getIsChargeRefunded() && $komoju_order->getSelectedRefundOption() === 0 && $komoju_order->getRefundedAmount() == 0){
-                $komoju_order->setRefundedAmount($Order->getPaymentTotal());
-                $this->entityManager->persist($komoju_order);
-                $this->entityManager->flush();
-            }
             $refund_full_option = KomojuOrder::REFUND_FULL;
             $refund_partial_option = KomojuOrder::REFUND_PARTIAL;
 
             $order_canceled = $Order->getOrderStatus()->getId() == OrderStatus::CANCEL;
 
+            $captured_basis = $komoju_order->getCapturedAmount() !== null
+                ? (int)$komoju_order->getCapturedAmount()
+                : (int)$Order->getPaymentTotal();
+
             $event->setParameter("komoju_order", $komoju_order);
+            $event->setParameter("komoju_captured_basis", $captured_basis);
             $event->setParameter("order_canceled", $order_canceled);
             $event->setParameter("komoju_dashboard_link", $this->getKomojuDashboardLink($komoju_order->getKomojuPaymentId()));
             $event->setParameter('REFUND_FULL_OPTION',  $refund_full_option);

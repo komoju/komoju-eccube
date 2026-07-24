@@ -101,6 +101,9 @@ class OrderController extends AbstractController{
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
 
+        // Amounts are compared as integers. KOMOJU sends `amount` as an integer
+        // in the currency's smallest unit and this plugin sends the EC-CUBE
+        // total unconverted, so both sides are whole yen (JPY-only plugin).
         $authorized_amount = isset($payment_obj['amount']) ? (int)$payment_obj['amount'] : null;
         $order_total = (int)$Order->getPaymentTotal();
         if($authorized_amount !== null && $authorized_amount !== $order_total){
@@ -167,7 +170,8 @@ class OrderController extends AbstractController{
 
         // Base refund/cancel math on the actually-captured amount, not the
         // (possibly-edited) order total. Fall back to order total for rows
-        // captured before captured_amount was tracked.
+        // captured before captured_amount was tracked. Amounts are whole
+        // yen (JPY-only plugin), so integer comparison is exact.
         $captured_basis = $komoju_order->getCapturedAmount() !== null
             ? (int)$komoju_order->getCapturedAmount()
             : (int)$Order->getPaymentTotal();
