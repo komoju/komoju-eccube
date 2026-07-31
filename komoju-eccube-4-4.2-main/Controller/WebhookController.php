@@ -28,9 +28,19 @@ class WebhookController extends AbstractController
      * @Route("/plugin/Komoju42/webhook", name="Komoju42_webhook")
      */
     public function webhook(Request $request){
+        // Config/infrastructure failures are NOT the caller's fault. Answering 400
+        // would tell KOMOJU the event is permanently invalid and stop retries,
+        // losing the event; 500 keeps it in the retry queue.
         try{
             $config_data = $this->config_service->getConfigData();
-            $webhook_secret = $config_data['webhook_secret'];
+            $webhook_secret = $config_data['webhook_secret'] ?? null;
+        }catch(\Throwable $ex){
+            log_error($ex);
+            $this->log_service->writeLog("webhook", "", "config unavailable: " . $ex->getMessage());
+            return $this->json(['status' => 'error', 'message' => 'config unavailable'], 500);
+        }
+
+        try{
             $data = WebhookEvent::constructEvent(
                 $request->getContent(),
                 $request->headers->get('X-Komoju-Signature'),
@@ -39,8 +49,8 @@ class WebhookController extends AbstractController
             $this->log_service->writeLog("webhook", "", "verification failed: " . $ex->getMessage());
             return $this->json(['status' => 'error'], 400);
         }
-        $type = isset($data->type) ? $data->type : 'unknown';
-        $payment_id = isset($data->data->id) ? $data->data->id : '';
+        $type = $data->type ?? 'unknown';
+        $payment_id = isset($data->data->id) ? substr((string)$data->data->id, 0, 64) : '';
 
         try {
             switch($type){
@@ -68,6 +78,7 @@ class WebhookController extends AbstractController
                 break;
             }
         } catch (\Throwable $ex) {
+            log_error($ex);
             $this->log_service->writeLog("webhook[$type]", "", "processing failed for payment $payment_id: " . $ex->getMessage());
             return $this->json(['status' => 'error', 'message' => 'processing failed'], 500);
         }

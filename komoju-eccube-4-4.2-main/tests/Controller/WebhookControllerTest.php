@@ -38,7 +38,7 @@ class WebhookControllerTest extends TestCase
 
         // The controller calls getConfigData() with no arguments to fetch
         // the webhook secret. Return it once in setUp() for the happy path;
-        // failure-path tests override as needed.
+        // failure-path tests build their own controller as needed.
         $this->configService->method('getConfigData')->willReturn([
             'webhook_secret' => $this->secret,
         ]);
@@ -48,6 +48,30 @@ class WebhookControllerTest extends TestCase
             $this->configService,
             $this->webhookService
         );
+    }
+
+    /**
+     * A config/database failure is not a bad request. Answering 400 would tell
+     * KOMOJU the event is permanently invalid and stop retries, losing the
+     * event; it must be 500 so the event stays in the retry queue.
+     */
+    public function testConfigFailureReturns500NotBadRequest()
+    {
+        $configService = $this->createMock(ConfigService::class);
+        $configService->method('getConfigData')
+            ->willThrowException(new \RuntimeException('db is down'));
+
+        $logService = $this->createMock(LogService::class);
+        $logService->expects($this->once())->method('writeLog')
+            ->with('webhook', '', $this->stringContains('config unavailable'));
+
+        $webhookService = $this->createMock(WebhookService::class);
+        $webhookService->expects($this->never())->method($this->anything());
+
+        $controller = new WebhookController($logService, $configService, $webhookService);
+        $resp = $controller->webhook($this->signedRequest('{"type":"payment.captured","data":{"id":"x"}}'));
+
+        $this->assertSame(500, $resp->getStatusCode());
     }
 
     /**
@@ -226,5 +250,57 @@ class WebhookControllerTest extends TestCase
             ['status' => 'error', 'message' => 'processing failed'],
             $resp->getData()
         );
+    }
+
+    /**
+     * A PHP Error (TypeError, etc.) is not an Exception. Without catching
+     * Throwable it escapes as an uncaught fatal, so KOMOJU sees a broken
+     * response instead of a retriable 500.
+     */
+    public function testReturns500WhenServiceThrowsPhpError()
+    {
+        $body = '{"type":"payment.captured","data":{"id":"pay_error"}}';
+        $this->webhookService->method('paymentCaptured')
+            ->willReturnCallback(function () {
+                throw new \TypeError('unsupported operand types');
+            });
+
+        $this->logService->expects($this->once())
+            ->method('writeLog')
+            ->with(
+                'webhook[payment.captured]',
+                '',
+                $this->stringContains('unsupported operand types')
+            );
+
+        $resp = $this->controller->webhook($this->signedRequest($body));
+        $this->assertSame(500, $resp->getStatusCode());
+    }
+
+    /**
+     * An attacker-influenced payment id is interpolated into the log message,
+     * so it must be length-bounded.
+     */
+    public function testOversizedPaymentIdIsClampedInLog()
+    {
+        $longId = str_repeat('a', 500);
+        $body = json_encode(['type' => 'payment.captured', 'data' => ['id' => $longId]]);
+
+        $this->webhookService->method('paymentCaptured')
+            ->willThrowException(new \RuntimeException('boom'));
+
+        $this->logService->expects($this->once())
+            ->method('writeLog')
+            ->with(
+                'webhook[payment.captured]',
+                '',
+                $this->callback(function ($msg) {
+                    return strpos($msg, str_repeat('a', 64)) !== false
+                        && strpos($msg, str_repeat('a', 65)) === false;
+                })
+            );
+
+        $resp = $this->controller->webhook($this->signedRequest($body));
+        $this->assertSame(500, $resp->getStatusCode());
     }
 }

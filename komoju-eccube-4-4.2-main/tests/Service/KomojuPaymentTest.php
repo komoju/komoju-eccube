@@ -515,12 +515,11 @@ class KomojuPaymentTest extends TestCase
             'secret_key' => 'sk_test',
             'capture_on' => true,
         ]);
+        $komojuPay = new KomojuPay();
+        $komojuPay->setName('credit_card');
+
         $repo = $this->createMock(StubRepository::class);
-        $repo->method('findOneBy')->willReturn((function () {
-            $pay = new KomojuPay();
-            $pay->setName('credit_card');
-            return $pay;
-        })());
+        $repo->method('findOneBy')->willReturn($komojuPay);
         $this->entityManager->method('getRepository')->willReturn($repo);
         $this->router->method('generate')->willReturn('https://shop.test/return');
         $client = $this->createMock(KomojuClient::class);

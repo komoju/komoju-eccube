@@ -170,6 +170,51 @@ class SessionReturnControllerTest extends TestCase
         $this->assertContains('eccube.front.shopping.error', $controller->flashes['types']);
     }
 
+    /**
+     * A config row that exists but has no secret key cannot be used to reach
+     * KOMOJU, and must be handled like any other config failure rather than
+     * passing null into the client factory.
+     */
+    public function testEmptySecretKeyIsTreatedAsConfigFailure()
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+
+        $configService = $this->createMock(ConfigService::class);
+        $configService->method('getConfigData')->willReturn(['secret_key' => '']);
+        $this->configService = $configService;
+
+        $this->clientFactory->expects($this->never())->method('create');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+    }
+
+    /**
+     * Config failure AFTER the webhook already finalized the order must still
+     * take the customer to the receipt, not back to checkout to pay twice.
+     */
+    public function testConfigFailureAfterWebhookFinalizedGoesToComplete()
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PAID);
+
+        $configService = $this->createMock(ConfigService::class);
+        $configService->method('getConfigData')
+            ->willThrowException(new \RuntimeException('missing config'));
+        $this->configService = $configService;
+
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->cartService->expects($this->once())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame(42, $this->session->get('eccube.front.shopping.order.id'));
+    }
+
     public function testKomojuApiFailureRedirects()
     {
         [$order, , $status] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
@@ -215,23 +260,120 @@ class SessionReturnControllerTest extends TestCase
 
     // --- failed payment branch ---
 
-    public function testIncompletePaymentResponseIsHandledAsPaymentFailure()
+    /**
+     * Terminal failures are the ONLY case where rolling back is safe: KOMOJU has
+     * told us definitively that no money was taken.
+     *
+     * @dataProvider terminalFailureProvider
+     */
+    public function testTerminalFailureRollsBackStock($sessionStatus, $paymentStatus)
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->method('getSession')->willReturn([
-            'status' => 'completed',
-            'payment' => [],
+            'status' => $sessionStatus,
+            'payment' => ['status' => $paymentStatus],
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
-        $this->purchaseFlow->expects($this->once())->method('rollback');
         $processing = new OrderStatus();
         $processing->setId(OrderStatus::PROCESSING);
         $this->em->method('find')->willReturn($processing);
+
+        $this->purchaseFlow->expects($this->once())->method('rollback');
 
         $controller = $this->makeController();
         $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
 
         $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame($processing, $order->getOrderStatus());
+    }
+
+    public function terminalFailureProvider(): array
+    {
+        return [
+            'payment failed' => ['failed', 'failed'],
+            'payment cancelled' => ['completed', 'cancelled'],
+            'payment expired' => ['completed', 'expired'],
+            'session cancelled' => ['cancelled', 'pending'],
+            'session failed' => ['failed', 'pending'],
+        ];
+    }
+
+    /**
+     * A captured or authorized payment means KOMOJU may already hold the
+     * customer's money. Rolling back would restore stock the paid order still
+     * owns, so these must finalize regardless of the session envelope status
+     * (which can lag, expire, or be missing on a late/retried return).
+     *
+     * @dataProvider moneyTakenProvider
+     */
+    public function testMoneyTakenIsNeverRolledBack($sessionStatus, $paymentStatus)
+    {
+        [$order, $komojuOrder] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => $sessionStatus,
+            'payment' => ['id' => 'pay_real', 'status' => $paymentStatus, 'amount' => 4080],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('isOpen')->willReturn(true);
+        $finalStatus = new OrderStatus();
+        $finalStatus->setId($paymentStatus === 'captured' ? OrderStatus::PAID : OrderStatus::NEW);
+        $this->em->method('find')->willReturn($finalStatus);
+
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame('pay_real', $komojuOrder->getKomojuPaymentId());
+    }
+
+    public function moneyTakenProvider(): array
+    {
+        return [
+            'completed + captured' => ['completed', 'captured'],
+            'completed + authorized' => ['completed', 'authorized'],
+            'lagging session + captured' => ['pending', 'captured'],
+            'missing session status + captured' => ['unknown', 'captured'],
+            'expired session + captured' => ['expired', 'captured'],
+            'cancelled session + authorized' => ['cancelled', 'authorized'],
+        ];
+    }
+
+    /**
+     * Indeterminate outcomes (konbini awaiting funding, missing payment block)
+     * must neither finalize nor roll back: the webhook is authoritative.
+     *
+     * @dataProvider indeterminateProvider
+     */
+    public function testIndeterminatePaymentIsLeftForWebhook($sessionStatus, $payment)
+    {
+        [$order, , $status] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => $sessionStatus,
+            'payment' => $payment,
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->purchaseFlow->expects($this->never())->method('commit');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame($status, $order->getOrderStatus(),
+            'an indeterminate outcome must leave the order status untouched for the webhook');
+    }
+
+    public function indeterminateProvider(): array
+    {
+        return [
+            'konbini awaiting funding' => ['completed', ['status' => 'pending']],
+            'missing payment block' => ['completed', []],
+            'unknown payment status' => ['completed', ['status' => 'weird_new_status']],
+            'session still pending' => ['pending', ['status' => 'pending']],
+        ];
     }
 
     public function testFailedPaymentRollsBackAndRedirects()

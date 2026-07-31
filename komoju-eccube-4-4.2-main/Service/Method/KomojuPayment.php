@@ -144,10 +144,7 @@ class KomojuPayment implements PaymentMethodInterface{
         try {
             $config_data = $this->config_service->getConfigData($this->Order);
         } catch (\Exception $e) {
-            $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
-            $this->Order->setOrderStatus($OrderStatus);
-            $this->purchase_flow->rollback($this->Order, new PurchaseContext());
-            throw new ShoppingException(trans('komoju_payment.shopping.payment_failed'));
+            $this->abortCheckout(trans('komoju_payment.shopping.payment_failed'));
         }
         $komoju_client = $this->client_factory->create($config_data['secret_key']);
 
@@ -165,7 +162,8 @@ class KomojuPayment implements PaymentMethodInterface{
         $komojuPay = $this->entityManager->getRepository(KomojuPay::class)
             ->findOneBy(['Payment' => $selectedPayment]);
         $enabled_methods = $komojuPay ? [$komojuPay->getName()] : [];
-        $locale = $this->requestStack->getCurrentRequest()?->getLocale() ?: 'ja';
+        $currentRequest = $this->requestStack->getCurrentRequest();
+        $locale = ($currentRequest ? $currentRequest->getLocale() : null) ?: 'ja';
 
         $return_url = $this->router->generate('Komoju42_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
         $cancel_url = $this->router->generate('Komoju42_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
@@ -195,24 +193,11 @@ class KomojuPayment implements PaymentMethodInterface{
             $session = $komoju_client->createSession($session_data);
         }
 
-        if($komoju_client->getStatusCode() != 200 || empty($session['id'])){
+        if($komoju_client->getStatusCode() != 200 || empty($session['id']) || empty($session['session_url'])){
             $error = $komoju_client->getLastError() ?: trans('komoju_payment.shopping.payment_failed');
             $detail = $komoju_client->getLastErrorDetail();
             $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error" . ($detail ? " ($detail)" : ""));
-
-            $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
-            $this->Order->setOrderStatus($OrderStatus);
-            $this->purchase_flow->rollback($this->Order, new PurchaseContext());
-
-            throw new ShoppingException($error);
-        }
-
-        if(empty($session['session_url']) || !is_string($session['session_url'])){
-            $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: session_url missing");
-            $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
-            $this->Order->setOrderStatus($OrderStatus);
-            $this->purchase_flow->rollback($this->Order, new PurchaseContext());
-            throw new ShoppingException(trans('komoju_payment.shopping.payment_failed'));
+            $this->abortCheckout($error);
         }
 
         // Store session record
@@ -254,6 +239,19 @@ class KomojuPayment implements PaymentMethodInterface{
      */
     public function setOrder(Order $order){
         $this->Order = $order;
+    }
+
+    /**
+     * Release the stock and points reserved by prepare(), then surface the error
+     * as the exception type core's checkout() renders to the shopper.
+     *
+     * @throws ShoppingException always
+     */
+    private function abortCheckout($message){
+        $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
+        $this->Order->setOrderStatus($OrderStatus);
+        $this->purchase_flow->rollback($this->Order, new PurchaseContext());
+        throw new ShoppingException($message);
     }
 
     /**

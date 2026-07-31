@@ -17,6 +17,13 @@ use Eccube\Service\CartService;
 
 class SessionReturnController extends AbstractController
 {
+    /** KOMOJU may already hold the customer's money; never roll these back. */
+    const MONEY_TAKEN_PAYMENT_STATUSES = ['captured', 'authorized'];
+
+    /** No money was taken; releasing stock and points is safe. */
+    const TERMINAL_PAYMENT_STATUSES = ['failed', 'cancelled', 'canceled', 'expired'];
+    const TERMINAL_SESSION_STATUSES = ['failed', 'cancelled', 'canceled'];
+
     protected $entityManager;
     protected $config_service;
     protected $log_service;
@@ -78,6 +85,7 @@ class SessionReturnController extends AbstractController
             $komoju_client = $this->client_factory->create($config_data['secret_key']);
             $session = $komoju_client->getSession($session_id);
         } catch (\Throwable $e) {
+            log_error($e);
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to load payment session: " . $e->getMessage());
             try {
                 $this->entityManager->refresh($Order);
@@ -123,19 +131,29 @@ class SessionReturnController extends AbstractController
         $session_status = $session['status'] ?? 'unknown';
         $payment_status = $session['payment']['status'] ?? 'unknown';
 
-        // Session is completed for both auto-capture and manual capture.
-        // Also accept if the payment itself is authorized or captured (handles edge cases).
-        $payment_ok = in_array($payment_status, ['captured', 'authorized']);
-        $session_ok = ($session_status === 'completed' && $payment_ok);
+        // Three-way outcome. Rolling back restores stock and reverses points, so
+        // it is only safe when KOMOJU says definitively that no money was taken.
+        //   money taken  -> finalize (session envelope may lag/expire on a late return)
+        //   terminal     -> roll back
+        //   otherwise    -> indeterminate; leave PENDING for the authoritative webhook
+        $payment_ok = in_array($payment_status, self::MONEY_TAKEN_PAYMENT_STATUSES);
+        $payment_terminal = in_array($payment_status, self::TERMINAL_PAYMENT_STATUSES);
+        $session_terminal = in_array($session_status, self::TERMINAL_SESSION_STATUSES);
 
-        if(!$session_ok){
-            $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment failed: session=$session_status, payment=$payment_status");
-            $this->purchase_flow->rollback($Order, new PurchaseContext());
-            $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
-            $Order->setOrderStatus($OrderStatus);
-            $this->entityManager->flush();
+        if(!$payment_ok){
+            if($payment_terminal || $session_terminal){
+                $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment failed: session=$session_status, payment=$payment_status");
+                $this->purchase_flow->rollback($Order, new PurchaseContext());
+                $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);
+                $Order->setOrderStatus($OrderStatus);
+                $this->entityManager->flush();
 
-            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
+                $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_failed'));
+                return $this->redirectToRoute('shopping');
+            }
+
+            $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment not settled yet: session=$session_status, payment=$payment_status");
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_pending'));
             return $this->redirectToRoute('shopping');
         }
 
