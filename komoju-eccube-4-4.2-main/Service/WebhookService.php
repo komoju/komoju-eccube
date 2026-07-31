@@ -110,8 +110,9 @@ class WebhookService{
             $refund_ids[] = $refund->id;
             $refund_amount += $refund->amount;
         }
-        sort($refund_ids); // canonical order so the WHERE comparison is stable
-        $newRefundIdSet = implode(",", $refund_ids);
+        // Canonical form must match every other writer (admin refund paths), or
+        // the CAS below sees the same refund set as new and records it twice.
+        $newRefundIdSet = KomojuOrder::canonicalRefundIds($refund_ids);
         $previousAmount = (float) $komoju_order->getRefundedAmount();
 
         // Keep the in-memory entity current for the cancel check below.
@@ -140,10 +141,14 @@ class WebhookService{
         }
 
         // Log only the delivery that recorded the refund, reporting the
-        // newly-added amount (correct for partial refunds).
+        // newly-added amount (correct for partial refunds). A zero or negative
+        // delta means another path already recorded this money, so logging it
+        // would show a phantom "amount=0" entry on the order timeline.
         if($claimed){
             $newRefundAmount = $refund_amount - $previousAmount;
-            $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$newRefundAmount)", true);
+            if($newRefundAmount > 0){
+                $this->log_service->writeLog("webhook[refund]", $Order->getId(), "refund confirmed (amount=$newRefundAmount)", true);
+            }
         }
 
         // Cancel the order once fully refunded, based on the actually-captured

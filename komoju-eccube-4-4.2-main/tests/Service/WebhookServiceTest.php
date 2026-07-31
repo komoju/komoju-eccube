@@ -1159,4 +1159,102 @@ class WebhookServiceTest extends TestCase
         $this->assertEquals(500, $komojuOrder->getRefundedAmount());
         $this->assertEquals('ref_a,ref_b', $komojuOrder->getRefundId());
     }
+
+    /**
+     * Regression: dashboard partial refund, then the remainder refunded from the
+     * EC-CUBE admin. KOMOJU lists refunds newest-first, so the admin path used to
+     * store an unsorted id set while the webhook compared a sorted one. The CAS
+     * then saw a "new" refund set, rewrote the row, and logged the zero delta as
+     * a phantom "refund confirmed (amount=0)" line on the order timeline.
+     */
+    public function testWebhookAfterAdminRefundDoesNotLogZeroDelta()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(24);
+        $eccubeOrder->setPaymentTotal(6500);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        // State the admin refund controller leaves behind: 2000 (dashboard) plus
+        // 4500 (admin) = the full captured 6500, already recorded.
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_o24');
+        $komojuOrder->setCapturedAmount(6500);
+        $komojuOrder->setRefundedAmount(6500);
+        $komojuOrder->setRefundId(KomojuOrder::canonicalRefundIds(['ref_newest_9', 'ref_oldest_3']));
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        // Even if the CAS were to claim the row, a zero delta must not be logged.
+        $conn = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $conn->method('executeStatement')->willReturn(1);
+
+        $cancelStatus = new OrderStatus();
+        $cancelStatus->setId(OrderStatus::CANCEL);
+        $statusRepo = $this->createMock(StubRepository::class);
+        $statusRepo->method('find')->willReturn($cancelStatus);
+
+        $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $this->entityManager->method('getConnection')->willReturn($conn);
+        $this->entityManager->method('getRepository')
+            ->willReturnCallback(function ($class) use ($statusRepo) {
+                if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
+                if ($class === OrderStatus::class) return $statusRepo;
+                return $this->createMock(StubRepository::class);
+            });
+        $this->service = new WebhookService(
+            $this->entityManager,
+            $this->orderStateMachine,
+            $this->logService,
+            $this->purchaseFlow
+        );
+
+        $this->logService->expects($this->never())->method('writeLog');
+
+        // KOMOJU returns refunds newest-first.
+        $object = $this->makeWebhookObject('pay_o24', [
+            'refunds' => [
+                (object)['id' => 'ref_newest_9', 'amount' => 4500],
+                (object)['id' => 'ref_oldest_3', 'amount' => 2000],
+            ]
+        ]);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(6500, $komojuOrder->getRefundedAmount());
+    }
+
+    /**
+     * The webhook's CAS compares refund_id as a string, so payload ordering must
+     * not change the stored value.
+     */
+    public function testRefundIdIsOrderIndependent()
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(125);
+        $eccubeOrder->setPaymentTotal(6500);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_order_indep');
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $this->service->paymentRefunded($this->makeWebhookObject('pay_order_indep', [
+            'refunds' => [
+                (object)['id' => 'zzz_late', 'amount' => 4500],
+                (object)['id' => 'aaa_early', 'amount' => 2000],
+            ]
+        ]));
+
+        $this->assertSame('aaa_early,zzz_late', $komojuOrder->getRefundId(),
+            'refund_id must be stored in canonical (sorted) order');
+    }
 }

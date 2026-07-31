@@ -145,4 +145,41 @@ class OrderControllerTest extends TestCase
         $this->assertEquals(4080, $komojuOrder->getCapturedAmount());
         $this->assertNotNull($komojuOrder->getCapturedAt());
     }
+
+    /**
+     * Regression: the admin refund path and WebhookService both write refund_id,
+     * and the webhook's compare-and-swap dedupe compares that column as a string.
+     * If the two writers serialise the same refund set differently, the webhook
+     * treats an already-recorded refund as new and logs a phantom entry. Both
+     * paths must therefore agree byte-for-byte, whatever order KOMOJU returns.
+     */
+    public function testAdminAndWebhookAgreeOnRefundIdSerialisation()
+    {
+        // KOMOJU lists refunds newest-first; the admin path sees arrays and the
+        // webhook sees objects, but the stored string must be identical.
+        $adminPayload = [
+            ['id' => 'ref_newest_9', 'amount' => 4500],
+            ['id' => 'ref_oldest_3', 'amount' => 2000],
+        ];
+        $webhookPayload = [
+            (object)['id' => 'ref_newest_9', 'amount' => 4500],
+            (object)['id' => 'ref_oldest_3', 'amount' => 2000],
+        ];
+
+        $adminIds = [];
+        foreach ($adminPayload as $r) {
+            $adminIds[] = $r['id'];
+        }
+
+        $webhookIds = [];
+        foreach ($webhookPayload as $r) {
+            $webhookIds[] = $r->id;
+        }
+
+        $this->assertSame(
+            KomojuOrder::canonicalRefundIds($adminIds),
+            KomojuOrder::canonicalRefundIds($webhookIds),
+            'admin refund and webhook must store the same refund_id for the same refunds'
+        );
+    }
 }

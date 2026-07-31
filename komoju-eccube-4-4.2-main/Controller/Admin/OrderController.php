@@ -205,7 +205,7 @@ class OrderController extends AbstractController{
                     $refund_amount += $refund['amount'];
                     $refund_ids[] = $refund['id'];
                 }
-                $komoju_order->setRefundId(implode(",", $refund_ids));
+                $komoju_order->setRefundId(KomojuOrder::canonicalRefundIds($refund_ids));
                 $komoju_order->setRefundedAmount($refund_amount);
                 $this->entityManager->persist($komoju_order);
                 $this->entityManager->flush();
@@ -262,7 +262,7 @@ class OrderController extends AbstractController{
                     $total_refunded += $r['amount'];
                 }
 
-                $komoju_order->setRefundId(implode(',', $all_refund_ids));
+                $komoju_order->setRefundId(KomojuOrder::canonicalRefundIds($all_refund_ids));
                 $komoju_order->setSelectedRefundOption($refund_option);
                 $komoju_order->setRefundedAmount($total_refunded);
                 $this->entityManager->persist($komoju_order);

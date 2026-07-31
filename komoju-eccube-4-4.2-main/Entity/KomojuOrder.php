@@ -145,6 +145,21 @@ class KomojuOrder
         $this->refund_id = $refund_id;
         return $this;
     }
+
+    /**
+     * A refund id set has no inherent order, but it is persisted as a string and
+     * compared as one by the webhook's compare-and-swap dedupe. Every writer must
+     * therefore serialise it identically, or the same set of refunds looks like a
+     * new one and gets recorded twice.
+     */
+    public static function canonicalRefundIds(array $refund_ids){
+        $refund_ids = array_filter($refund_ids, function ($id) {
+            return $id !== null && $id !== '';
+        });
+        $refund_ids = array_values(array_unique($refund_ids));
+        sort($refund_ids);
+        return implode(',', $refund_ids);
+    }
     /**
      * @return string
      */
