@@ -141,7 +141,7 @@
                             <div class="col-3">{{ 'komoju_payment.admin.order.actions'|trans }}</div>
                             <div class="col row ml-0">
                                 {% if komoju_order.Captured==false %}
-                                    <form method="post" action="{{ url('Komoju42_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_payment.admin.order.capture_action_confirm'|trans({'%charge_amount%':Order.getPaymentTotal|price })}}');">
+                                    <form method="post" action="{{ url('Komoju42_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_payment.admin.order.capture_action_confirm'|trans }}');">
                                         <input type="hidden" name="_token" value="{{ csrf_token('Komoju_capture_' ~ Order.id) }}">
                                         <button type="submit" class="btn btn-ec-regular komoju_txn_action_btn">
                                             {{ 'komoju_payment.admin.order.capture_action'|trans }}

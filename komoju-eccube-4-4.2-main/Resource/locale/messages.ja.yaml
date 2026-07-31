@@ -73,7 +73,7 @@ komoju_payment.admin.order.error.capture_failed: キャプチャ失敗
 komoju_payment.admin.order.error.amount_mismatch: "売上処理を中止しました。\n受注金額（%order_total%円）がオーソリ金額（%authorized%円）と一致しません。\n対処法1: 受注金額をオーソリ金額（%authorized%円）に戻してから売上処理を行ってください。\n対処法2: 金額を変更する場合は、この注文を取り消し、新しい注文として購入し直していただく必要があります。"
 komoju_payment.admin.order.refund.success: 正常に返金されました
 komoju_payment.admin.order.capture_action: 支払いを受け取る
-komoju_payment.admin.order.capture_action_confirm: '%charge_amount%を請求してもよろしいですか？'
+komoju_payment.admin.order.capture_action_confirm: 'KOMOJUのオーソリ金額を請求します。受注金額と一致することを確認しましたか？よろしいですか？'
 komoju_payment.admin.order.capture_success: 支払いが正常に取得されました
 komoju_payment.admin.order.timeline.authorized: オーソリ済み（入金待ち）
 komoju_payment.admin.order.timeline.order_accepted: 注文受付済み（入金待ち）

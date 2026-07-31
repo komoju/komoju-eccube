@@ -217,7 +217,7 @@ class WebhookControllerTest extends TestCase
             ->with(
                 'webhook[payment.captured]',
                 '',
-                $this->stringContains('processing failed: db is down')
+                $this->stringContains('processing failed for payment pay_boom: db is down')
             );
 
         $resp = $this->controller->webhook($this->signedRequest($body));

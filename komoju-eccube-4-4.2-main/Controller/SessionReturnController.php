@@ -70,9 +70,34 @@ class SessionReturnController extends AbstractController
             return $this->redirectToRoute('shopping');
         }
 
-        $config_data = $this->config_service->getConfigData($Order);
-        $komoju_client = $this->client_factory->create($config_data['secret_key']);
-        $session = $komoju_client->getSession($session_id);
+        try {
+            $config_data = $this->config_service->getConfigData($Order);
+            if(empty($config_data['secret_key'])){
+                throw new \RuntimeException('KOMOJU secret key is not configured.');
+            }
+            $komoju_client = $this->client_factory->create($config_data['secret_key']);
+            $session = $komoju_client->getSession($session_id);
+        } catch (\Throwable $e) {
+            $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to load payment session: " . $e->getMessage());
+            try {
+                $this->entityManager->refresh($Order);
+            } catch (\Throwable $refreshError) {
+                $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to refresh order after session error: " . $refreshError->getMessage());
+            }
+            $currentStatus = $Order->getOrderStatus()->getId();
+            if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+                try {
+                    $this->cartService->clear();
+                } catch (\Throwable $cartError) {
+                    $this->requestStack->getSession()->remove('cart_keys');
+                    $this->requestStack->getSession()->remove('cart_key');
+                }
+                $this->requestStack->getSession()->set('eccube.front.shopping.order.id', $Order->getId());
+                return $this->redirectToRoute('shopping_complete');
+            }
+            $this->addFlash('eccube.front.shopping.error', trans('komoju_payment.shopping.payment_pending'));
+            return $this->redirectToRoute('shopping');
+        }
 
         if($komoju_client->getStatusCode() != 200 || empty($session)){
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to fetch session from KOMOJU API");
@@ -100,10 +125,10 @@ class SessionReturnController extends AbstractController
 
         // Session is completed for both auto-capture and manual capture.
         // Also accept if the payment itself is authorized or captured (handles edge cases).
-        $session_ok = ($session_status === 'completed');
         $payment_ok = in_array($payment_status, ['captured', 'authorized']);
+        $session_ok = ($session_status === 'completed' && $payment_ok);
 
-        if(!$session_ok && !$payment_ok){
+        if(!$session_ok){
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment failed: session=$session_status, payment=$payment_status");
             $this->purchase_flow->rollback($Order, new PurchaseContext());
             $OrderStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING);

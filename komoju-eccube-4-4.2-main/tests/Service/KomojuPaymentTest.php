@@ -499,6 +499,40 @@ class KomojuPaymentTest extends TestCase
         }
     }
 
+    public function testApplySessionMissingUrlThrowsException()
+    {
+        $order = $this->makeOrder(2000);
+        $this->payment->setOrder($order);
+
+        $pendingStatus = new OrderStatus();
+        $pendingStatus->setId(OrderStatus::PENDING);
+        $processingStatus = new OrderStatus();
+        $processingStatus->setId(OrderStatus::PROCESSING);
+        $this->orderStatusRepo->method('find')->willReturnCallback(function ($id) use ($pendingStatus, $processingStatus) {
+            return $id === OrderStatus::PENDING ? $pendingStatus : $processingStatus;
+        });
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+        ]);
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn((function () {
+            $pay = new KomojuPay();
+            $pay->setName('credit_card');
+            return $pay;
+        })());
+        $this->entityManager->method('getRepository')->willReturn($repo);
+        $this->router->method('generate')->willReturn('https://shop.test/return');
+        $client = $this->createMock(KomojuClient::class);
+        $client->method('createSession')->willReturn(['id' => 'ses_missing_url']);
+        $client->method('getStatusCode')->willReturn(200);
+        $this->clientFactory->method('create')->willReturn($client);
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+
+        $this->expectException(ShoppingException::class);
+        $this->payment->apply();
+    }
+
     public function testApplySessionMissingIdThrowsException()
     {
         $order = $this->makeOrder(2000);

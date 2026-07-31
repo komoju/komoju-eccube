@@ -73,7 +73,7 @@ komoju_payment.admin.order.error.capture_failed: Capture failed.
 komoju_payment.admin.order.error.amount_mismatch: "Capture blocked.\nThe order total (%order_total%) does not match the authorized amount (%authorized%).\nOption 1: Restore the order total to the authorized amount (%authorized%), then capture.\nOption 2: To change the amount, cancel this order and have the customer place a new one."
 komoju_payment.admin.order.refund.success: Refund completed successfully.
 komoju_payment.admin.order.capture_action: Capture Payment
-komoju_payment.admin.order.capture_action_confirm: 'Are you sure you want to capture %charge_amount%?'
+komoju_payment.admin.order.capture_action_confirm: 'Capture the KOMOJU authorized amount. Have you confirmed that it matches the order total? Continue?'
 komoju_payment.admin.order.capture_success: Payment captured successfully.
 komoju_payment.admin.order.timeline.authorized: Authorized (awaiting payment)
 komoju_payment.admin.order.timeline.order_accepted: Order accepted (awaiting payment)

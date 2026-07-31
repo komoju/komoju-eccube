@@ -155,6 +155,21 @@ class SessionReturnControllerTest extends TestCase
         $this->assertSame('shopping', $controller->lastRedirect);
     }
 
+    public function testMissingConfigRedirectsWithoutCustomer500()
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->configService->method('getConfigData')
+            ->willThrowException(new \RuntimeException('missing config'));
+        $this->em->expects($this->once())->method('refresh')->with($order);
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertContains('eccube.front.shopping.error', $controller->flashes['types']);
+    }
+
     public function testKomojuApiFailureRedirects()
     {
         [$order, , $status] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
@@ -199,6 +214,25 @@ class SessionReturnControllerTest extends TestCase
     }
 
     // --- failed payment branch ---
+
+    public function testIncompletePaymentResponseIsHandledAsPaymentFailure()
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => [],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+        $processing = new OrderStatus();
+        $processing->setId(OrderStatus::PROCESSING);
+        $this->em->method('find')->willReturn($processing);
+
+        $controller = $this->makeController();
+        $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+    }
 
     public function testFailedPaymentRollsBackAndRedirects()
     {

@@ -35,11 +35,12 @@ class WebhookController extends AbstractController
                 $request->getContent(),
                 $request->headers->get('X-Komoju-Signature'),
                 $webhook_secret);
-        }catch(\Exception $ex){
+        }catch(\Throwable $ex){
             $this->log_service->writeLog("webhook", "", "verification failed: " . $ex->getMessage());
             return $this->json(['status' => 'error'], 400);
         }
-        $type = $data->type;
+        $type = isset($data->type) ? $data->type : 'unknown';
+        $payment_id = isset($data->data->id) ? $data->data->id : '';
 
         try {
             switch($type){
@@ -66,8 +67,8 @@ class WebhookController extends AbstractController
                     $this->webhook_service->paymentUpdated($data);
                 break;
             }
-        } catch (\Exception $ex) {
-            $this->log_service->writeLog("webhook[$type]", "", "processing failed: " . $ex->getMessage());
+        } catch (\Throwable $ex) {
+            $this->log_service->writeLog("webhook[$type]", "", "processing failed for payment $payment_id: " . $ex->getMessage());
             return $this->json(['status' => 'error', 'message' => 'processing failed'], 500);
         }
         return $this->json(['status' => 'success']);
