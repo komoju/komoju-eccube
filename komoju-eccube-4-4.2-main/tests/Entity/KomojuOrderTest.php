@@ -77,4 +77,5 @@ class KomojuOrderTest extends TestCase
     {
         $this->assertSame('', KomojuOrder::canonicalRefundIds([]));
     }
+
 }

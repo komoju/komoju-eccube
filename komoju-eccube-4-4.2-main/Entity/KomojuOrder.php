@@ -121,6 +121,17 @@ class KomojuOrder
         return $this->type == "credit_card";
     }
 
+    /**
+     * Returns true only when the payment type supports manual capture via the
+     * KOMOJU API. Deferred-payment methods (konbini, bank_transfer, pay_easy,
+     * e-money, QR apps) capture automatically when the customer pays; calling
+     * capture on them returns 422 not_capturable.
+     *
+     * null means the type was not stored (pre-1.3.x order or session-only row);
+     * we leave those as capturable so legacy admin buttons continue to work.
+     */
+
+
     public function getCapturedAmount(){
         return $this->captured_amount;
     }

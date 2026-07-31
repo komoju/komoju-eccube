@@ -155,7 +155,7 @@ komoju_payment.error.invalid_payment_type: 支払い方法が無効です。
 komoju_payment.error.invalid_token: トークンの値が不正です。
 komoju_payment.error.invalid_currency: 指定された通貨が不正です。
 komoju_payment.error.not_refundable: 返金できない支払いです。
-komoju_payment.error.not_capturable: 入金できない決済です。
+komoju_payment.error.not_capturable: この決済は売上処理できません。この決済方法は「認証のみ」に対応していないか、「認証と売上処理」設定で作成された決済です。KOMOJU管理画面で詳細を確認してください。
 komoju_payment.error.not_cancellable: キャンセルできない支払いです。
 komoju_payment.error.not_chargebackable: チャージバックできない支払いです。
 komoju_payment.error.fraudulent: 不正行為の疑いのある支払いです。

@@ -155,7 +155,7 @@ komoju_payment.error.invalid_payment_type: Invalid payment method.
 komoju_payment.error.invalid_token: Invalid token value.
 komoju_payment.error.invalid_currency: Invalid currency specified.
 komoju_payment.error.not_refundable: This payment cannot be refunded.
-komoju_payment.error.not_capturable: This payment cannot be captured.
+komoju_payment.error.not_capturable: 'This payment cannot be captured. Either this payment method does not support Authorize Only, or this payment was created with Authorize and Capture. Check the KOMOJU dashboard for details.'
 komoju_payment.error.not_cancellable: This payment cannot be cancelled.
 komoju_payment.error.not_chargebackable: This payment cannot be charged back.
 komoju_payment.error.fraudulent: This payment is suspected of fraud.

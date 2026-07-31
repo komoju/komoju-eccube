@@ -156,6 +156,7 @@ class KomojuEvent implements EventSubscriberInterface{
             $event->setParameter("komoju_order", $komoju_order);
             $event->setParameter("komoju_captured_basis", $captured_basis);
             $event->setParameter("order_canceled", $order_canceled);
+
             $event->setParameter("komoju_dashboard_link", $this->getKomojuDashboardLink($komoju_order->getKomojuPaymentId()));
             $event->setParameter('REFUND_FULL_OPTION',  $refund_full_option);
             $event->setParameter('REFUND_PARTIAL_OPTION',  $refund_partial_option);

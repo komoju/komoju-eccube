@@ -87,6 +87,7 @@ class OrderController extends AbstractController{
             $this->addError('komoju_payment.admin.order.error.already_captured', 'admin');
             return $this->redirectToRoute('admin_order');
         }
+
         $komoju_client = $this->client_factory->create($config['secret_key']);
         $payment_obj = $komoju_client->getPayment($komoju_order->getKomojuPaymentId());
         if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
