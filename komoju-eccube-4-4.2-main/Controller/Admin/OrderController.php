@@ -124,8 +124,15 @@ class OrderController extends AbstractController{
 
         $payment_obj = $komoju_client->capturePayment($komoju_order->getKomojuPaymentId());
         if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
-            $this->addError($komoju_client->getLastError(), 'admin');
-            $this->log_service->writeLog("capture", $Order->getId(), "capture failed: " . $komoju_client->getLastError());
+            $errorCode = $komoju_client->getLastErrorCode();
+            $captureNotSupportedCodes = ['not_capturable', 'invalid_payment_type'];
+            if(in_array($errorCode, $captureNotSupportedCodes)){
+                $errorMsg = trans('komoju_payment.error.not_capturable');
+            } else {
+                $errorMsg = $komoju_client->getLastError();
+            }
+            $this->log_service->writeLog("capture", $Order->getId(), "capture failed: $errorCode");
+            $this->addError($errorMsg, 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
 

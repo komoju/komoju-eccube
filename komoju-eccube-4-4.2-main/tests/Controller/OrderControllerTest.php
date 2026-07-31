@@ -54,9 +54,9 @@ class OrderControllerTest extends TestCase
         $this->clientFactory->method('create')->willReturn($this->komojuClient);
     }
 
-    private function makeController(): OrderController
+    private function makeController(): TestableOrderController
     {
-        return new OrderController(
+        return new TestableOrderController(
             $this->em,
             $this->orderStateMachine,
             $this->orderRepo,
@@ -183,4 +183,57 @@ class OrderControllerTest extends TestCase
         );
     }
 
+    /**
+     * @dataProvider captureNotSupportedCodes
+     * Regression: pay_easy returns invalid_payment_type instead of not_capturable.
+     * Both codes must surface the helpful 'not_capturable' explanation.
+     */
+    public function testCaptureFailureShowsHelpfulMessageForKnownNotCapturableCodes($errorCode)
+    {
+        [$order, $komojuOrder] = $this->arrangeOrder(4080);
+        $komojuOrder->setKomojuPaymentId('pay_1');
+
+        $this->komojuClient->method('getPayment')
+            ->willReturn(['status' => 'authorized', 'amount' => 4080]);
+        $this->komojuClient->method('getStatusCode')
+            ->willReturnOnConsecutiveCalls(200, 422);
+        $this->komojuClient->method('capturePayment')->willReturn(null);
+        $this->komojuClient->method('getLastErrorCode')->willReturn($errorCode);
+        $this->komojuClient->method('getLastError')
+            ->willReturn(trans('komoju_payment.error.' . $errorCode));
+
+        $this->logService->expects($this->once())->method('writeLog')
+            ->with('capture', $order->getId(), "capture failed: $errorCode");
+
+        $request = new Request();
+        $request->request->set('_token', 'x');
+
+        $controller = $this->makeController();
+        $controller->charge($request, $order->getId());
+
+        $expectedMsg = trans('komoju_payment.error.not_capturable');
+        $this->assertContains($expectedMsg, $controller->adminErrors,
+            "$errorCode must display the not_capturable explanation, not the raw error banner");
+    }
+
+    public function captureNotSupportedCodes(): array
+    {
+        return [
+            'not_capturable'       => ['not_capturable'],
+            'invalid_payment_type' => ['invalid_payment_type'],
+        ];
+    }
+
+}
+
+class TestableOrderController extends OrderController
+{
+    public array $adminErrors = [];
+
+    public function addError($message, $type = 'front')
+    {
+        if ($type === 'admin') {
+            $this->adminErrors[] = $message;
+        }
+    }
 }
