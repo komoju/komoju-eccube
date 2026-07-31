@@ -165,7 +165,8 @@ class KomojuPayment implements PaymentMethodInterface{
         $komojuPay = $this->entityManager->getRepository(KomojuPay::class)
             ->findOneBy(['Payment' => $selectedPayment]);
         $enabled_methods = $komojuPay ? [$komojuPay->getName()] : [];
-        $locale = $this->requestStack->getCurrentRequest()->getLocale() ?: 'ja';
+        $currentRequest = $this->requestStack->getCurrentRequest();
+        $locale = ($currentRequest ? $currentRequest->getLocale() : null) ?: 'ja';
 
         $return_url = $this->router->generate('Komoju_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
         $cancel_url = $this->router->generate('Komoju_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
