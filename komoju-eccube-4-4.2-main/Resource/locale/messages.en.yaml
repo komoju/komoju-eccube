@@ -16,9 +16,9 @@ komoju_payment.admin.config.repair.banner_action: Open Maintenance
 komoju_payment.admin.config.repair.button: Re-link payment data
 komoju_payment.admin.config.repair.confirm: "This will re-link historical orders to the current KOMOJU payment data. This action cannot be undone. Are you sure you want to continue?"
 komoju_payment.admin.config.repair.in_progress: Re-linking...
-komoju_payment.admin.config.repair.done: Re-linking completed.
+komoju_payment.admin.config.repair.done: 'Re-linking completed. Please refresh the page to see the updated data.'
 komoju_payment.admin.config.repair.failed: Re-linking failed.
-komoju_payment.admin.config.repair.success: 'Re-linking completed. Re-linked %orders_relinked% order(s), restored %orders_restored% KOMOJU order record(s), removed %orphans_deleted% unused payment method(s).'
+komoju_payment.admin.config.repair.success: 'Re-linking completed. Re-linked %orders_relinked% order(s), restored %orders_restored% KOMOJU order record(s), removed %orphans_deleted% unused payment method(s). Please refresh the page to see the updated data.'
 komoju_payment.admin.config.label:secret_key: Secret Key
 komoju_payment.admin.config.label:publishable_key: Publishable Key
 komoju_payment.admin.config.label:merchant_uuid: Merchant UUID
