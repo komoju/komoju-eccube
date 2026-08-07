@@ -23,7 +23,8 @@ class KomojuService{
 
     public function cancelKomojuOrderByOrder($Order){
 
-        $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order]);
+        // Latest session row carries the komoju_payment_id needed to void auth.
+        $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order], ['id' => 'DESC']);
 
         if(empty($komoju_order) || $komoju_order->isCaptured() || $komoju_order->getCanceledAt()){
             return;
@@ -36,7 +37,7 @@ class KomojuService{
         if($komoju_client->getStatusCode() != 200 || empty($payment_obj)){
             return;
         }
-        if($payment_obj['status'] == "pending" || $payment_obj['status'] == "authorized"){
+        if(isset($payment_obj['status']) && ($payment_obj['status'] == "pending" || $payment_obj['status'] == "authorized")){
             $res = $komoju_client->cancelPayment($payment_id);
             $komoju_order->setCanceledAt(new \DateTime());
             $this->entityManager->persist($komoju_order);

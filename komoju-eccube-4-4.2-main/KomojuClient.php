@@ -50,6 +50,10 @@ class KomojuClient{
         $this->api_obj = new Sessions($this->secret_key);
         return $this->api_obj->getOne($session_id);
     }
+    public function cancelSession($session_id){
+        $this->api_obj = new Sessions($this->secret_key);
+        return $this->api_obj->cancel($session_id);
+    }
     public function getPaymentMethods(){
         $this->api_obj = new PaymentMethods($this->secret_key);
         return $this->api_obj->get();
@@ -58,6 +62,12 @@ class KomojuClient{
     public function getStatusCode(){
         if($this->api_obj){
             return $this->api_obj->getStatusCode();
+        }
+        return null;
+    }
+    public function getLastErrorCode(){
+        if($this->api_obj){
+            return $this->api_obj->getLastError();
         }
         return null;
     }
@@ -73,6 +83,12 @@ class KomojuClient{
                 return trans('komoju_payment.error.unknown_with_code', ['%code%' => $error_code]);
             }
             return trans('komoju_payment.error.unknown');
+        }
+        return null;
+    }
+    public function getLastErrorDetail(){
+        if($this->api_obj){
+            return $this->api_obj->getLastErrorDetail();
         }
         return null;
     }

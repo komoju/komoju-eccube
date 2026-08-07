@@ -98,6 +98,12 @@ class KomojuOrder
     private $captured_at;
 
     /**
+     * @var string
+     * @ORM\Column(name="captured_amount", type="decimal", precision=12, scale=2, options={"unsigned":true}, nullable=true)
+     */
+    private $captured_amount;
+
+    /**
      * @var \DateTime
      * @ORM\Column(name="canceled_at", type="datetime", nullable=true)
      */
@@ -115,6 +121,24 @@ class KomojuOrder
         return $this->type == "credit_card";
     }
 
+    /**
+     * Returns true only when the payment type supports manual capture via the
+     * KOMOJU API. Deferred-payment methods (konbini, bank_transfer, pay_easy,
+     * e-money, QR apps) capture automatically when the customer pays; calling
+     * capture on them returns 422 not_capturable.
+     *
+     * null means the type was not stored (pre-1.3.x order or session-only row);
+     * we leave those as capturable so legacy admin buttons continue to work.
+     */
+
+
+    public function getCapturedAmount(){
+        return $this->captured_amount;
+    }
+    public function setCapturedAmount($captured_amount){
+        $this->captured_amount = $captured_amount;
+        return $this;
+    }
     public function getCapturedAt(){
         return $this->captured_at;
     }
@@ -131,6 +155,21 @@ class KomojuOrder
     public function setRefundId($refund_id){
         $this->refund_id = $refund_id;
         return $this;
+    }
+
+    /**
+     * A refund id set has no inherent order, but it is persisted as a string and
+     * compared as one by the webhook's compare-and-swap dedupe. Every writer must
+     * therefore serialise it identically, or the same set of refunds looks like a
+     * new one and gets recorded twice.
+     */
+    public static function canonicalRefundIds(array $refund_ids){
+        $refund_ids = array_filter($refund_ids, function ($id) {
+            return $id !== null && $id !== '';
+        });
+        $refund_ids = array_values(array_unique($refund_ids));
+        sort($refund_ids);
+        return implode(',', $refund_ids);
     }
     /**
      * @return string

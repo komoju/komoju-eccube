@@ -17,6 +17,7 @@ use Plugin\Komoju42\Service\ConfigService;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mailer\MailerInterface;
+use Psr\Container\ContainerInterface;
 
 class MailExService extends MailService{
 
@@ -32,11 +33,22 @@ class MailExService extends MailService{
         BaseInfoRepository $baseInfoRepository,
         EventDispatcherInterface $eventDispatcher,
         \Twig\Environment $twig,
-        EccubeConfig $eccubeConfig
+        EccubeConfig $eccubeConfig,
+        ?ContainerInterface $container = null
         ){
         $this->em = $entityManager;
 
-        parent::__construct( $mailer, $mailTemplateRepository, $mailHistoryRepository, $baseInfoRepository, $eventDispatcher, $twig, $eccubeConfig);
+        // MailService::__construct() takes 8 args on EC-CUBE 4.2 (last is
+        // $container) but 7 on 4.3. Forward $container only when needed.
+        $parentParamCount = (new \ReflectionMethod(MailService::class, '__construct'))
+            ->getNumberOfParameters();
+
+        $parentArgs = [$mailer, $mailTemplateRepository, $mailHistoryRepository, $baseInfoRepository, $eventDispatcher, $twig, $eccubeConfig];
+        if ($parentParamCount >= 8) {
+            $parentArgs[] = $container;
+        }
+
+        parent::__construct(...$parentArgs);
         $this->mailHistoryRepository = $mailHistoryRepository;
     }
 
@@ -74,14 +86,15 @@ class MailExService extends MailService{
 
         $MailHistory = new MailHistory();
         $MailHistory->setMailSubject($message->getSubject())
-            ->setMailBody($message->getBody())
+            ->setMailBody($message->getTextBody())
             ->setOrder($Order)
             ->setSendDate(new \DateTime());
 
-        // HTML用メールの設定
-        $multipart = $message->getChildren();
-        if (count($multipart) > 0) {
-            $MailHistory->setMailHtmlBody($multipart[0]->getBody());
+        // Symfony Mailer (EC-CUBE 4.2/4.3): store the rendered HTML body
+        // directly. The old SwiftMailer getChildren() API no longer exists.
+        $htmlBody = $message->getHtmlBody();
+        if (!empty($htmlBody)) {
+            $MailHistory->setMailHtmlBody($htmlBody);
         }
 
         $this->mailHistoryRepository->save($MailHistory);

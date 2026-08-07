@@ -18,3 +18,15 @@ if (!function_exists('log_warning')) {
         // no-op in tests
     }
 }
+
+if (!function_exists('log_error')) {
+    function log_error($message) {
+        // no-op in tests
+    }
+}
+
+if (!function_exists('log_info')) {
+    function log_info($message) {
+        // no-op in tests
+    }
+}

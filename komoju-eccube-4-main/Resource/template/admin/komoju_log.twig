@@ -18,9 +18,18 @@
                                 </a>
                                 <form method="post" action="{{ url('Komoju_admin_log_delete_all') }}" id="form-delete-all-logs" class="d-inline ml-2">
                                     <input type="hidden" name="_token" value="{{ csrf_token('komoju_log_delete_all') }}">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete-all-logs">
-                                        <i class="fas fa-trash"></i> {{ 'komoju_payment.admin.log.delete_all'|trans }}
-                                    </button>
+                                    {# Wrap in a span so the tooltip shows even when the button is
+                                       disabled: a disabled <button> does not emit hover events, so
+                                       the title/tooltip must live on a non-disabled wrapper, and the
+                                       button gets pointer-events:none to let hover reach the span. #}
+                                    <span class="d-inline-block" tabindex="0"
+                                        data-toggle="tooltip" data-placement="top"
+                                        title="{% if deletable_log_count > 0 %}{{ 'komoju_payment.admin.log.delete_all.hint'|trans({ '%count%': deletable_log_count }) }}{% else %}{{ 'komoju_payment.admin.log.delete_all.disabled'|trans }}{% endif %}">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete-all-logs"
+                                            {{ deletable_log_count > 0 ? '' : 'disabled style="pointer-events:none;"' }}>
+                                            <i class="fas fa-trash"></i> {{ 'komoju_payment.admin.log.delete_all'|trans }}{% if deletable_log_count > 0 %} ({{ deletable_log_count }}){% endif %}
+                                        </button>
+                                    </span>
                                 </form>
                             </div>
                         </div>

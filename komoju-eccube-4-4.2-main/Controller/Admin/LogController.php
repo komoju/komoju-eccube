@@ -8,7 +8,6 @@ use Plugin\Komoju42\Repository\KomojuConfigRepository;
 use Plugin\Komoju42\Form\Type\KomojuLogSearchType;
 use Plugin\Komoju42\Service\LogService;
 use Symfony\Component\Routing\Annotation\Route;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -52,7 +51,6 @@ class LogController extends AbstractController
     /**
      * @Route("/%eccube_admin_route%/Komoju42/log", name="Komoju42_admin_log")
      * @Route("/%eccube_admin_route%/Komoju42/log/page/{page_no}", requirements={"page_no" = "\d+"}, name="Komoju42_admin_log_page")
-     * @Template("@Komoju42/admin/komoju_log.twig")
      */
     public function index(Request $request, PaginatorInterface $paginator, $page_no = null)
     {
@@ -88,10 +86,25 @@ class LogController extends AbstractController
             $page_no,
             $page_count
         );
-        return [
+        return $this->render('@Komoju42/admin/komoju_log.twig', [
             'pagination' => $pagination,
             'searchForm' => $searchForm->createView(),
-        ];
+            'deletable_log_count' => $this->countDeletableLogs(),
+        ]);
+    }
+
+    /**
+     * Count operational (non-protected) logs — the rows the bulk-delete button
+     * is allowed to remove. Order-timeline history (is_protected = 1) is excluded.
+     */
+    private function countDeletableLogs(): int
+    {
+        return (int) $this->entityManager->createQueryBuilder()
+            ->select('COUNT(s.id)')
+            ->from('Plugin\Komoju42\Entity\KomojuLog', 's')
+            ->where('s.is_protected = 0 OR s.is_protected IS NULL')
+            ->getQuery()
+            ->getSingleScalarResult();
     }
 
     /**
@@ -149,9 +162,13 @@ class LogController extends AbstractController
                 trans('komoju_payment.admin.log.label.msg'),
             ]);
 
-            $results = $qb->setMaxResults(50000)->getQuery()->iterate();
-            foreach ($results as $row) {
-                $log = $row[0];
+            // Query::iterate() was deprecated in Doctrine ORM 2.7 and removed
+            // in 3.0; toIterable() is the replacement. Note the iteration shape
+            // also changed: iterate() yielded [$entity] (1-element arrays) so
+            // the old code did `$log = $row[0]`, while toIterable() yields the
+            // entity directly.
+            $results = $qb->setMaxResults(50000)->getQuery()->toIterable();
+            foreach ($results as $log) {
                 fputcsv($handle, [
                     $log->getCreatedAt()->format('Y-m-d H:i:s'),
                     $log->getApi(),

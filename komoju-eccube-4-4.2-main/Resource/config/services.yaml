@@ -27,6 +27,7 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Service\OrderStateMachine'
             - '@plg_Komoju42.service.komoju_log'
+            - '@eccube.purchase.flow.shopping'
     plg_Komoju42.service.komoju_mail_service:
         public: true
         class: Plugin\Komoju42\Service\MailExService
@@ -39,6 +40,8 @@ services:
             - '@Symfony\Component\EventDispatcher\EventDispatcherInterface'
             - '@twig'
             - '@Eccube\Common\EccubeConfig'
+            # Required by MailService on EC-CUBE 4.2; ignored on 4.3.
+            - '@service_container'
     plg_Komoju42.service.komoju_service:
         public: true
         class: Plugin\Komoju42\Service\KomojuService
@@ -46,14 +49,20 @@ services:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@plg_Komoju42.service.config'
             - '@Plugin\Komoju42\Service\KomojuClientFactory'
+    plg_Komoju42.service.repair:
+        public: true
+        class: Plugin\Komoju42\Service\RepairService
+        arguments:
+            - '@Doctrine\ORM\EntityManagerInterface'
+            - '@Eccube\Common\EccubeConfig'
     Plugin\Komoju42\EventListener\SqliteBusyTimeoutListener:
         tags:
-            - { name: doctrine.event_listener, event: postConnect }
+            - { name: doctrine.middleware }
 
     Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber:
         class: Plugin\Komoju42\Doctrine\EventSubscriber\OrderEventSubscriber
         tags:
-            - { name: doctrine.event_subscriber }
+            - { name: doctrine.event_listener, event: postUpdate }
     Plugin\Komoju42\Service\Method\KomojuPayment:
         public: true
         class: Plugin\Komoju42\Service\Method\KomojuPayment
@@ -71,3 +80,4 @@ services:
     Plugin\Komoju42\Service\WebhookService: '@plg_Komoju42.service.komoju_webhook'
     Plugin\Komoju42\Service\MailExService: '@plg_Komoju42.service.komoju_mail_service'
     Plugin\Komoju42\Service\KomojuService: '@plg_Komoju42.service.komoju_service'
+    Plugin\Komoju42\Service\RepairService: '@plg_Komoju42.service.repair'

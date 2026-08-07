@@ -2,17 +2,17 @@
 
 namespace Plugin\Komoju42\Doctrine\EventSubscriber;
 
-use Doctrine\Common\EventSubscriber;
-use Doctrine\ORM\Events;
 use Doctrine\ORM\Event\PostUpdateEventArgs;
 use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Entity\Order;
-
 use Eccube\Entity\Master\OrderStatus;
 use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Plugin\Komoju42\Service\KomojuService;
 
-class OrderEventSubscriber implements EventSubscriber{
+// Registered as doctrine.event_listener (not doctrine.event_subscriber) in
+// services.yaml so Symfony doctrine-bridge 6.3+ does not emit a deprecation.
+class OrderEventSubscriber
+{
     protected $komoju_service;
     protected $entityManager;
 
@@ -21,11 +21,6 @@ class OrderEventSubscriber implements EventSubscriber{
         $this->komoju_service = $komojuService;
     }
 
-    public function getSubscribedEvents(){
-        return [
-            Events::postUpdate,
-        ];
-    }
     public function postUpdate(PostUpdateEventArgs $args){
         $Order = $args->getObject();
         if(!$Order instanceof Order){

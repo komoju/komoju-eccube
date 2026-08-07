@@ -4,7 +4,6 @@ include_once dirname(__FILE__) . '/../Resource/komoju_lib/init.php';
 
 use Eccube\Controller\AbstractController;
 use Symfony\Component\Routing\Annotation\Route;
-use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Plugin\Komoju42\Service\LogService;
@@ -29,22 +28,37 @@ class WebhookController extends AbstractController
      * @Route("/plugin/Komoju42/webhook", name="Komoju42_webhook")
      */
     public function webhook(Request $request){
+        // Config/infrastructure failures are NOT the caller's fault. Answering 400
+        // would tell KOMOJU the event is permanently invalid and stop retries,
+        // losing the event; 500 keeps it in the retry queue.
         try{
             $config_data = $this->config_service->getConfigData();
-            $webhook_secret = $config_data['webhook_secret'];
+            $webhook_secret = $config_data['webhook_secret'] ?? null;
+        }catch(\Throwable $ex){
+            log_error($ex);
+            $this->log_service->writeLog("webhook", "", "config unavailable: " . $ex->getMessage());
+            return $this->json(['status' => 'error', 'message' => 'config unavailable'], 500);
+        }
+
+        try{
             $data = WebhookEvent::constructEvent(
                 $request->getContent(),
                 $request->headers->get('X-Komoju-Signature'),
                 $webhook_secret);
-        }catch(\Exception $ex){
+        }catch(\Throwable $ex){
             $this->log_service->writeLog("webhook", "", "verification failed: " . $ex->getMessage());
             return $this->json(['status' => 'error'], 400);
         }
-        $type = $data->type;
+        $type = $data->type ?? 'unknown';
+        $payment_id = isset($data->data->id) ? substr((string)$data->data->id, 0, 64) : '';
 
         try {
             switch($type){
+                case "payment.authorized":
+                    $this->webhook_service->paymentAuthorized($data);
+                break;
                 case "payment.refunded":
+                case "payment.refund.created":
                     $this->webhook_service->paymentRefunded($data);
                     break;
                 case "payment.captured":
@@ -63,8 +77,9 @@ class WebhookController extends AbstractController
                     $this->webhook_service->paymentUpdated($data);
                 break;
             }
-        } catch (\Exception $ex) {
-            $this->log_service->writeLog("webhook[$type]", "", "processing failed: " . $ex->getMessage());
+        } catch (\Throwable $ex) {
+            log_error($ex);
+            $this->log_service->writeLog("webhook[$type]", "", "processing failed for payment $payment_id: " . $ex->getMessage());
             return $this->json(['status' => 'error', 'message' => 'processing failed'], 500);
         }
         return $this->json(['status' => 'success']);

@@ -8,6 +8,17 @@ komoju_payment.admin.config.section.credentials: API Credentials
 komoju_payment.admin.config.section.payment: Payment Settings
 komoju_payment.admin.config.section.webhook: Webhook Configuration
 komoju_payment.admin.config.section.advanced: Logging & Advanced
+komoju_payment.admin.config.section.maintenance: Maintenance
+komoju_payment.admin.config.repair.label: Re-link KOMOJU payment data
+komoju_payment.admin.config.repair.hint: "If you uninstalled and re-installed the plugin and your historical orders no longer show their KOMOJU payment method, run this to restore the data backed up at uninstall and re-link past orders to the current KOMOJU payment methods."
+komoju_payment.admin.config.repair.detected: "KOMOJU payment data from a previous install was detected. You can re-link it from the Maintenance section below."
+komoju_payment.admin.config.repair.banner_action: Open Maintenance
+komoju_payment.admin.config.repair.button: Re-link payment data
+komoju_payment.admin.config.repair.confirm: "This will re-link historical orders to the current KOMOJU payment data. This action cannot be undone. Are you sure you want to continue?"
+komoju_payment.admin.config.repair.in_progress: Re-linking...
+komoju_payment.admin.config.repair.done: 'Re-linking completed. Please refresh the page to see the updated data.'
+komoju_payment.admin.config.repair.failed: Re-linking failed.
+komoju_payment.admin.config.repair.success: 'Re-linking completed. Re-linked %orders_relinked% order(s), restored %orders_restored% KOMOJU order record(s), removed %orphans_deleted% unused payment method(s). Please refresh the page to see the updated data.'
 komoju_payment.admin.config.label:secret_key: Secret Key
 komoju_payment.admin.config.label:publishable_key: Publishable Key
 komoju_payment.admin.config.label:merchant_uuid: Merchant UUID
@@ -51,6 +62,7 @@ komoju_payment.admin.order.status.captured: 'Captured on %date%'
 komoju_payment.admin.order.status.fully_refunded: Fully Refunded
 komoju_payment.admin.order.status.partially_refunded: 'Partially Refunded (%refunded% / %total%)'
 komoju_payment.admin.order.status.refunded: Refunded
+komoju_payment.admin.order.status.canceled: Canceled
 komoju_payment.admin.order.refunded_amount: Refunded Amount
 komoju_payment.admin.order.error.invalid_request: Invalid request.
 komoju_payment.admin.order.error.refunded: This payment has already been refunded.
@@ -58,10 +70,13 @@ komoju_payment.admin.order.error.refund_option.invalid: Invalid refund option.
 komoju_payment.admin.order.error.already_captured: This payment has already been captured.
 komoju_payment.admin.order.error.not_credit_card: This is not a valid credit card payment.
 komoju_payment.admin.order.error.capture_failed: Capture failed.
+komoju_payment.admin.order.error.amount_mismatch: "Capture blocked.\nThe order total (%order_total%) does not match the authorized amount (%authorized%).\nOption 1: Restore the order total to the authorized amount (%authorized%), then capture.\nOption 2: To change the amount, cancel this order and have the customer place a new one."
 komoju_payment.admin.order.refund.success: Refund completed successfully.
 komoju_payment.admin.order.capture_action: Capture Payment
-komoju_payment.admin.order.capture_action_confirm: 'Are you sure you want to capture %charge_amount%?'
+komoju_payment.admin.order.capture_action_confirm: 'Capture the KOMOJU authorized amount. Have you confirmed that it matches the order total? Continue?'
 komoju_payment.admin.order.capture_success: Payment captured successfully.
+komoju_payment.admin.order.timeline.authorized: Authorized (awaiting payment)
+komoju_payment.admin.order.timeline.order_accepted: Order accepted (awaiting payment)
 komoju_payment.admin.order.timeline.purchase_completed: Purchase completed
 komoju_payment.admin.order.timeline.customer_cancelled: Cancelled by customer
 komoju_payment.admin.order.timeline.error: An error occurred
@@ -72,6 +87,7 @@ komoju_payment.admin.order.timeline.cancelled: Payment cancelled
 komoju_payment.admin.order.timeline.expired: Payment expired
 komoju_payment.admin.order.timeline.failed: Payment failed
 komoju_payment.admin.order.timeline.capture_failed: Capture failed
+komoju_payment.admin.order.timeline.refund_rejected: 'Refund failed: %reason% Please refund from the KOMOJU dashboard.'
 komoju_payment.admin.order.timeline.already_refunded: Already refunded
 komoju_payment.admin.order.timeline.status_changed: 'Status changed to %status%'
 
@@ -90,18 +106,17 @@ komoju_payment.admin.log.search.api.refund: Refund
 komoju_payment.admin.log.search.api.retrieve: Retrieve
 komoju_payment.admin.log.search.result_count: '%count% results'
 komoju_payment.admin.log.export_csv: Export CSV
-komoju_payment.admin.log.delete_all: Clear All Logs
-komoju_payment.admin.log.delete_all.confirm: Are you sure you want to delete all logs? This cannot be undone.
-komoju_payment.admin.log.delete_all.success: All logs have been deleted.
-komoju_payment.admin.log.delete_all.nothing: No deletable logs found. Order timeline logs are protected.
+komoju_payment.admin.log.delete_all: Delete operational logs
+komoju_payment.admin.log.delete_all.confirm: "Delete operational logs (error/debug logs)? Order history (timeline events) will be kept. This cannot be undone. Continue?"
+komoju_payment.admin.log.delete_all.success: Operational logs deleted. Order history was kept.
+komoju_payment.admin.log.delete_all.nothing: No operational logs to delete. Order history (timeline events) is kept.
+komoju_payment.admin.log.delete_all.hint: 'Deletable operational logs: %count% (order history not included)'
+komoju_payment.admin.log.delete_all.disabled: 'No operational logs to delete. Order history (timeline events) is never deleted.'
 komoju_payment.admin.config.label.log_retention_days: Log Retention Period
 komoju_payment.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
 komoju_payment.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
 komoju_payment.admin.config.label.logging_enabled: Enable Logging
 komoju_payment.admin.config.label.logging_enabled_hint: When disabled, no new log entries will be recorded.
-komoju_payment.admin.config.label.order_number_format: Order Number Format
-komoju_payment.admin.config.label.order_number_format_hint: "Use {order_no} for the order number, {order_id} for the internal ID. Leave blank to use the default order number."
-komoju_payment.admin.config.label.order_number_format_tooltip: "Customize the order number sent to KOMOJU. Example: SHOP-{order_no}"
 
 komoju_payment.admin.config.back: Plugin List
 komoju_payment.badge.required: Required
@@ -110,6 +125,7 @@ komoju_payment.shopping.verify.error.payment_total.too_small: The payment amount
 komoju_payment.shopping.verify.error.payment_total.too_much: The payment amount is too large.
 komoju_payment.shopping.payment_failed: KOMOJU payment failed.
 komoju_payment.shopping.payment_cancelled: Payment was cancelled.
+komoju_payment.shopping.payment_pending: We are confirming your payment. Please wait a moment for it to complete.
 komoju_payment.shopping.komoju_method_label: KOMOJU Payment
 komoju_payment.shopping.not_enough_error: Insufficient balance.
 
@@ -139,7 +155,7 @@ komoju_payment.error.invalid_payment_type: Invalid payment method.
 komoju_payment.error.invalid_token: Invalid token value.
 komoju_payment.error.invalid_currency: Invalid currency specified.
 komoju_payment.error.not_refundable: This payment cannot be refunded.
-komoju_payment.error.not_capturable: This payment cannot be captured.
+komoju_payment.error.not_capturable: 'This payment cannot be captured. Either this payment method does not support Authorize Only, or this payment was created with Authorize and Capture. Check the KOMOJU dashboard for details.'
 komoju_payment.error.not_cancellable: This payment cannot be cancelled.
 komoju_payment.error.not_chargebackable: This payment cannot be charged back.
 komoju_payment.error.fraudulent: This payment is suspected of fraud.

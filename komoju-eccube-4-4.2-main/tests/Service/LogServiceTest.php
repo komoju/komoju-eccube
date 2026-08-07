@@ -91,5 +91,6 @@ class StubRepository
     public function findOneBy(array $criteria) { return null; }
     public function find($id) { return null; }
     public function findBy(array $criteria, ?array $orderBy = null) { return []; }
+    public function count(array $criteria) { return 0; }
     public function updateOrderSummary($customer) {}
 }

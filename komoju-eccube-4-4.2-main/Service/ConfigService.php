@@ -22,7 +22,7 @@ class ConfigService{
 
     const MAIL_TEMPLATE_REFUND_REDIRECT = "KOMOJU Refund Notification";
 
-    public function __construct(EntityManagerInterface $entityManager, EccubeConfig $eccubeConfig, KomojuClientFactory $clientFactory = null){
+    public function __construct(EntityManagerInterface $entityManager, EccubeConfig $eccubeConfig, ?KomojuClientFactory $clientFactory = null){
         $this->entityManager = $entityManager;
         $this->eccubeConfig = $eccubeConfig;
         $this->client_factory = $clientFactory ?: new KomojuClientFactory();
@@ -68,7 +68,6 @@ class ConfigService{
         }
 
         $config->setLoggingEnabled($newLoggingEnabled);
-        $config->setOrderNumberFormat(isset($config_data['order_number_format']) ? $config_data['order_number_format'] : null);
 
         $this->entityManager->persist($config);
         $this->entityManager->flush();
@@ -113,13 +112,12 @@ class ConfigService{
                 $pay->setSortNo($sort_no);
                 $this->entityManager->persist($pay);
             }else{
+                // KomojuPay inherits GeneratedValue(strategy="NONE") from
+                // AbstractMasterEntity — the DB does not auto-assign ids —
+                // so we must compute one. Delegated to PluginManager::nextPayId
+                // so this lives in exactly one place.
                 $pay = new KomojuPay();
-                $max_id_result = $this->entityManager->createQueryBuilder()
-                    ->select('MAX(p.id)')
-                    ->from(KomojuPay::class, 'p')
-                    ->getQuery()
-                    ->getSingleScalarResult();
-                $pay->setId(($max_id_result ? $max_id_result : 0) + 1);
+                $pay->setId(\Plugin\Komoju42\PluginManager::nextPayId($this->entityManager));
                 $pay->setName($slug);
                 $pay->setDispName($disp_name);
                 $pay->setSortNo($sort_no);
@@ -259,40 +257,44 @@ class ConfigService{
             }
         }
 
-        // Phase 1: Migrate orphans that have an active equivalent (pure DQL, no entity state)
+        // Phase 1: Migrate orphans that have an active equivalent (pure DQL, no entity state).
+        //
+        // NOTE: do NOT wrap each orphan in beginTransaction()/commit()/rollBack().
+        // EC-CUBE's PluginService already opens an outer transaction around the
+        // enable/disable/save flows that call this method, so a nested
+        // beginTransaction() in DBAL just increments a refcount without issuing
+        // a real SAVEPOINT. On PostgreSQL, if any inner query fails the outer
+        // transaction is left in an aborted state and a subsequent rollBack()
+        // here only decrements the counter — every later query in the request,
+        // including EC-CUBE's own PluginRepository::findAllEnabled() inside
+        // regenerateProxy(), then fails with SQLSTATE 25P02. We let exceptions
+        // bubble up so the outer transaction can be rolled back cleanly by the
+        // caller.
         foreach($orphans as $orphan){
             $activeId = isset($activeIdBySlug[$orphan['slug']]) ? $activeIdBySlug[$orphan['slug']] : null;
             if(!$activeId){
                 continue;
             }
-            $conn = $this->entityManager->getConnection();
-            try {
-                $conn->beginTransaction();
-                $this->entityManager->createQueryBuilder()
-                    ->update(\Eccube\Entity\Order::class, 'o')
-                    ->set('o.Payment', ':newId')
-                    ->where('o.Payment = :oldId')
-                    ->setParameter('newId', $activeId)
-                    ->setParameter('oldId', $orphan['id'])
-                    ->getQuery()
-                    ->execute();
-                $this->entityManager->createQueryBuilder()
-                    ->delete(PaymentOption::class, 'po')
-                    ->where('po.payment_id = :pid')
-                    ->setParameter('pid', $orphan['id'])
-                    ->getQuery()
-                    ->execute();
-                $this->entityManager->createQueryBuilder()
-                    ->delete(Payment::class, 'p')
-                    ->where('p.id = :pid')
-                    ->setParameter('pid', $orphan['id'])
-                    ->getQuery()
-                    ->execute();
-                $conn->commit();
-            } catch (\Exception $e) {
-                $conn->rollBack();
-                log_warning('KOMOJU: failed to migrate orphaned Payment id=' . $orphan['id'] . ': ' . $e->getMessage());
-            }
+            $this->entityManager->createQueryBuilder()
+                ->update(\Eccube\Entity\Order::class, 'o')
+                ->set('o.Payment', ':newId')
+                ->where('o.Payment = :oldId')
+                ->setParameter('newId', $activeId)
+                ->setParameter('oldId', $orphan['id'])
+                ->getQuery()
+                ->execute();
+            $this->entityManager->createQueryBuilder()
+                ->delete(PaymentOption::class, 'po')
+                ->where('po.payment_id = :pid')
+                ->setParameter('pid', $orphan['id'])
+                ->getQuery()
+                ->execute();
+            $this->entityManager->createQueryBuilder()
+                ->delete(Payment::class, 'p')
+                ->where('p.id = :pid')
+                ->setParameter('pid', $orphan['id'])
+                ->getQuery()
+                ->execute();
         }
 
         // Phase 2: Handle remaining orphans (no active equivalent) using DQL

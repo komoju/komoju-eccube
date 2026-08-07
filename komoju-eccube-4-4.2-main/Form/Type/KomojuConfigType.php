@@ -60,7 +60,6 @@ class KomojuConfigType extends AbstractType{
             ->add('capture_on', ChoiceType::class, [
                 'required'  =>  true,
                 'expanded'  =>  false,
-                'data'      =>  true,
                 'choices'   =>  [
                     'komoju_payment.admin.config.label.capture_on.auth_only' => false,
                     'komoju_payment.admin.config.label.capture_on.auth_capture' => true,
@@ -78,10 +77,6 @@ class KomojuConfigType extends AbstractType{
                 'constraints' => [
                     new Assert\PositiveOrZero(),
                 ],
-            ])
-            ->add('order_number_format', TextType::class, [
-                'required' => false,
-                'attr' => ['placeholder' => '{order_no}'],
             ]);
     }
 

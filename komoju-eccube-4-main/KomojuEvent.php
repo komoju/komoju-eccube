@@ -67,7 +67,7 @@ class KomojuEvent implements EventSubscriberInterface{
         if($Order) {
             if ($Order->getPayment()->getMethodClass() === KomojuPayment::class) {
                 $komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
-                $komoju_order = $komoju_order_repo->findOneBy(array('Order'=>$Order));
+                $komoju_order = $komoju_order_repo->findOneBy(['Order'=>$Order], ['id' => 'DESC']);
                 if($komoju_order) {
                     $payment_id = $komoju_order->getKomojuPaymentId();
                     if (!empty($payment_id) && $komoju_order->isCaptured()) {
@@ -135,23 +135,27 @@ class KomojuEvent implements EventSubscriberInterface{
             return;
         }
         if ($Order->getPayment()->getMethodClass() === KomojuPayment::class) {
-            $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(['Order' => $Order]);
+            $komoju_order = $this->entityManager->getRepository(KomojuOrder::class)->findOneBy(
+                ['Order' => $Order],
+                ['id' => 'DESC']
+            );
             if(empty($komoju_order)
                 || empty($komoju_order->getKomojuPaymentId())
                 ){
                 return ;
             }
-            if(!$komoju_order->getIsChargeRefunded() && $komoju_order->getSelectedRefundOption() === 0 && $komoju_order->getRefundedAmount() == 0){
-                $komoju_order->setRefundedAmount($Order->getPaymentTotal());
-                $this->entityManager->persist($komoju_order);
-                $this->entityManager->flush();
-            }
+
             $refund_full_option = KomojuOrder::REFUND_FULL;
             $refund_partial_option = KomojuOrder::REFUND_PARTIAL;
 
             $order_canceled = $Order->getOrderStatus()->getId() == OrderStatus::CANCEL;
 
+            $captured_basis = $komoju_order->getCapturedAmount() !== null
+                ? (int)$komoju_order->getCapturedAmount()
+                : (int)$Order->getPaymentTotal();
+
             $event->setParameter("komoju_order", $komoju_order);
+            $event->setParameter("komoju_captured_basis", $captured_basis);
             $event->setParameter("order_canceled", $order_canceled);
             $event->setParameter("komoju_dashboard_link", $this->getKomojuDashboardLink($komoju_order->getKomojuPaymentId()));
             $event->setParameter('REFUND_FULL_OPTION',  $refund_full_option);
@@ -173,19 +177,11 @@ class KomojuEvent implements EventSubscriberInterface{
     }
 
     private function formatOrderNumber($Order){
-        try {
-            $config_data = $this->config_service->getConfigData($Order);
-            $format = !empty($config_data['order_number_format']) ? $config_data['order_number_format'] : null;
-        } catch (\Exception $e) {
-            $format = null;
-        }
-        if (empty($format)) {
-            return (string)$Order->getOrderNo();
-        }
+        // Mirror the fixed external_order_num format sent in KomojuPayment.
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$Order->getOrderNo(), (string)$Order->getId()],
-            $format
+            \Plugin\Komoju42\Entity\KomojuConfig::DEFAULT_ORDER_NUMBER_FORMAT
         );
     }
 

@@ -77,6 +77,21 @@
             <div class="c-contentsArea__primaryCol">
                 <div class="c-primaryCol">
 
+                    {# Top-of-page banner: shown only when uninstall-time backup
+                       data is present. Clicking the link scrolls down to the
+                       Maintenance section where the actual action lives. The
+                       same `has_repair_data` flag is computed by
+                       ConfigController::index() via RepairService::hasBackupData(). #}
+                    {% if has_repair_data %}
+                        <div class="alert alert-info d-flex align-items-center mb-4">
+                            <i class="fa fa-info-circle mr-2"></i>
+                            <span class="flex-grow-1">{{ 'komoju_payment.admin.config.repair.detected'|trans }}</span>
+                            <a href="#komoju-maintenance-section" class="btn btn-sm btn-outline-info ml-3">
+                                {{ 'komoju_payment.admin.config.repair.banner_action'|trans }}
+                            </a>
+                        </div>
+                    {% endif %}
+
                     {# Card 1: API Credentials #}
                     <div class="card rounded border-0 mb-4">
                         <div class="card-header"><span>{{ 'komoju_payment.admin.config.section.credentials'|trans }}</span></div>
@@ -164,17 +179,6 @@
                                     {% endif %}
                                 </div>
                             </div>
-                            <div class="row mt-4">
-                                <div class="col-3">
-                                    <span>{{ 'komoju_payment.admin.config.label.order_number_format'|trans }}</span>
-                                    <i class="fa fa-question-circle fa-lg ml-1" data-toggle="tooltip" data-placement="top" title="{{ 'komoju_payment.admin.config.label.order_number_format_tooltip'|trans }}"></i>
-                                </div>
-                                <div class="col mb-2">
-                                    {{ form_widget(form.order_number_format, { 'attr': { 'class': 'form-control', 'style': 'width:50%; display:inline-block;', 'placeholder': '{order_no}' } }) }}
-                                    <div class="mt-1 text-muted">{{ 'komoju_payment.admin.config.label.order_number_format_hint'|trans }}</div>
-                                    {{ form_errors(form.order_number_format) }}
-                                </div>
-                            </div>
                         </div>
                     </div>
 
@@ -249,6 +253,29 @@
                                     {{ form_widget(form.log_retention_days, { 'attr': { 'class': 'form-control', 'style': 'width:120px; display:inline-block;', 'placeholder': '90' } }) }}
                                     <span class="ml-2 text-muted">{{ 'komoju_payment.admin.config.label.log_retention_days_hint'|trans }}</span>
                                     {{ form_errors(form.log_retention_days) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Card 5: Maintenance.
+                       The `id` here is the scroll target for the top-of-page
+                       banner above (see `has_repair_data` block). Do not
+                       rename without updating the anchor href there too. #}
+                    <div id="komoju-maintenance-section" class="card rounded border-0 mb-4">
+                        <div class="card-header"><span>{{ 'komoju_payment.admin.config.section.maintenance'|trans }}</span></div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-3">
+                                    <span>{{ 'komoju_payment.admin.config.repair.label'|trans }}</span>
+                                </div>
+                                <div class="col mb-2">
+                                    <p class="text-muted mb-2">{{ 'komoju_payment.admin.config.repair.hint'|trans }}</p>
+                                    <button type="button" id="btn-repair-payments" class="btn btn-outline-warning">
+                                        <i class="fas fa-link"></i> {{ 'komoju_payment.admin.config.repair.button'|trans }}
+                                    </button>
+                                    {# Status message renders on its own line below the button #}
+                                    <div id="repair-status" class="mt-2" style="display:none;"></div>
                                 </div>
                             </div>
                         </div>
@@ -343,6 +370,38 @@
 
         $("#btn-connect-komoju").click(function(){ doSync($(this)); });
         $("#btn-sync-methods").click(function(){ doSync($(this)); });
+
+        $("#btn-repair-payments").click(function(){
+            var btn = $(this);
+            var status = $("#repair-status");
+            if (!confirm("{{ 'komoju_payment.admin.config.repair.confirm'|trans|escape('js') }}")) {
+                return;
+            }
+            btn.prop("disabled", true);
+            btn.find("i").addClass("fa-spin");
+            status.text("{{ 'komoju_payment.admin.config.repair.in_progress'|trans }}").css("color", "").show();
+            $.ajax({
+                url: "{{ url('Komoju_admin_repair') }}",
+                type: "POST",
+                contentType: "application/json",
+                dataType: "json",
+                headers: { "X-CSRF-Token": $("input[name='komoju_config[_token]']").val() },
+                success: function(data){
+                    status.text(data.message || "{{ 'komoju_payment.admin.config.repair.done'|trans }}").css("color", "green");
+                    btn.prop("disabled", false);
+                    btn.find("i").removeClass("fa-spin");
+                },
+                error: function(xhr){
+                    var msg = "{{ 'komoju_payment.admin.config.repair.failed'|trans }}";
+                    if(xhr.responseJSON && xhr.responseJSON.message){
+                        msg = xhr.responseJSON.message;
+                    }
+                    status.text(msg).css("color", "red");
+                    btn.prop("disabled", false);
+                    btn.find("i").removeClass("fa-spin");
+                }
+            });
+        });
     });
 </script>
 {% endblock %}

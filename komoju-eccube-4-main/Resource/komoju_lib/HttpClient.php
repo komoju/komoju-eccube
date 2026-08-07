@@ -12,6 +12,7 @@ class HttpClient{
 
     //---http error------
     protected $last_error;
+    protected $last_error_detail;
     protected $last_status_code;
     protected $base_url;
 
@@ -26,6 +27,9 @@ class HttpClient{
     }
     public function getLastError(){
         return $this->last_error;
+    }
+    public function getLastErrorDetail(){
+        return $this->last_error_detail;
     }
     public function getStatusCode(){
         return $this->last_status_code;
@@ -75,6 +79,7 @@ class HttpClient{
         $resp = $this->decodeResponse($response);
         if($this->last_status_code >= 300){
             $this->last_error = isset($resp['error']['code']) ? $resp['error']['code'] : 'unknown_error';
+            $this->last_error_detail = trim((isset($resp['error']['message']) ? $resp['error']['message'] : '') . ' ' . (isset($resp['error']['param']) ? $resp['error']['param'] : ''));
         }
 
         return $resp;
@@ -101,6 +106,7 @@ class HttpClient{
         $resp = $this->decodeResponse($response);
         if($this->last_status_code >= 300){
             $this->last_error = isset($resp['error']['code']) ? $resp['error']['code'] : 'unknown_error';
+            $this->last_error_detail = trim((isset($resp['error']['message']) ? $resp['error']['message'] : '') . ' ' . (isset($resp['error']['param']) ? $resp['error']['param'] : ''));
         }
 
         return $resp;

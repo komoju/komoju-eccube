@@ -19,8 +19,10 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Eccube\Service\PurchaseFlow\PurchaseException;
+use Eccube\Exception\ShoppingException;
 use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Entity\KomojuPay;
+use Plugin\Komoju42\Entity\KomojuConfig;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
@@ -35,6 +37,12 @@ class KomojuPayment implements PaymentMethodInterface{
     protected $requestStack;
     protected $router;
     protected $client_factory;
+    // Assigned in __construct / setOrder. Declared so PHP 8.2+ does not
+    // raise the "creation of dynamic property" deprecation, which becomes
+    // an error in PHP 9.
+    protected $purchase_flow;
+    protected $Order;
+    protected $form;
 
     /**
      * Komoju payment constructor
@@ -77,7 +85,15 @@ class KomojuPayment implements PaymentMethodInterface{
     public function verify(){
         $result = new PaymentResult();
 
-        $config_data = $this->config_service->getConfigData($this->Order);
+        // Config row missing (plugin enabled but never saved) -> friendly
+        // error instead of a raw 500 (core does not wrap verify() in try/catch).
+        try {
+            $config_data = $this->config_service->getConfigData($this->Order);
+        } catch (\Exception $e) {
+            $result->setSuccess(false);
+            $result->setErrors([trans('komoju_payment.shopping.payment_failed')]);
+            return $result;
+        }
         if(empty($config_data['secret_key'])){
             $result->setSuccess(false);
             $result->setErrors([trans('komoju_payment.shopping.payment_failed')]);
@@ -123,8 +139,18 @@ class KomojuPayment implements PaymentMethodInterface{
         // Prepare purchase flow
         $this->purchase_flow->prepare($this->Order, new PurchaseContext());
 
-        $config_data = $this->config_service->getConfigData($this->Order);
+        // Config missing: prepare() already reserved stock, so roll back and
+        // throw PurchaseException (the type core's checkout() catches).
+        try {
+            $config_data = $this->config_service->getConfigData($this->Order);
+        } catch (\Exception $e) {
+            $this->abortCheckout(trans('komoju_payment.shopping.payment_failed'));
+        }
         $komoju_client = $this->client_factory->create($config_data['secret_key']);
+
+        // Close abandoned sessions from earlier attempts so their hosted-page
+        // URL can't be paid again (KOMOJU allows multiple payments per order).
+        $this->cancelPreviousSessions($komoju_client);
 
         $total_amount = $this->Order->getPaymentTotal();
         $currency_code = $this->Order->getCurrencyCode();
@@ -136,7 +162,8 @@ class KomojuPayment implements PaymentMethodInterface{
         $komojuPay = $this->entityManager->getRepository(KomojuPay::class)
             ->findOneBy(['Payment' => $selectedPayment]);
         $enabled_methods = $komojuPay ? [$komojuPay->getName()] : [];
-        $locale = $this->requestStack->getCurrentRequest()->getLocale() ?: 'ja';
+        $currentRequest = $this->requestStack->getCurrentRequest();
+        $locale = ($currentRequest ? $currentRequest->getLocale() : null) ?: 'ja';
 
         $return_url = $this->router->generate('Komoju42_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
         $cancel_url = $this->router->generate('Komoju42_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
@@ -148,9 +175,11 @@ class KomojuPayment implements PaymentMethodInterface{
             'cancel_url' => $cancel_url,
             'default_locale' => $locale,
             'payment_types' => $enabled_methods,
+            // external_order_num goes inside payment_data and must be unique
+            // per session (KOMOJU returns 422 if reused).
             'payment_data' => [
                 'capture' => $config_data['capture_on'] ? 'auto' : 'manual',
-                'external_order_num' => $this->formatOrderNumber($config_data),
+                'external_order_num' => $this->generateUniqueOrderNumber($config_data),
             ],
             'metadata' => [
                 'eccube_order_id' => (string)$this->Order->getId(),
@@ -159,15 +188,16 @@ class KomojuPayment implements PaymentMethodInterface{
 
         $session = $komoju_client->createSession($session_data);
 
-        if($komoju_client->getStatusCode() != 200 || empty($session['id'])){
+        if(($komoju_client->getStatusCode() != 200 || empty($session['id'])) && $komoju_client->getLastErrorCode() === 'invalid_parameter'){
+            $session_data['payment_data']['external_order_num'] = $this->generateUniqueOrderNumber($config_data);
+            $session = $komoju_client->createSession($session_data);
+        }
+
+        if($komoju_client->getStatusCode() != 200 || empty($session['id']) || empty($session['session_url'])){
             $error = $komoju_client->getLastError() ?: trans('komoju_payment.shopping.payment_failed');
-            $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error");
-
-            $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
-            $this->Order->setOrderStatus($OrderStatus);
-            $this->purchase_flow->rollback($this->Order, new PurchaseContext());
-
-            throw new PurchaseException($error);
+            $detail = $komoju_client->getLastErrorDetail();
+            $this->log_service->writeLog("createSession", $this->Order->getId(), "failed: $error" . ($detail ? " ($detail)" : ""));
+            $this->abortCheckout($error);
         }
 
         // Store session record
@@ -211,15 +241,64 @@ class KomojuPayment implements PaymentMethodInterface{
         $this->Order = $order;
     }
 
-    private function formatOrderNumber($config_data){
-        $format = !empty($config_data['order_number_format']) ? $config_data['order_number_format'] : null;
-        if(empty($format)){
-            return (string)$this->Order->getOrderNo();
+    /**
+     * Release the stock and points reserved by prepare(), then surface the error
+     * as the exception type core's checkout() renders to the shopper.
+     *
+     * @throws ShoppingException always
+     */
+    private function abortCheckout($message){
+        $OrderStatus = $this->order_status_repo->find(OrderStatus::PROCESSING);
+        $this->Order->setOrderStatus($OrderStatus);
+        $this->purchase_flow->rollback($this->Order, new PurchaseContext());
+        throw new ShoppingException($message);
+    }
+
+    /**
+     * Cancel this order's still-open KOMOJU sessions so an abandoned hosted-page
+     * URL can't be paid again. Best-effort: failures never abort the new attempt.
+     */
+    private function cancelPreviousSessions($komoju_client){
+        $priorOrders = $this->entityManager->getRepository(KomojuOrder::class)
+            ->findBy(['Order' => $this->Order]);
+        if(empty($priorOrders)){
+            return;
         }
+        foreach($priorOrders as $prior){
+            $sessionId = $prior->getKomojuSessionId();
+            if(empty($sessionId) || $prior->isCaptured() || $prior->getCanceledAt()){
+                continue;
+            }
+            try {
+                $komoju_client->cancelSession($sessionId);
+                $prior->setCanceledAt(new \DateTime());
+                $this->entityManager->persist($prior);
+                $this->entityManager->flush();
+            } catch (\Exception $e) {
+                $this->log_service->writeLog("cancelSession", $this->Order->getId(), "failed to cancel prior session $sessionId: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Build a unique external_order_num, appending a per-attempt suffix on
+     * retries so KOMOJU never sees a reused value.
+     */
+    private function generateUniqueOrderNumber($config_data){
+        // external_order_num must be unique per session; KOMOJU rejects reuse.
+        // It need not equal the EC-CUBE order id, so always append entropy.
+        // The eccube_order_id is still sent in metadata for traceability.
+        $baseNumber = rtrim($this->formatOrderNumber($config_data), '-');
+        return $baseNumber . '-' . substr(bin2hex(random_bytes(4)), 0, 8);
+    }
+
+    private function formatOrderNumber($config_data){
+        // Fixed, non-configurable format. {order_id} is the internal EC-CUBE
+        // order id, which is always present and unique per order.
         return str_replace(
             ['{order_no}', '{order_id}'],
             [(string)$this->Order->getOrderNo(), (string)$this->Order->getId()],
-            $format
+            KomojuConfig::DEFAULT_ORDER_NUMBER_FORMAT
         );
     }
 }

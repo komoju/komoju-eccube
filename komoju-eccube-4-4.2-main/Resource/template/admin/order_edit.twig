@@ -36,14 +36,14 @@
             alert('{{ 'komoju_payment.admin.order.refund_amount.error.invalid'|trans }}');
             $("#refund_amount").focus();
             return false;
-        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && parseInt(refund_amount_val, 10)>{{ Order.payment_total }}){
+        } else if(refund_option_val=={{ REFUND_PARTIAL_OPTION }} && parseInt(refund_amount_val, 10)>{{ (komoju_captured_basis - komoju_order.refundedAmount)|round(0, 'floor') }}){
             alert('{{ 'komoju_payment.admin.order.refund_amount.error.exceeded'|trans }}');
             $("#refund_amount").focus();
             return false;
         }
         var amount_to_display=formatter.format(refund_amount_val);        
         if(refund_option_val=={{ REFUND_FULL_OPTION }}) {
-            amount_to_display ='{{ Order.getPaymentTotal|round(0, 'floor')|price }}';
+            amount_to_display ='{{ (komoju_captured_basis - komoju_order.refundedAmount)|round(0, 'floor')|price }}';
         }
 
         if(confirm(amount_to_display+'{{ 'komoju_payment.admin.order.refund_action_confirm'|trans }}')){
@@ -111,12 +111,20 @@
                         <div class="row">
                             <div class="col-3">{{ 'komoju_payment.admin.order.status'|trans }}</div>
                             <div class="col">
+                                {# Status badge: priority order is refund → canceled → captured → authorized.
+                                   `canceled_at` is set by WebhookService::cancelOrder() for
+                                   payment.expired / payment.cancelled / payment.failed events,
+                                   and after a full refund. Without this elseif, a canceled or
+                                   expired authorization (e.g. an unpaid konbini that timed out)
+                                   would incorrectly continue to display "オーソリ済み". #}
                                 {% if komoju_order.IsChargeRefunded %}
-                                    {% if komoju_order.refundedAmount >= Order.payment_total %}
+                                    {% if komoju_order.refundedAmount >= komoju_captured_basis %}
                                         <span class="badge bg-danger">{{ 'komoju_payment.admin.order.status.fully_refunded'|trans }}</span>
                                     {% else %}
-                                        <span class="badge bg-warning text-dark">{{ 'komoju_payment.admin.order.status.partially_refunded'|trans({'%refunded%': komoju_order.refundedAmount|price, '%total%': Order.payment_total|price}) }}</span>
+                                        <span class="badge bg-warning text-dark">{{ 'komoju_payment.admin.order.status.partially_refunded'|trans({'%refunded%': komoju_order.refundedAmount|price, '%total%': komoju_captured_basis|price}) }}</span>
                                     {% endif %}
+                                {% elseif komoju_order.canceledAt %}
+                                    <span class="badge bg-secondary">{{ 'komoju_payment.admin.order.status.canceled'|trans }}</span>
                                 {% elseif komoju_order.Captured %}
                                     <span class="badge bg-success">{{ 'komoju_payment.admin.order.status.captured'|trans({'%date%': komoju_order.capturedAt|date('Y-m-d')}) }}</span>
                                 {% else %}
@@ -133,13 +141,14 @@
                             <div class="col-3">{{ 'komoju_payment.admin.order.actions'|trans }}</div>
                             <div class="col row ml-0">
                                 {% if komoju_order.Captured==false %}
-                                    <form method="post" action="{{ url('Komoju42_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_payment.admin.order.capture_action_confirm'|trans({'%charge_amount%':Order.getPaymentTotal|price })}}');">
+                                    <form method="post" action="{{ url('Komoju42_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_payment.admin.order.capture_action_confirm'|trans }}');">
                                         <input type="hidden" name="_token" value="{{ csrf_token('Komoju_capture_' ~ Order.id) }}">
                                         <button type="submit" class="btn btn-ec-regular komoju_txn_action_btn">
                                             {{ 'komoju_payment.admin.order.capture_action'|trans }}
                                         </button>
                                     </form>
-                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.IsChargeRefunded==false %}
+                                {% elseif komoju_order.Captured==true and komoju_order.KomojuPaymentId!='' and komoju_order.refundedAmount < komoju_captured_basis %}
+                                    {% set remaining = komoju_captured_basis - komoju_order.refundedAmount %}
                                     <div class="col-6 ml-n-15">
                                         <select id="refund_option" class="form-control">
                                             <option value="{{ REFUND_FULL_OPTION }}">{{ 'komoju_payment.admin.order.refund_option.full_refund'|trans }}</option>                                            
@@ -148,12 +157,12 @@
                                     </div>
                                     <div class="col-6">
                                         <div id="refund_amount_contained" style="display: none;">
-                                            <input type="number" id="refund_amount" min="1" max="{{ Order.payment_total|round(0, 'floor') }}" placeholder="{{ 'komoju_payment.admin.order.refund_amount_placeholder'|trans }}" class="form-control" />
+                                            <input type="number" id="refund_amount" min="1" max="{{ remaining|round(0, 'floor') }}" placeholder="{{ 'komoju_payment.admin.order.refund_amount_placeholder'|trans }}" class="form-control" />
                                             <br/>
                                         </div>
                                         <a id="refund_btn" href="javascript:void(0);"  class="btn btn-ec-regular komoju_txn_action_btn" onclick="refundConfirmDialog();">{{ 'komoju_payment.admin.order.refund_action'|trans }}</a>
                                     </div>
-                                {% elseif komoju_order.IsChargeRefunded %}
+                                {% elseif komoju_order.refundedAmount >= komoju_captured_basis %}
                                     <span style="background-color: #fff; color: #C04949; border-color: #C04949">{{ 'komoju_payment.admin.order.status.refunded'|trans }}</span>
                                 {% endif %}
                             </div>
@@ -182,7 +191,11 @@
                                     <td>
                                         {% set msg = log.msg %}
                                         {% set api = log.api %}
-                                        {% if msg starts with 'purchase completed' %}
+                                        {% if msg starts with 'payment authorized' %}
+                                            <i class="fa fa-check text-info me-1"></i>{{ 'komoju_payment.admin.order.timeline.authorized'|trans }}
+                                        {% elseif msg starts with 'order accepted' %}
+                                            <i class="fa fa-clock text-info me-1"></i>{{ 'komoju_payment.admin.order.timeline.order_accepted'|trans }}
+                                        {% elseif msg starts with 'purchase completed' %}
                                             <i class="fa fa-shopping-cart text-success me-1"></i>{{ 'komoju_payment.admin.order.timeline.purchase_completed'|trans }}
                                         {% elseif msg starts with 'payment captured' or msg starts with 'capture successful' %}
                                             <i class="fa fa-check-circle text-success me-1"></i>{{ 'komoju_payment.admin.order.timeline.captured'|trans }}
@@ -202,6 +215,9 @@
                                             <i class="fa fa-exclamation-circle text-danger me-1"></i>{{ 'komoju_payment.admin.order.timeline.failed'|trans }}
                                         {% elseif msg starts with 'capture failed' %}
                                             <i class="fa fa-exclamation-circle text-danger me-1"></i>{{ 'komoju_payment.admin.order.timeline.capture_failed'|trans }}
+                                        {% elseif msg starts with 'refund rejected' %}
+                                            {% set reason = msg|split('refund rejected: ')|last %}
+                                            <i class="fa fa-ban text-danger me-1"></i>{{ 'komoju_payment.admin.order.timeline.refund_rejected'|trans({'%reason%': reason}) }}
                                         {% elseif msg starts with 'rejected: already refunded' %}
                                             <i class="fa fa-ban text-secondary me-1"></i>{{ 'komoju_payment.admin.order.timeline.already_refunded'|trans }}
                                         {% elseif msg starts with 'payment status changed to' %}

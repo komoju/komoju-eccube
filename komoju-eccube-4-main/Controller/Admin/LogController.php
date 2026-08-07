@@ -92,7 +92,25 @@ class LogController extends AbstractController
         return [
             'pagination' => $pagination,
             'searchForm' => $searchForm->createView(),
+            // Number of operational (non-protected) logs the "delete
+            // operational logs" button would remove. Order-history events
+            // (is_protected = 1) are never counted/deleted here.
+            'deletable_log_count' => $this->countDeletableLogs(),
         ];
+    }
+
+    /**
+     * Count operational (non-protected) logs — the rows the bulk-delete button
+     * is allowed to remove. Order-timeline history (is_protected = 1) is excluded.
+     */
+    private function countDeletableLogs(): int
+    {
+        return (int) $this->entityManager->createQueryBuilder()
+            ->select('COUNT(s.id)')
+            ->from('Plugin\Komoju\Entity\KomojuLog', 's')
+            ->where('s.is_protected = 0 OR s.is_protected IS NULL')
+            ->getQuery()
+            ->getSingleScalarResult();
     }
 
     /**
@@ -150,9 +168,13 @@ class LogController extends AbstractController
                 trans('komoju_payment.admin.log.label.msg'),
             ]);
 
-            $results = $qb->setMaxResults(50000)->getQuery()->iterate();
-            foreach ($results as $row) {
-                $log = $row[0];
+            // Query::iterate() was deprecated in Doctrine ORM 2.7 and removed
+            // in 3.0; toIterable() is the replacement. Note the iteration shape
+            // also changed: iterate() yielded [$entity] (1-element arrays) so
+            // the old code did `$log = $row[0]`, while toIterable() yields the
+            // entity directly.
+            $results = $qb->setMaxResults(50000)->getQuery()->toIterable();
+            foreach ($results as $log) {
                 fputcsv($handle, [
                     $log->getCreatedAt()->format('Y-m-d H:i:s'),
                     $log->getApi(),

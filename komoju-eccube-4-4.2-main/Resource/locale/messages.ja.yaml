@@ -8,6 +8,17 @@ komoju_payment.admin.config.section.credentials: API認証情報
 komoju_payment.admin.config.section.payment: 決済設定
 komoju_payment.admin.config.section.webhook: Webhook設定
 komoju_payment.admin.config.section.advanced: ログ・詳細設定
+komoju_payment.admin.config.section.maintenance: メンテナンス
+komoju_payment.admin.config.repair.label: KOMOJUの決済情報を再紐付け
+komoju_payment.admin.config.repair.hint: 一度プラグインをアンインストールして再インストールした後、過去の注文に支払方法が表示されない場合は、こちらから再紐付けできます。アンインストール時のバックアップから過去のKOMOJU決済情報を復元し、現在のKOMOJU決済方法に再紐付けします。
+komoju_payment.admin.config.repair.detected: アンインストール時に保存されたKOMOJU決済データが見つかりました。メンテナンスセクションから再紐付けを実行できます。
+komoju_payment.admin.config.repair.banner_action: メンテナンスを開く
+komoju_payment.admin.config.repair.button: 再紐付けを実行
+komoju_payment.admin.config.repair.confirm: 過去の注文を現在のKOMOJU決済情報に再紐付けします。この操作は取り消せません。続行してもよろしいですか？
+komoju_payment.admin.config.repair.in_progress: 再紐付け中...
+komoju_payment.admin.config.repair.done: '再紐付けが完了しました。最新の情報を表示するにはページを再読み込みしてください。'
+komoju_payment.admin.config.repair.failed: 再紐付けに失敗しました。
+komoju_payment.admin.config.repair.success: '再紐付けが完了しました。注文 %orders_relinked% 件を再紐付け、%orders_restored% 件のKOMOJU注文データを復元、%orphans_deleted% 件の不要な支払方法を削除しました。最新の情報を表示するにはページを再読み込みしてください。'
 komoju_payment.admin.config.label:secret_key: 非公開鍵
 komoju_payment.admin.config.label:publishable_key: 公開用鍵
 komoju_payment.admin.config.label:merchant_uuid: クライアント UUID
@@ -51,6 +62,7 @@ komoju_payment.admin.order.status.captured: '%date% に売上確定'
 komoju_payment.admin.order.status.fully_refunded: 全額返金済み
 komoju_payment.admin.order.status.partially_refunded: '一部返金済み（%refunded% / %total%）'
 komoju_payment.admin.order.status.refunded: 払い戻し済み
+komoju_payment.admin.order.status.canceled: キャンセル済み
 komoju_payment.admin.order.refunded_amount: 返金額
 komoju_payment.admin.order.error.invalid_request: 無効なリクエスト
 komoju_payment.admin.order.error.refunded: すでに返金されています
@@ -58,10 +70,13 @@ komoju_payment.admin.order.error.refund_option.invalid: 返金オプションが
 komoju_payment.admin.order.error.already_captured: 支払いは既に取得されています
 komoju_payment.admin.order.error.not_credit_card: 有効なクレジットカードタイプではありません。
 komoju_payment.admin.order.error.capture_failed: キャプチャ失敗
+komoju_payment.admin.order.error.amount_mismatch: "売上処理を中止しました。\n受注金額（%order_total%円）がオーソリ金額（%authorized%円）と一致しません。\n対処法1: 受注金額をオーソリ金額（%authorized%円）に戻してから売上処理を行ってください。\n対処法2: 金額を変更する場合は、この注文を取り消し、新しい注文として購入し直していただく必要があります。"
 komoju_payment.admin.order.refund.success: 正常に返金されました
 komoju_payment.admin.order.capture_action: 支払いを受け取る
-komoju_payment.admin.order.capture_action_confirm: '%charge_amount%を請求してもよろしいですか？'
+komoju_payment.admin.order.capture_action_confirm: 'KOMOJUのオーソリ金額を請求します。受注金額と一致することを確認しましたか？よろしいですか？'
 komoju_payment.admin.order.capture_success: 支払いが正常に取得されました
+komoju_payment.admin.order.timeline.authorized: オーソリ済み（入金待ち）
+komoju_payment.admin.order.timeline.order_accepted: 注文受付済み（入金待ち）
 komoju_payment.admin.order.timeline.purchase_completed: 購入完了
 komoju_payment.admin.order.timeline.customer_cancelled: お客様によるキャンセル
 komoju_payment.admin.order.timeline.error: エラーが発生しました
@@ -72,6 +87,7 @@ komoju_payment.admin.order.timeline.cancelled: 決済キャンセル
 komoju_payment.admin.order.timeline.expired: 決済期限切れ
 komoju_payment.admin.order.timeline.failed: 決済失敗
 komoju_payment.admin.order.timeline.capture_failed: 売上処理失敗
+komoju_payment.admin.order.timeline.refund_rejected: '返金失敗: %reason% KOMOJUダッシュボードから返金を行ってください。'
 komoju_payment.admin.order.timeline.already_refunded: 返金済みのため処理不可
 komoju_payment.admin.order.timeline.status_changed: '決済ステータスが「%status%」に変更'
 
@@ -90,18 +106,17 @@ komoju_payment.admin.log.search.api.refund: 払い戻し
 komoju_payment.admin.log.search.api.retrieve: 取得
 komoju_payment.admin.log.search.result_count: '%count%件'
 komoju_payment.admin.log.export_csv: CSVエクスポート
-komoju_payment.admin.log.delete_all: ログを全件削除
-komoju_payment.admin.log.delete_all.confirm: すべてのログを削除してよろしいですか？この操作は元に戻せません。
-komoju_payment.admin.log.delete_all.success: すべてのログを削除しました。
-komoju_payment.admin.log.delete_all.nothing: 削除対象のログがありません。注文タイムラインのログは保護されています。
+komoju_payment.admin.log.delete_all: 操作ログを削除
+komoju_payment.admin.log.delete_all.confirm: 操作ログ（エラー・デバッグログ）を削除します。注文履歴（イベントログ）は保持されます。この操作は元に戻せません。続行してもよろしいですか？
+komoju_payment.admin.log.delete_all.success: 操作ログを削除しました。注文履歴は保持されています。
+komoju_payment.admin.log.delete_all.nothing: 削除できる操作ログがありません。注文履歴（イベントログ）は保持されます。
+komoju_payment.admin.log.delete_all.hint: '削除可能な操作ログ: %count% 件（注文履歴は含まれません）'
+komoju_payment.admin.log.delete_all.disabled: 削除できる操作ログがありません。注文履歴（イベントログ）は削除対象外です。
 komoju_payment.admin.config.label.log_retention_days: ログ保持期間
 komoju_payment.admin.config.label.log_retention_days_hint: 日間（空欄の場合、ログを無期限に保持します）
 komoju_payment.admin.config.label.log_retention_days_tooltip: ログページを表示した際に、設定した保持期間を超えた古いログが自動的に削除されます。
 komoju_payment.admin.config.label.logging_enabled: ログ記録を有効にする
 komoju_payment.admin.config.label.logging_enabled_hint: 無効にすると、新しいログは記録されません。
-komoju_payment.admin.config.label.order_number_format: 注文番号フォーマット
-komoju_payment.admin.config.label.order_number_format_hint: "{order_no}で注文番号、{order_id}で内部IDに置換されます。空欄の場合はデフォルトの注文番号が使用されます。"
-komoju_payment.admin.config.label.order_number_format_tooltip: "KOMOJUに送信する注文番号をカスタマイズします。例：SHOP-{order_no}"
 
 komoju_payment.admin.config.back: プラグイン一覧
 komoju_payment.badge.required: 必須
@@ -110,6 +125,7 @@ komoju_payment.shopping.verify.error.payment_total.too_small: 支払額が小さ
 komoju_payment.shopping.verify.error.payment_total.too_much: 支払額が多すぎです。
 komoju_payment.shopping.payment_failed: KOMOJU支払いが失敗しました
 komoju_payment.shopping.payment_cancelled: お支払いがキャンセルされました。
+komoju_payment.shopping.payment_pending: お支払いを確認しています。完了までしばらくお待ちください。
 komoju_payment.shopping.komoju_method_label: KOMOJU決済
 komoju_payment.shopping.not_enough_error: 残高が不足です。
 
@@ -139,7 +155,7 @@ komoju_payment.error.invalid_payment_type: 支払い方法が無効です。
 komoju_payment.error.invalid_token: トークンの値が不正です。
 komoju_payment.error.invalid_currency: 指定された通貨が不正です。
 komoju_payment.error.not_refundable: 返金できない支払いです。
-komoju_payment.error.not_capturable: 入金できない決済です。
+komoju_payment.error.not_capturable: この決済は売上処理できません。この決済方法は「認証のみ」に対応していないか、「認証と売上処理」設定で作成された決済です。KOMOJU管理画面で詳細を確認してください。
 komoju_payment.error.not_cancellable: キャンセルできない支払いです。
 komoju_payment.error.not_chargebackable: チャージバックできない支払いです。
 komoju_payment.error.fraudulent: 不正行為の疑いのある支払いです。

@@ -18,9 +18,18 @@
                                 </a>
                                 <form method="post" action="{{ url('Komoju42_admin_log_delete_all') }}" id="form-delete-all-logs" class="d-inline ml-2">
                                     <input type="hidden" name="_token" value="{{ csrf_token('komoju_log_delete_all') }}">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete-all-logs">
-                                        <i class="fas fa-trash"></i> {{ 'komoju_payment.admin.log.delete_all'|trans }}
-                                    </button>
+                                    {# Wrap in a span so the tooltip shows even when the button is
+                                       disabled: a disabled <button> does not emit hover events, so
+                                       the title/tooltip must live on a non-disabled wrapper, and the
+                                       button gets pointer-events:none to let hover reach the span. #}
+                                    <span class="d-inline-block" tabindex="0"
+                                        data-bs-toggle="tooltip" data-bs-placement="top"
+                                        title="{% if deletable_log_count > 0 %}{{ 'komoju_payment.admin.log.delete_all.hint'|trans({ '%count%': deletable_log_count }) }}{% else %}{{ 'komoju_payment.admin.log.delete_all.disabled'|trans }}{% endif %}">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" id="btn-delete-all-logs"
+                                            {{ deletable_log_count > 0 ? '' : 'disabled style="pointer-events:none;"' }}>
+                                            <i class="fas fa-trash"></i> {{ 'komoju_payment.admin.log.delete_all'|trans }}{% if deletable_log_count > 0 %} ({{ deletable_log_count }}){% endif %}
+                                        </button>
+                                    </span>
                                 </form>
                             </div>
                         </div>
@@ -122,6 +131,17 @@
                 $("#form-delete-all-logs").submit();
             }
         });
+        // Initialise Bootstrap tooltips (used by the delete button wrapper to
+        // explain, on hover, why the button is enabled/disabled). Works whether
+        // Bootstrap is exposed as `bootstrap` (BS5) or via jQuery (.tooltip).
+        try {
+            var nodes = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            if (window.bootstrap && window.bootstrap.Tooltip) {
+                nodes.forEach(function(el){ new window.bootstrap.Tooltip(el); });
+            } else if (typeof $.fn.tooltip === 'function') {
+                $('[data-bs-toggle="tooltip"]').tooltip();
+            }
+        } catch (e) { /* native title attribute still shows as fallback */ }
     });
 </script>
 {% endblock %}

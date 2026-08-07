@@ -9,7 +9,15 @@ abstract class WebhookSignature
      */
     public static function verifyHeader($payload, $sig_header, $secret)
     {
-        
+        // A missing X-Komoju-Signature header arrives as null from Symfony's
+        // HeaderBag::get(). hash_equals() / strlen() in secureCompare both
+        // raise TypeError on null in PHP 8+, which WebhookController's
+        // try/catch(\Exception) does NOT catch (TypeError extends \Error).
+        // Coerce to an empty string so the comparison fails cleanly and the
+        // controller can return 400 / log a verification failure.
+        if ($sig_header === null) {
+            return false;
+        }
         $expectedSignature = self::computeSignature($payload, $secret);
         return self::secureCompare($expectedSignature, $sig_header);
     }
