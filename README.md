@@ -32,8 +32,8 @@ Payment methods enabled in your KOMOJU account are automatically synced to EC-CU
 
 ## Installation
 
-1. Download the ZIP for your EC-CUBE version from [Releases](https://github.com/komoju/komoju-eccube/releases) (or zip the appropriate directory yourself).
-2. In the EC-CUBE admin panel, go to **Owner's Store > Plugins > Upload and Install** and upload the ZIP.
+1. Download the plugin archive from [Releases](https://github.com/komoju/komoju-eccube/releases) (or archive the repository root yourself).
+2. In the EC-CUBE admin panel, go to **Owner's Store > Plugins > Upload and Install** and upload the archive.
 3. Enable the plugin and clear the cache (**Content Management > Cache Management**).
 4. Go to **KOMOJU Payment > Settings** and enter your API keys from the [KOMOJU dashboard](https://app.komoju.com).
 5. Click **Connect to KOMOJU** to sync available payment methods.
@@ -76,4 +76,4 @@ Use [KOMOJU test cards](https://docs.komoju.com/en/api/overview/#payment_details
 
 ## License
 
-See the individual plugin directories for license details.
+See [LICENSE.txt](LICENSE.txt) for license details.
