@@ -9,12 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  lint-komoju:
-    name: Lint (EC-CUBE 4.0)
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: komoju-eccube-4-main
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -23,42 +20,10 @@ jobs:
           tools: php-parallel-lint/php-parallel-lint
       - run: parallel-lint --exclude vendor .
 
-  lint-komoju42:
-    name: Lint (EC-CUBE 4.2)
+  test:
+    name: Test
+    needs: lint
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: komoju-eccube-4-4.2-main
-    steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.1'
-          tools: php-parallel-lint/php-parallel-lint
-      - run: parallel-lint --exclude vendor .
-
-  test-komoju:
-    name: Test (EC-CUBE 4.0)
-    needs: lint-komoju
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: komoju-eccube-4-main
-    steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.1'
-      - run: composer install --no-interaction
-      - run: vendor/bin/phpunit
-
-  test-komoju42:
-    name: Test (EC-CUBE 4.2)
-    needs: lint-komoju42
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: komoju-eccube-4-4.2-main
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
