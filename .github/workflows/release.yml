@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -36,7 +36,7 @@ jobs:
             VERSION="${{ inputs.version }}"
           else
             TAG="${GITHUB_REF#refs/tags/}"
-            VERSION="${TAG#v.}"
+            VERSION="${TAG#v}"
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
