@@ -148,9 +148,9 @@ class KomojuPayment implements PaymentMethodInterface{
         }
         $komoju_client = $this->client_factory->create($config_data['secret_key']);
 
-        // Close abandoned sessions from earlier attempts so their hosted-page
-        // URL can't be paid again (KOMOJU allows multiple payments per order).
-        $this->cancelPreviousSessions($komoju_client);
+        if(!$this->cancelPreviousSessions($komoju_client)){
+            $this->abortCheckout(trans('komoju_payment.shopping.payment_failed'));
+        }
 
         $total_amount = $this->Order->getPaymentTotal();
         $currency_code = $this->Order->getCurrencyCode();
@@ -165,8 +165,10 @@ class KomojuPayment implements PaymentMethodInterface{
         $currentRequest = $this->requestStack->getCurrentRequest();
         $locale = ($currentRequest ? $currentRequest->getLocale() : null) ?: 'ja';
 
-        $return_url = $this->router->generate('Komoju42_session_return', [], UrlGeneratorInterface::ABSOLUTE_URL);
-        $cancel_url = $this->router->generate('Komoju42_session_cancel', [], UrlGeneratorInterface::ABSOLUTE_URL);
+        $callbackToken = bin2hex(random_bytes(32));
+        $callbackParams = ['state' => $callbackToken];
+        $return_url = $this->router->generate('Komoju42_session_return', $callbackParams, UrlGeneratorInterface::ABSOLUTE_URL);
+        $cancel_url = $this->router->generate('Komoju42_session_cancel', $callbackParams, UrlGeneratorInterface::ABSOLUTE_URL);
 
         $session_data = [
             'amount' => $total_amount,
@@ -204,9 +206,16 @@ class KomojuPayment implements PaymentMethodInterface{
         $komoju_order = new KomojuOrder;
         $komoju_order->setOrder($this->Order);
         $komoju_order->setKomojuSessionId($session['id']);
+        $komoju_order->setExpectedAmount($total_amount);
+        $komoju_order->setExpectedCurrency($currency_code);
+        $komoju_order->setCallbackTokenHash(hash('sha256', $callbackToken));
         $komoju_order->setCreatedAt(new \DateTime());
         $this->entityManager->persist($komoju_order);
         $this->entityManager->flush();
+        $this->requestStack->getSession()->set(
+            'komoju.callback.' . $session['id'],
+            hash('sha256', $callbackToken)
+        );
 
         // Redirect to KOMOJU hosted payment page
         $session_url = $session['session_url'];
@@ -254,15 +263,11 @@ class KomojuPayment implements PaymentMethodInterface{
         throw new ShoppingException($message);
     }
 
-    /**
-     * Cancel this order's still-open KOMOJU sessions so an abandoned hosted-page
-     * URL can't be paid again. Best-effort: failures never abort the new attempt.
-     */
     private function cancelPreviousSessions($komoju_client){
         $priorOrders = $this->entityManager->getRepository(KomojuOrder::class)
             ->findBy(['Order' => $this->Order]);
         if(empty($priorOrders)){
-            return;
+            return true;
         }
         foreach($priorOrders as $prior){
             $sessionId = $prior->getKomojuSessionId();
@@ -271,13 +276,18 @@ class KomojuPayment implements PaymentMethodInterface{
             }
             try {
                 $komoju_client->cancelSession($sessionId);
+                if($komoju_client->getStatusCode() !== 200){
+                    throw new \RuntimeException('KOMOJU did not confirm cancellation.');
+                }
                 $prior->setCanceledAt(new \DateTime());
                 $this->entityManager->persist($prior);
                 $this->entityManager->flush();
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 $this->log_service->writeLog("cancelSession", $this->Order->getId(), "failed to cancel prior session $sessionId: " . $e->getMessage());
+                return false;
             }
         }
+        return true;
     }
 
     /**
