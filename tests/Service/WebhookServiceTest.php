@@ -82,6 +82,28 @@ class WebhookServiceTest extends TestCase
         $this->service->paymentCaptured($this->makeWebhookObject('pay_1'));
     }
 
+    public function testCapturedReplayDoesNotReviveCancelledOrder()
+    {
+        $cancelled = new OrderStatus();
+        $cancelled->setId(OrderStatus::CANCEL);
+        $order = new Order();
+        $order->setId(42);
+        $order->setOrderStatus($cancelled);
+
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_refunded');
+        $attempt->setCapturedAt(new \DateTime('2026-01-01T00:00:00Z'));
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+        $this->purchaseFlow->expects($this->never())->method('commit');
+
+        $this->service->paymentCaptured($this->makeWebhookObject('pay_refunded', [
+            'captured_at' => '2026-01-01T00:00:00Z',
+        ]));
+
+        $this->assertSame(OrderStatus::CANCEL, $order->getOrderStatus()->getId());
+    }
+
     public function testCapturedSuccess()
     {
         $orderStatus = new OrderStatus();
@@ -420,34 +442,26 @@ class WebhookServiceTest extends TestCase
         $this->assertNotNull($komojuOrder->getCanceledAt());
     }
 
-    public function testCancelPaidOrderUsesStateMachine()
+    public function testCancelPaidOrderIsIgnored()
     {
-        // A finalized (PAID) order CAN transition via the state machine, which
-        // fires the workflow cancel event so core restores stock/points.
         $orderStatus = new OrderStatus();
         $orderStatus->setId(OrderStatus::PAID);
 
         $eccubeOrder = new Order();
         $eccubeOrder->setId(79);
         $eccubeOrder->setOrderStatus($orderStatus);
-        $eccubeOrder->setOrderItems([]);
 
         $komojuOrder = new KomojuOrder();
         $komojuOrder->setOrder($eccubeOrder);
-
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
-        $cancelStatus = new OrderStatus();
-        $cancelStatus->setId(OrderStatus::CANCEL);
-        $this->entityManager->method('find')->willReturn($cancelStatus);
-
-        $this->orderStateMachine->method('can')->willReturn(true);
-        $this->orderStateMachine->expects($this->once())->method('apply');
+        $this->orderStateMachine->expects($this->never())->method('apply');
         $this->purchaseFlow->expects($this->never())->method('rollback');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_1'));
 
-        $this->assertNotNull($komojuOrder->getCanceledAt());
+        $this->assertNull($komojuOrder->getCanceledAt());
+        $this->assertSame(OrderStatus::PAID, $eccubeOrder->getOrderStatus()->getId());
     }
 
     // --- paymentUpdated ---
@@ -573,6 +587,11 @@ class WebhookServiceTest extends TestCase
         $newStatus = new OrderStatus();
         $newStatus->setId(OrderStatus::NEW);
         $this->entityManager->method('find')->willReturn($newStatus);
+        $this->entityManager->method('refresh')->willReturnCallback(function ($entity) use ($newStatus) {
+            if($entity instanceof Order){
+                $entity->setOrderStatus($newStatus);
+            }
+        });
 
         $object = $this->makeWebhookObject('pay_auth_2');
         $this->service->paymentAuthorized($object);
@@ -603,7 +622,7 @@ class WebhookServiceTest extends TestCase
         $this->assertEquals(OrderStatus::NEW, $eccubeOrder->getOrderStatus()->getId());
     }
 
-    public function testAuthorizedFallbackToMetadata()
+    public function testAuthorizedResolvesExactSession()
     {
         $orderStatus = new OrderStatus();
         $orderStatus->setId(OrderStatus::PENDING);
@@ -614,34 +633,24 @@ class WebhookServiceTest extends TestCase
 
         $komojuOrder = new KomojuOrder();
         $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuSessionId('sess_exact');
 
-        $orderRepo = $this->createMock(StubRepository::class);
-        $orderRepo->method('find')->willReturn($eccubeOrder);
-
-        // findOneBy: payment_id lookup returns null, Order lookup returns the record
         $komojuRepo = $this->createMock(StubRepository::class);
-        $komojuRepo->method('findOneBy')->willReturnCallback(function ($criteria, $orderBy = null) use ($komojuOrder) {
-            if (isset($criteria['komoju_payment_id'])) {
-                return null;
-            }
-            if (isset($criteria['Order'])) {
+        $komojuRepo->method('findOneBy')->willReturnCallback(function ($criteria) use ($komojuOrder) {
+            if (isset($criteria['komoju_session_id']) && $criteria['komoju_session_id'] === 'sess_exact') {
                 return $komojuOrder;
             }
             return null;
         });
 
         $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $em->method('getRepository')->willReturnCallback(function ($class) use ($orderRepo, $komojuRepo) {
-            if ($class === Order::class) return $orderRepo;
-            if ($class === KomojuOrder::class) return $komojuRepo;
-            return $this->createMock(StubRepository::class);
-        });
-
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->method('executeStatement')->willReturn(1);
+        $em->method('getConnection')->willReturn($connection);
+        $em->method('getRepository')->willReturn($komojuRepo);
         $newStatus = new OrderStatus();
         $newStatus->setId(OrderStatus::NEW);
         $em->method('find')->willReturn($newStatus);
-        $em->method('persist')->willReturn(null);
-        $em->method('flush')->willReturn(null);
 
         $service = new WebhookService(
             $em,
@@ -650,24 +659,29 @@ class WebhookServiceTest extends TestCase
             $this->purchaseFlow
         );
 
-        $object = (object) ['data' => (object) [
-            'id' => 'pay_new_1',
-            'metadata' => (object) ['eccube_order_id' => '93'],
-            'payment_details' => (object) ['type' => 'bank_transfer'],
-        ]];
-
+        $object = $this->makeWebhookObject('pay_new_1', [
+            'session' => 'sess_exact',
+            'metadata' => (object)['eccube_order_id' => '93'],
+            'payment_details' => (object)['type' => 'bank_transfer'],
+        ]);
         $service->paymentAuthorized($object);
 
-        $this->assertEquals('pay_new_1', $komojuOrder->getKomojuPaymentId());
-        $this->assertEquals('bank_transfer', $komojuOrder->getType());
+        $this->assertSame('pay_new_1', $komojuOrder->getKomojuPaymentId());
+        $this->assertSame('bank_transfer', $komojuOrder->getType());
     }
 
-    public function testCancelEventFallsBackToMetadataWhenPaymentIdNotStored()
+    public function testAuthorizedRejectsMetadataOnlyCorrelation()
     {
-        // payment.failed/expired can arrive before komoju_payment_id is stored
-        // (customer never returned). handleCancelEvent must use the
-        // metadata.eccube_order_id fallback, find the order, and cancel it
-        // rather than silently leaving it stuck in PENDING.
+        $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
+        $this->entityManager->expects($this->never())->method('persist');
+
+        $this->service->paymentAuthorized($this->makeWebhookObject('pay_metadata', [
+            'metadata' => (object)['eccube_order_id' => '93'],
+        ]));
+    }
+
+    public function testCancelEventResolvesExactSession()
+    {
         $orderStatus = new OrderStatus();
         $orderStatus->setId(OrderStatus::PENDING);
 
@@ -678,31 +692,93 @@ class WebhookServiceTest extends TestCase
 
         $komojuOrder = new KomojuOrder();
         $komojuOrder->setOrder($eccubeOrder);
-        // NOTE: no komoju_payment_id set.
+        $komojuOrder->setKomojuSessionId('sess_failed');
 
-        $orderRepo = $this->createMock(StubRepository::class);
-        $orderRepo->method('find')->willReturn($eccubeOrder);
-
-        $komojuRepo = $this->createMock(StubRepository::class);
-        $komojuRepo->method('findOneBy')->willReturnCallback(function ($criteria) use ($komojuOrder) {
+        $this->komojuOrderRepo->method('findOneBy')->willReturnCallback(function ($criteria) use ($komojuOrder) {
             if (isset($criteria['komoju_payment_id'])) {
-                return null; // not stored yet
+                return null;
             }
-            if (isset($criteria['Order'])) {
-                return $komojuOrder; // metadata fallback resolves the order
+            if (isset($criteria['komoju_session_id']) || isset($criteria['Order'])) {
+                return $komojuOrder;
             }
             return null;
         });
 
-        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $em->method('getRepository')->willReturnCallback(function ($class) use ($orderRepo, $komojuRepo) {
-            if ($class === Order::class) return $orderRepo;
-            if ($class === KomojuOrder::class) return $komojuRepo;
-            return $this->createMock(StubRepository::class);
-        });
         $cancelStatus = new OrderStatus();
         $cancelStatus->setId(OrderStatus::CANCEL);
-        $em->method('find')->willReturn($cancelStatus);
+        $this->entityManager->method('find')->willReturn($cancelStatus);
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+
+        $this->service->paymentFailed($this->makeWebhookObject('pay_failed', [
+            'session' => 'sess_failed',
+        ]));
+
+        $this->assertSame(OrderStatus::CANCEL, $eccubeOrder->getOrderStatus()->getId());
+        $this->assertNotNull($komojuOrder->getCanceledAt());
+    }
+
+    public function testStaleAttemptCannotCancelCurrentOrder()
+    {
+        $status = new OrderStatus();
+        $status->setId(OrderStatus::PENDING);
+        $order = new Order();
+        $order->setId(94);
+        $order->setOrderStatus($status);
+
+        $oldAttempt = new KomojuOrder();
+        $oldAttempt->setOrder($order);
+        $oldAttempt->setKomojuPaymentId('pay_old');
+        $oldAttempt->setKomojuSessionId('sess_old');
+        $currentAttempt = new KomojuOrder();
+        $currentAttempt->setOrder($order);
+        $currentAttempt->setKomojuSessionId('sess_current');
+
+        $this->komojuOrderRepo->method('findOneBy')->willReturnCallback(
+            function ($criteria) use ($oldAttempt, $currentAttempt) {
+                if (isset($criteria['komoju_payment_id'])) {
+                    return $oldAttempt;
+                }
+                if (isset($criteria['Order'])) {
+                    return $currentAttempt;
+                }
+                return null;
+            }
+        );
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->orderStateMachine->expects($this->never())->method('apply');
+
+        $this->service->paymentCanceled($this->makeWebhookObject('pay_old', [
+            'session' => 'sess_old',
+        ]));
+
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertNull($oldAttempt->getCanceledAt());
+    }
+
+    public function testConcurrentCaptureBlocksCancellation()
+    {
+        $status = new OrderStatus();
+        $status->setId(OrderStatus::PENDING);
+        $order = new Order();
+        $order->setId(96);
+        $order->setOrderStatus($status);
+
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_race');
+        $id = new \ReflectionProperty(KomojuOrder::class, 'id');
+        if(PHP_VERSION_ID < 80100){
+            $id->setAccessible(true);
+        }
+        $id->setValue($attempt, 12);
+
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($attempt);
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->method('executeStatement')->willReturn(0);
+        $em = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $em->method('getConnection')->willReturn($connection);
+        $em->method('getRepository')->willReturn($repo);
 
         $service = new WebhookService(
             $em,
@@ -710,23 +786,38 @@ class WebhookServiceTest extends TestCase
             $this->logService,
             $this->purchaseFlow
         );
+        $this->purchaseFlow->expects($this->never())->method('rollback');
 
-        // A PENDING order (customer never returned) must be released via
-        // purchase-flow rollback + forced CANCEL, not the state machine.
-        $this->orderStateMachine->expects($this->never())->method('apply');
-        $this->purchaseFlow->expects($this->once())->method('rollback');
+        $service->paymentCanceled($this->makeWebhookObject('pay_race'));
 
-        $object = (object) ['data' => (object) [
-            'id' => 'pay_never_stored',
-            'metadata' => (object) ['eccube_order_id' => '93'],
-        ]];
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertNull($attempt->getCanceledAt());
+    }
 
-        $service->paymentFailed($object);
+    public function testAmountMismatchCannotAuthorizeOrder()
+    {
+        $status = new OrderStatus();
+        $status->setId(OrderStatus::PENDING);
+        $order = new Order();
+        $order->setId(95);
+        $order->setOrderStatus($status);
 
-        $this->assertSame(OrderStatus::CANCEL, $eccubeOrder->getOrderStatus()->getId(),
-            'cancel event must resolve the order via metadata and force CANCEL');
-        $this->assertNotNull($komojuOrder->getCanceledAt(),
-            'cancel event must resolve the order via metadata and cancel it');
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_wrong_amount');
+        $attempt->setKomojuSessionId('sess_amount');
+        $attempt->setExpectedAmount(1000);
+        $attempt->setExpectedCurrency('JPY');
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+        $this->purchaseFlow->expects($this->never())->method('commit');
+
+        $this->service->paymentAuthorized($this->makeWebhookObject('pay_wrong_amount', [
+            'session' => 'sess_amount',
+            'amount' => 1,
+            'currency' => 'JPY',
+        ]));
+
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
     }
 
     // --- partial refund handling ---
@@ -834,7 +925,7 @@ class WebhookServiceTest extends TestCase
         $this->assertEquals(1000, $komojuOrder->getRefundedAmount());
     }
 
-    public function testRefundedSkipsLogWhenAmountUnchanged()
+    public function testRefundedLosingCasKeepsEntityUnchanged()
     {
         $orderStatus = new OrderStatus();
         $orderStatus->setId(OrderStatus::PAID);
@@ -848,13 +939,11 @@ class WebhookServiceTest extends TestCase
         $komojuOrder->setOrder($eccubeOrder);
         $komojuOrder->setKomojuPaymentId('pay_dup_1');
         $komojuOrder->setRefundId('ref_1');
-        $komojuOrder->setRefundedAmount(500); // already recorded
+        $komojuOrder->setRefundedAmount(300);
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
-        // The CAS UPDATE matches zero rows because the stored refund_id already
-        // equals this payload's id set — i.e. a duplicate delivery. Model that
-        // by having executeStatement() report 0 affected rows.
+        // Another request won the refund update.
         $conn = $this->createMock(\Doctrine\DBAL\Connection::class);
         $conn->method('executeStatement')->willReturn(0);
         $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
@@ -871,14 +960,18 @@ class WebhookServiceTest extends TestCase
             $this->purchaseFlow
         );
 
-        // writeLog should NOT be called for the refund (duplicate / no-op claim)
         $this->logService->expects($this->never())->method('writeLog');
 
         $object = $this->makeWebhookObject('pay_dup_1', [
-            'refunds' => [(object)['id' => 'ref_1', 'amount' => 500]]
+            'refunds' => [
+                (object)['id' => 'ref_1', 'amount' => 300],
+                (object)['id' => 'ref_2', 'amount' => 200],
+            ],
         ]);
 
         $this->service->paymentRefunded($object);
+        $this->assertSame('ref_1', $komojuOrder->getRefundId());
+        $this->assertEquals(300, $komojuOrder->getRefundedAmount());
     }
 
     public function testRefundedLogsWhenAmountIncreases()
