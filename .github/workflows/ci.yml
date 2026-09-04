@@ -11,7 +11,7 @@ permissions:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, beta, public-release]
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -23,7 +23,7 @@ jobs:
   test:
     name: Test
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, beta, public-release]
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
