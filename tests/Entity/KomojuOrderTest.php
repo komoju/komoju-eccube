@@ -78,4 +78,16 @@ class KomojuOrderTest extends TestCase
         $this->assertSame('', KomojuOrder::canonicalRefundIds([]));
     }
 
+    public function testAttemptSecurityFields()
+    {
+        $order = new KomojuOrder();
+        $order->setExpectedAmount(1200)
+            ->setExpectedCurrency('JPY')
+            ->setCallbackTokenHash('hash');
+
+        $this->assertSame(1200, $order->getExpectedAmount());
+        $this->assertSame('JPY', $order->getExpectedCurrency());
+        $this->assertSame('hash', $order->getCallbackTokenHash());
+    }
+
 }

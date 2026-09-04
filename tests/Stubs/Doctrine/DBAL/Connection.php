@@ -29,6 +29,26 @@ class Connection
         return 0;
     }
 
+    public function beginTransaction(): bool
+    {
+        return true;
+    }
+
+    public function commit(): bool
+    {
+        return true;
+    }
+
+    public function rollBack(): bool
+    {
+        return true;
+    }
+
+    public function isTransactionActive(): bool
+    {
+        return true;
+    }
+
     public function insert(string $table, array $data): int
     {
         return 1;
