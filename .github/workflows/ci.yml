@@ -13,21 +13,75 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v4
+      - uses: shivammathur/setup-php@11d5960a326750d5838078e36cf38b85af677262 # v2
         with:
           php-version: '8.1'
           tools: php-parallel-lint/php-parallel-lint
       - run: parallel-lint --exclude vendor .
 
   test:
-    name: Test
+    name: Unit tests / PHP ${{ matrix.php }}
     needs: lint
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.1']
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v4
+      - uses: shivammathur/setup-php@11d5960a326750d5838078e36cf38b85af677262 # v2
         with:
-          php-version: '8.1'
+          php-version: ${{ matrix.php }}
       - run: composer install --no-interaction
       - run: vendor/bin/phpunit
+
+  compatibility:
+    name: EC-CUBE ${{ matrix.eccube }}
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - eccube: '4.2.3'
+            php: '7.4'
+          - eccube: '4.3.1'
+            php: '8.1'
+    env:
+      APP_ENV: test
+      APP_DEBUG: 0
+      DATABASE_URL: 'sqlite:///%kernel.project_dir%/var/eccube.db'
+      DATABASE_SERVER_VERSION: '3'
+      DATABASE_CHARSET: utf8
+    steps:
+      - uses: actions/checkout@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v4
+      - uses: shivammathur/setup-php@11d5960a326750d5838078e36cf38b85af677262 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, intl, mbstring, pdo_sqlite, zip
+      - name: Build plugin archive
+        run: |
+          mkdir staging
+          rsync -a --exclude='.git' --exclude='staging' --exclude='vendor' --exclude='tests' ./ staging/
+          cd staging
+          tar --format=ustar -czf "$RUNNER_TEMP/Komoju42.tar.gz" -- *
+      - uses: actions/checkout@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v4
+        with:
+          repository: EC-CUBE/ec-cube
+          ref: ${{ matrix.eccube }}
+          path: ec-cube
+      - name: Install EC-CUBE
+        working-directory: ec-cube
+        run: |
+          composer install --no-interaction --prefer-dist
+          bin/console doctrine:database:create
+          bin/console doctrine:schema:create
+          bin/console eccube:fixtures:load
+      - name: Install and enable plugin
+        working-directory: ec-cube
+        run: |
+          bin/console eccube:plugin:install --code=Komoju42 --path="$RUNNER_TEMP/Komoju42.tar.gz"
+          bin/console cache:clear --no-warmup
+          bin/console eccube:plugin:enable --code=Komoju42
+          bin/console cache:warmup

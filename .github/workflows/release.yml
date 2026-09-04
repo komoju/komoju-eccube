@@ -19,28 +19,36 @@ jobs:
     name: Build Plugin Archive
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v4
 
       # PharData is bundled with PHP itself; we install a pinned PHP so the
       # release-time PharData verification step uses the same PHP minor that
       # the bug-report environments run on (8.1.27). Defaulting to whatever
       # version `ubuntu-latest` ships could mask version-specific Phar quirks.
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@11d5960a326750d5838078e36cf38b85af677262 # v2
         with:
           php-version: '8.1'
 
       - name: Determine version
         id: meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_VERSION#v}"
           else
-            TAG="${GITHUB_REF#refs/tags/}"
-            VERSION="${TAG#v}"
+            VERSION="${GITHUB_REF_NAME#v}"
           fi
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "zip_name=Komoju42" >> "$GITHUB_OUTPUT"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            printf 'Invalid version: %q\n' "$VERSION" >&2
+            exit 1
+          fi
+
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+          printf 'zip_name=%s\n' 'Komoju42' >> "$GITHUB_OUTPUT"
 
       - name: Prepare plugin directory
         run: |
@@ -71,49 +79,34 @@ jobs:
             ./ staging/
 
       - name: Build archives (for GitHub Release)
+        env:
+          ARCHIVE_NAME: ${{ steps.meta.outputs.zip_name }}
         run: |
-          # NOTE: this archive must be loadable by PHP's PharData class,
-          # which is what EC-CUBE's PluginService::unpackPluginArchive() uses
-          # to extract .tar.gz uploads. Two requirements:
-          #
-          #   1. Use --format=ustar (classic POSIX), NOT pax. PharData
-          #      rejects pax extended headers (`PaxHeader/...` entries).
-          #      GNU tar's default on Linux happens to be ok, but pinning
-          #      to ustar is safer and matches how a developer would build
-          #      the archive locally on macOS, where BSD tar defaults to
-          #      pax and breaks PharData.
-          #
-          #   2. Do NOT include a `./` directory entry at the archive root.
-          #      PharData errors with `Cannot extract ".", internal error`
-          #      if such an entry is present. `tar -czf foo.tar.gz .`
-          #      *does* include `./`, so we enumerate the staging contents
-          #      explicitly with `ls -A` (lists all entries including
-          #      dotfiles, but excludes `.` and `..` themselves).
-          #
-          # EC-CUBE 4.2+ rejects .zip plugin uploads with
-          # "プラグインファイルで許可されている形式は、tar.gzです。".
+          # EC-CUBE requires a ustar archive without a root `./` entry.
           cd staging
-          tar --format=ustar -czf "../${{ steps.meta.outputs.zip_name }}.tar.gz" $(ls -A)
+          tar --format=ustar -czf "../$ARCHIVE_NAME.tar.gz" -- *
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ steps.meta.outputs.zip_name }}-${{ steps.meta.outputs.version }}
           path: staging/*
 
       - name: Verify archive can be extracted by PharData
+        env:
+          ARCHIVE_NAME: ${{ steps.meta.outputs.zip_name }}
         # PharData is what EC-CUBE uses on the merchant's server to unpack
         # the .tar.gz upload. If our archive can't be extracted by PharData
         # the merchant sees a generic "プラグインのアップロードに失敗しました。".
         # Better to fail the release here than ship a broken tarball.
         run: |
           mkdir -p phartest
-          php -r '$p = new PharData("${{ steps.meta.outputs.zip_name }}.tar.gz"); $p->extractTo("phartest", null, true); echo "PharData extraction OK\n";'
+          php -r "\$p = new PharData(getenv('ARCHIVE_NAME') . '.tar.gz'); \$p->extractTo('phartest', null, true); echo \"PharData extraction OK\\n\";"
           rm -rf phartest
 
       - name: Create GitHub Release
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           name: ${{ steps.meta.outputs.zip_name }} v${{ steps.meta.outputs.version }}
           files: |
