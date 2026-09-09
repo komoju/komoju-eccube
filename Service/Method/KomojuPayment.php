@@ -132,6 +132,12 @@ class KomojuPayment implements PaymentMethodInterface{
      * @return PaymentDispatcher|null
      */
     public function apply(){
+        $this->entityManager->lock($this->Order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+        $this->entityManager->refresh($this->Order);
+        $currentStatus = $this->Order->getOrderStatus();
+        if(!$currentStatus || $currentStatus->getId() != OrderStatus::PROCESSING){
+            throw new ShoppingException(trans('komoju_payment.shopping.payment_pending'));
+        }
         // Set order status to pending
         $OrderStatus = $this->order_status_repo->find(OrderStatus::PENDING);
         $this->Order->setOrderStatus($OrderStatus);

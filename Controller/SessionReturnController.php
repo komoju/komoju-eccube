@@ -22,9 +22,8 @@ class SessionReturnController extends AbstractController
 
     /** KOMOJU may already hold the customer's money; never roll these back. */
     const MONEY_TAKEN_PAYMENT_STATUSES = ['captured', 'authorized'];
+    const TERMINAL_PAYMENT_STATUSES = ['cancelled', 'canceled', 'expired'];
 
-    /** No money was taken; releasing stock and points is safe. */
-    const TERMINAL_PAYMENT_STATUSES = ['failed', 'cancelled', 'canceled', 'expired'];
     const TERMINAL_SESSION_STATUSES = ['failed', 'cancelled', 'canceled'];
 
     protected $entityManager;
@@ -136,11 +135,7 @@ class SessionReturnController extends AbstractController
         $session_status = $session['status'] ?? 'unknown';
         $payment_status = $session['payment']['status'] ?? 'unknown';
 
-        // Three-way outcome. Rolling back restores stock and reverses points, so
-        // it is only safe when KOMOJU says definitively that no money was taken.
-        //   money taken  -> finalize (session envelope may lag/expire on a late return)
-        //   terminal     -> roll back
-        //   otherwise    -> indeterminate; leave PENDING for the authoritative webhook
+        // A failed payment can be retried while the hosted session remains open.
         $payment_ok = in_array($payment_status, self::MONEY_TAKEN_PAYMENT_STATUSES);
         $payment_terminal = in_array($payment_status, self::TERMINAL_PAYMENT_STATUSES);
         $session_terminal = in_array($session_status, self::TERMINAL_SESSION_STATUSES);
@@ -157,6 +152,15 @@ class SessionReturnController extends AbstractController
                 }
                 try {
                     $processed = $this->transactional(function () use ($komoju_order, $Order) {
+                        $this->entityManager->lock($Order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+                        $this->entityManager->lock($komoju_order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+                        $this->entityManager->refresh($Order);
+                        $this->entityManager->refresh($komoju_order);
+                        $lockedStatus = $Order->getOrderStatus()->getId();
+                        if(!in_array($lockedStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])
+                            || !$this->isCurrentAttempt($komoju_order, $Order)){
+                            return false;
+                        }
                         if(!$this->claimCancellation($komoju_order)){
                             return false;
                         }
@@ -200,9 +204,10 @@ class SessionReturnController extends AbstractController
 
         try {
             $processed = $this->transactional(function () use ($session, $payment_status, $komoju_order, $Order) {
+                $this->entityManager->lock($Order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
                 $this->entityManager->lock($komoju_order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
-                $this->entityManager->refresh($komoju_order);
                 $this->entityManager->refresh($Order);
+                $this->entityManager->refresh($komoju_order);
                 $status = $Order->getOrderStatus()->getId();
                 if($status == OrderStatus::CANCEL){
                     return false;
@@ -278,9 +283,23 @@ class SessionReturnController extends AbstractController
 
 
 
+    private function isCurrentAttempt($attempt, $Order){
+        $current = $this->entityManager->getRepository(KomojuOrder::class)
+            ->findOneBy(['Order' => $Order], ['id' => 'DESC']);
+        if($current === $attempt){
+            return true;
+        }
+        return $current && $current->getId() && $current->getId() === $attempt->getId();
+    }
+
     private function sessionMatchesAttempt($komojuOrder, $Order, array $session){
         if(isset($session['id'])
             && (string)$session['id'] !== (string)$komojuOrder->getKomojuSessionId()){
+            return false;
+        }
+        if(!empty($komojuOrder->getKomojuPaymentId())
+            && isset($session['payment']['id'])
+            && !hash_equals((string)$komojuOrder->getKomojuPaymentId(), (string)$session['payment']['id'])){
             return false;
         }
         if($komojuOrder->getExpectedAmount() !== null

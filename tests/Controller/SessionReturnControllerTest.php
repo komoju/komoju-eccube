@@ -238,6 +238,26 @@ class SessionReturnControllerTest extends TestCase
         $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
     }
 
+    public function testSessionPaymentMismatchIsRejected()
+    {
+        [$order, $komojuOrder] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $komojuOrder->setKomojuPaymentId('pay_success');
+        $this->komojuClient->method('getSession')->willReturn([
+            'id' => 'sess_abc',
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_old', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+    }
+
     public function testMissingConfigRedirectsWithoutCustomer500()
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
@@ -343,13 +363,8 @@ class SessionReturnControllerTest extends TestCase
 
     // --- failed payment branch ---
 
-    /**
-     * Terminal failures are the ONLY case where rolling back is safe: KOMOJU has
-     * told us definitively that no money was taken.
-     *
-     * @dataProvider terminalFailureProvider
-     */
-    public function testTerminalFailureRollsBackStock($sessionStatus, $paymentStatus)
+    /** @dataProvider terminalFailureProvider */
+    public function testTerminalSessionRollsBackStock($sessionStatus, $paymentStatus)
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->method('getSession')->willReturn([
@@ -360,7 +375,6 @@ class SessionReturnControllerTest extends TestCase
         $processing = new OrderStatus();
         $processing->setId(OrderStatus::PROCESSING);
         $this->em->method('find')->willReturn($processing);
-
         $this->purchaseFlow->expects($this->once())->method('rollback');
 
         $controller = $this->makeController();
@@ -373,11 +387,10 @@ class SessionReturnControllerTest extends TestCase
     public function terminalFailureProvider(): array
     {
         return [
-            'payment failed' => ['failed', 'failed'],
             'payment cancelled' => ['completed', 'cancelled'],
             'payment expired' => ['completed', 'expired'],
             'session cancelled' => ['cancelled', 'pending'],
-            'session failed' => ['failed', 'pending'],
+            'session failed' => ['failed', 'failed'],
         ];
     }
 
@@ -511,31 +524,23 @@ class SessionReturnControllerTest extends TestCase
         ];
     }
 
-    public function testFailedPaymentRollsBackAndRedirects()
+    public function testFailedPaymentRemainsRetryable()
     {
         [$order, $komojuOrder, $status] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
 
         $this->komojuClient->method('getSession')->willReturn([
-            'status' => 'failed',
+            'status' => 'pending',
             'payment' => ['status' => 'failed'],
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
-
-        $processingStatus = new OrderStatus();
-        $processingStatus->setId(OrderStatus::PROCESSING);
-        $this->em->method('find')->willReturn($processingStatus);
-
-        $this->purchaseFlow->expects($this->once())
-            ->method('rollback')
-            ->with($order, $this->anything());
+        $this->purchaseFlow->expects($this->never())->method('rollback');
 
         $controller = $this->makeController();
-        $req = $this->callbackRequest();
-        $controller->sessionReturn($req);
+        $controller->sessionReturn($this->callbackRequest());
 
         $this->assertSame('shopping', $controller->lastRedirect);
-        $this->assertSame($processingStatus, $order->getOrderStatus(),
-            'failed payment must roll the order back to PROCESSING');
+        $this->assertSame($status, $order->getOrderStatus());
+        $this->assertNull($komojuOrder->getCanceledAt());
     }
 
     // --- webhook-already-finalized short-circuit ---

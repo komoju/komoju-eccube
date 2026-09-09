@@ -6,6 +6,9 @@ use Doctrine\ORM\EntityManagerInterface;
 use Plugin\Komoju42\Entity\KomojuOrder;
 use Eccube\Entity\Master\OrderStatus;
 use Eccube\Service\OrderStateMachine;
+use Eccube\Service\PurchaseFlow\Processor\PointProcessor;
+use Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor;
+use Eccube\Service\PurchaseFlow\PurchaseContext;
 use Eccube\Entity\Order;
 class WebhookService{
     use PaymentAttemptTransitionTrait;
@@ -15,19 +18,25 @@ class WebhookService{
     protected $komoju_order_repo;
     protected $order_state_machine;
     protected $purchase_flow;
+    protected $point_processor;
+    protected $stock_reduce_processor;
 
 
     public function __construct(
         EntityManagerInterface $entityManager,
         OrderStateMachine $orderStateMachine,
         LogService $logService,
-        \Eccube\Service\PurchaseFlow\PurchaseFlow $shoppingPurchaseFlow
-        ){
+        \Eccube\Service\PurchaseFlow\PurchaseFlow $shoppingPurchaseFlow,
+        PointProcessor $pointProcessor,
+        StockReduceProcessor $stockReduceProcessor
+    ){
         $this->entityManager = $entityManager;
         $this->komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
         $this->log_service = $logService;
         $this->order_state_machine = $orderStateMachine;
         $this->purchase_flow = $shoppingPurchaseFlow;
+        $this->point_processor = $pointProcessor;
+        $this->stock_reduce_processor = $stockReduceProcessor;
     }
 
     private function commitPurchaseFlow($order){
@@ -46,6 +55,12 @@ class WebhookService{
         $order = $komoju_order->getOrder();
         $orderId = $order ? $order->getId() : 0;
         $storedSession = $komoju_order->getKomojuSessionId();
+        $storedPayment = $komoju_order->getKomojuPaymentId();
+        $eventPayment = isset($data->id) ? (string)$data->id : '';
+
+        if(!empty($storedPayment) && !hash_equals((string)$storedPayment, $eventPayment)){
+            return $this->rejectAttempt($tag, $orderId, 'payment');
+        }
 
         if(isset($data->session) && $storedSession !== (string)$data->session){
             return $this->rejectAttempt($tag, $orderId, 'session');
@@ -106,7 +121,9 @@ class WebhookService{
         $refundIdSet = KomojuOrder::canonicalRefundIds($refundIds);
 
         $newAmount = $this->transactional(function () use ($attempt, $order, $refundIdSet, $refundAmount) {
+            $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+            $this->entityManager->refresh($order);
             $this->entityManager->refresh($attempt);
             $previousAmount = (float)$attempt->getRefundedAmount();
             if($refundAmount <= $previousAmount){
@@ -155,9 +172,10 @@ class WebhookService{
         }
 
         $processed = $this->transactional(function () use ($attempt, $object, $order, $paymentId) {
+            $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
-            $this->entityManager->refresh($attempt);
             $this->entityManager->refresh($order);
+            $this->entityManager->refresh($attempt);
             if($attempt->getCanceledAt() || $order->getOrderStatus()->getId() == OrderStatus::CANCEL
                 || !$this->bindPaymentId($attempt, $paymentId)){
                 return false;
@@ -201,10 +219,15 @@ class WebhookService{
             : ($attempt->getCapturedAt() ?: new \DateTime());
         $capturedAmount = isset($object->data->amount) ? (int)$object->data->amount : null;
         $processed = $this->transactional(function () use ($attempt, $object, $order, $paymentId, $capturedAt, $capturedAmount) {
+            if($order){
+                $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+            }
             $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
-            $this->entityManager->refresh($attempt);
             if($order){
                 $this->entityManager->refresh($order);
+            }
+            $this->entityManager->refresh($attempt);
+            if($order){
                 $status = $order->getOrderStatus()->getId();
                 if($attempt->isCaptured()
                     && !in_array($status, [OrderStatus::PENDING, OrderStatus::PROCESSING, OrderStatus::NEW])){
@@ -251,7 +274,21 @@ class WebhookService{
 
     public function paymentCanceled($object){ $this->handleCancelEvent($object, 'canceled', 'payment cancelled'); }
     public function paymentExpired($object){ $this->handleCancelEvent($object, 'expired', 'payment expired'); }
-    public function paymentFailed($object){ $this->handleCancelEvent($object, 'failed', 'payment failed'); }
+    public function paymentFailed($object){
+        $paymentId = $object->data->id;
+        $attempt = $this->findKomojuOrder($object);
+        if(!$attempt){
+            $this->log_service->writeLog("webhook[failed]", 0, "no order found for payment: $paymentId");
+            return;
+        }
+        if(!$this->validateAttempt($attempt, $object, 'failed')){
+            return;
+        }
+        $order = $attempt->getOrder();
+        if($order){
+            $this->log_service->writeLog("webhook[failed]", $order->getId(), "payment attempt failed; retry allowed", true);
+        }
+    }
 
     private function handleCancelEvent($object, $tag, $message){
         $paymentId = $object->data->id;
@@ -269,7 +306,7 @@ class WebhookService{
             return;
         }
         $this->log_service->writeLog("webhook[$tag]", $order->getId(), $message, true);
-        $this->cancelOrder($attempt);
+        $this->cancelOrder($attempt, $paymentId);
     }
     public function paymentUpdated($object){
         // Multi-key lookup so an expired/cancelled change is not missed when
@@ -287,39 +324,53 @@ class WebhookService{
             if($order){
                 $this->log_service->writeLog("webhook[updated]", $order->getId(), "payment status changed to $status", true);
             }
-            $this->cancelOrder($komoju_order);
+            $this->cancelOrder($komoju_order, (string)$object->data->id);
         }
     }
-    private function cancelOrder($attempt){
+    private function cancelOrder($attempt, $paymentId){
         if($attempt->getCanceledAt()){
             return;
         }
         $order = $attempt->getOrder();
-        if(!$order || !$this->isCurrentAttempt($attempt)){
+        if(!$order){
             return;
         }
 
-        $status = $order->getOrderStatus()->getId();
-        if($status == OrderStatus::PAID || $attempt->isCaptured()){
-            $this->log_service->writeLog("webhook[cancel]", $order->getId(), "ignored: order already paid");
-            return;
-        }
-
-        $this->transactional(function () use ($attempt, $order, $status) {
+        $result = $this->transactional(function () use ($attempt, $order, $paymentId) {
+            $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+            $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
+            $this->entityManager->refresh($order);
+            $this->entityManager->refresh($attempt);
+            if(!$this->isCurrentAttempt($attempt)){
+                return 'stale';
+            }
+            $status = $order->getOrderStatus()->getId();
+            if($status == OrderStatus::PAID || $attempt->isCaptured()){
+                return 'paid';
+            }
+            $storedPayment = $attempt->getKomojuPaymentId();
+            if(!empty($storedPayment) && !hash_equals((string)$storedPayment, (string)$paymentId)){
+                return 'payment_mismatch';
+            }
             if(!$this->claimCancellation($attempt)){
-                return false;
+                return 'terminal';
+            }
+            if(!$this->bindPaymentId($attempt, $paymentId)){
+                throw new \RuntimeException('Failed to bind terminal payment ID.');
             }
             $this->entityManager->persist($attempt);
             if($status == OrderStatus::CANCEL){
                 $this->entityManager->flush();
-                return true;
+                return 'cancelled';
             }
             if(in_array($status, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
-                $this->purchase_flow->rollback($order, new \Eccube\Service\PurchaseFlow\PurchaseContext());
+                $context = new PurchaseContext();
+                $this->point_processor->rollback($order, $context);
+                $this->stock_reduce_processor->rollback($order, $context);
                 $order->setOrderStatus($this->entityManager->find(OrderStatus::class, OrderStatus::CANCEL));
                 $this->entityManager->persist($order);
                 $this->entityManager->flush();
-                return true;
+                return 'cancelled';
             }
 
             $cancelStatus = $this->entityManager->find(OrderStatus::class, OrderStatus::CANCEL);
@@ -331,8 +382,14 @@ class WebhookService{
                 $this->entityManager->getRepository(Order::class)->updateOrderSummary($Customer);
                 $this->entityManager->flush();
             }
-            return true;
+            return 'cancelled';
         });
+
+        if($result === 'paid'){
+            $this->log_service->writeLog("webhook[cancel]", $order->getId(), "ignored: order already paid");
+        }elseif($result === 'payment_mismatch'){
+            $this->rejectAttempt('cancel', $order->getId(), 'payment');
+        }
     }
 
 

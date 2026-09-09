@@ -66,6 +66,9 @@ class KomojuPaymentTest extends TestCase
         $order->setPaymentTotal($paymentTotal);
         $order->setOrderNo('TEST-001');
         $order->setCurrencyCode('JPY');
+        $status = new OrderStatus();
+        $status->setId(OrderStatus::PROCESSING);
+        $order->setOrderStatus($status);
         if ($payment) {
             $order->setPayment($payment);
         } else {
@@ -245,6 +248,38 @@ class KomojuPaymentTest extends TestCase
     }
 
     // --- apply ---
+
+    public function testApplyRejectsOrderFinalizedWhileWaitingForLock()
+    {
+        $order = $this->makeOrder(2000);
+        $this->payment->setOrder($order);
+        $paid = new OrderStatus();
+        $paid->setId(OrderStatus::PAID);
+        $this->entityManager->method('refresh')->willReturnCallback(function ($entity) use ($order, $paid) {
+            if ($entity === $order) {
+                $entity->setOrderStatus($paid);
+            }
+        });
+        $this->purchaseFlow->expects($this->never())->method('prepare');
+        $this->clientFactory->expects($this->never())->method('create');
+
+        $this->expectException(ShoppingException::class);
+        $this->payment->apply();
+    }
+
+    public function testApplyRejectsPendingOrderWithoutPreparingAgain()
+    {
+        $order = $this->makeOrder(2000);
+        $pending = new OrderStatus();
+        $pending->setId(OrderStatus::PENDING);
+        $order->setOrderStatus($pending);
+        $this->payment->setOrder($order);
+        $this->purchaseFlow->expects($this->never())->method('prepare');
+        $this->clientFactory->expects($this->never())->method('create');
+
+        $this->expectException(ShoppingException::class);
+        $this->payment->apply();
+    }
 
     public function testApplySuccess()
     {

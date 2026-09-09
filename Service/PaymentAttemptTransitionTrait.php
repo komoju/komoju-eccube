@@ -9,15 +9,32 @@ trait PaymentAttemptTransitionTrait
     private function transactional(callable $callback)
     {
         $connection = $this->entityManager->getConnection();
-        $connection->beginTransaction();
+        if(!$connection->isTransactionActive()){
+            $connection->beginTransaction();
+            try {
+                $result = $callback();
+                $connection->commit();
+                return $result;
+            } catch (\Throwable $e) {
+                if($connection->isTransactionActive()){
+                    $connection->rollBack();
+                }
+                $this->entityManager->clear();
+                throw $e;
+            }
+        }
+
+        static $savepointCounter = 0;
+        $savepoint = 'KOMOJU_' . ++$savepointCounter;
+        $connection->createSavepoint($savepoint);
         try {
             $result = $callback();
-            $connection->commit();
+            $connection->releaseSavepoint($savepoint);
             return $result;
         } catch (\Throwable $e) {
-            if ($connection->isTransactionActive()) {
-                $connection->rollBack();
-            }
+            $connection->rollbackSavepoint($savepoint);
+            $connection->releaseSavepoint($savepoint);
+            $this->entityManager->clear();
             throw $e;
         }
     }

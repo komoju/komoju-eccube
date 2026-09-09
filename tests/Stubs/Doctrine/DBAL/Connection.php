@@ -48,6 +48,17 @@ class Connection
     {
         return true;
     }
+    public function createSavepoint($savepoint): void
+    {
+    }
+
+    public function releaseSavepoint($savepoint): void
+    {
+    }
+
+    public function rollbackSavepoint($savepoint): void
+    {
+    }
 
     public function insert(string $table, array $data): int
     {
