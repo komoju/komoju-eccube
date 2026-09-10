@@ -62,36 +62,186 @@ jobs:
     env:
       APP_ENV: test
       APP_DEBUG: 0
-      DATABASE_URL: 'sqlite:///%kernel.project_dir%/var/eccube.db'
       DATABASE_SERVER_VERSION: '3'
       DATABASE_CHARSET: utf8
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
-        with:
-          php-version: ${{ matrix.php }}
-          extensions: curl, intl, mbstring, pdo_sqlite, zip
-      - name: Build plugin archive
-        run: bash .github/scripts/build-plugin-archive.sh staging "$RUNNER_TEMP/Komoju42.tar.gz"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: EC-CUBE/ec-cube
           ref: ${{ matrix.eccube }}
           persist-credentials: false
           path: ec-cube
-      - name: Install EC-CUBE
-        working-directory: ec-cube
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, intl, mbstring, pdo_sqlite, zip
+      - name: Build and install EC-CUBE as non-root
+        shell: bash
         run: |
-          composer install --no-interaction --prefer-dist --no-progress
-          bin/console doctrine:database:create
-          bin/console doctrine:schema:create
-          bin/console eccube:fixtures:load
-      - name: Install and enable plugin
-        working-directory: ec-cube
-        run: |
-          bin/console eccube:plugin:install --code=Komoju42 --path="$RUNNER_TEMP/Komoju42.tar.gz"
-          bin/console cache:clear --no-warmup
-          bin/console eccube:plugin:enable --code=Komoju42
-          bin/console cache:warmup
+          set -euo pipefail
+
+          test "$(/usr/bin/id -u)" -eq 0
+          php_command=$(command -v php)
+          composer_command=$(command -v composer)
+          # Privileged commands must not resolve through setup-php's writable tool path.
+          export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+          php_bin=$(/usr/bin/readlink -f -- "$php_command")
+          composer_bin=$(/usr/bin/readlink -f -- "$composer_command")
+          protected_paths=(/usr/bin /usr/sbin /bin /sbin /usr/bin/rm /usr/sbin/userdel /usr/bin/setpriv /bin/bash)
+
+          protect_directory() {
+            local path=$1 resolved
+            resolved=$(/usr/bin/readlink -f -- "$path")
+            test -d "$resolved"
+            /usr/bin/chown -h root:root -- "$path"
+            /usr/bin/chown root:root -- "$resolved"
+            /usr/bin/chmod 0755 -- "$resolved"
+            protected_paths+=("$path" "$resolved")
+          }
+          protect_file() {
+            local path=$1 mode=$2 resolved
+            resolved=$(/usr/bin/readlink -f -- "$path")
+            test -f "$resolved"
+            protect_directory "$(/usr/bin/dirname -- "$path")"
+            protect_directory "$(/usr/bin/dirname -- "$resolved")"
+            /usr/bin/chown -h root:root -- "$path"
+            /usr/bin/chown root:root -- "$resolved"
+            /usr/bin/chmod "$mode" -- "$resolved"
+            protected_paths+=("$path" "$resolved")
+          }
+
+          # setup-php deliberately makes its tool directory and PHP ini files writable.
+          protect_directory /usr/local/bin
+          protect_file "$php_command" 0755
+          protect_file "$composer_command" 0755
+          # Discover compiled configuration paths without loading mutable PHP configuration.
+          php_config_dir=$(/usr/bin/env -i "$php_bin" -n -r 'echo PHP_CONFIG_FILE_PATH;')
+          php_scan_path=$(/usr/bin/env -i "$php_bin" -n -r 'echo PHP_CONFIG_FILE_SCAN_DIR;')
+          IFS=: read -r -a php_scan_dirs <<< "$php_scan_path"
+          for config_dir in "$php_config_dir" "${php_scan_dirs[@]}"; do
+            test -n "$config_dir" || continue
+            protect_directory "$config_dir"
+            for config_file in "$config_dir"/*.ini; do
+              test -e "$config_file" || continue
+              protect_file "$config_file" 0644
+            done
+          done
+          # Packaged Ubuntu PHP also has sibling SAPI ini files changed by setup-php.
+          case "$php_config_dir" in
+            /etc/php/*/cli)
+              for config_file in "$php_config_dir"/../*/php.ini; do
+                test -e "$config_file" || continue
+                protect_file "$config_file" 0644
+              done
+              ;;
+          esac
+
+          build_dir=$(/usr/bin/mktemp -d /tmp/eccube-ci.XXXXXXXXXX)
+          build_user="eccube-$(/usr/bin/od -An -N6 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
+          user_created=false
+
+          cleanup() {
+            status=$?
+            trap - EXIT
+            if [ "$user_created" = true ]; then
+              /usr/sbin/userdel "$build_user" || { echo 'Failed to remove build user' >&2; test "$status" -ne 0 || status=1; }
+            fi
+            /usr/bin/rm -rf -- "$build_dir" || { echo 'Failed to remove build directory' >&2; test "$status" -ne 0 || status=1; }
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          /usr/sbin/useradd --system --user-group --no-create-home \
+            --home-dir "$build_dir/home" --shell /usr/sbin/nologin "$build_user"
+          user_created=true
+          # The parent stays root-owned so the child cannot replace cleanup targets.
+          /usr/bin/chmod 0711 "$build_dir"
+          /usr/bin/install -d -m 0700 -o "$build_user" -g "$build_user" \
+            "$build_dir/app" "$build_dir/plugin" "$build_dir/artifacts" \
+            "$build_dir/home" "$build_dir/home/.composer" "$build_dir/home/.cache" \
+            "$build_dir/home/.cache/composer" "$build_dir/tmp"
+          /usr/bin/rsync -a --exclude='.git' ec-cube/ "$build_dir/app/"
+          /usr/bin/rsync -a --exclude='/.git' --exclude='/ec-cube' \
+            --exclude='/vendor' --exclude='/staging' ./ "$build_dir/plugin/"
+          /usr/bin/chown -R --no-dereference "$build_user:$build_user" "$build_dir/app" "$build_dir/plugin"
+          /usr/bin/chmod 0700 "$build_dir/app" "$build_dir/plugin"
+
+          /usr/bin/setpriv --reuid="$build_user" --regid="$build_user" --clear-groups \
+            --inh-caps=-all --ambient-caps=-all --bounding-set=-all --no-new-privs \
+            /usr/bin/env -i \
+              HOME="$build_dir/home" USER="$build_user" LOGNAME="$build_user" \
+              TMPDIR="$build_dir/tmp" LANG=C.UTF-8 \
+              PATH="$(/usr/bin/dirname "$php_bin"):$(/usr/bin/dirname "$composer_bin"):/usr/local/bin:/usr/bin:/bin" \
+              PHP_BIN="$php_bin" COMPOSER_BIN="$composer_bin" \
+              COMPOSER_HOME="$build_dir/home/.composer" \
+              COMPOSER_CACHE_DIR="$build_dir/home/.cache/composer" \
+              COMPOSER_NO_INTERACTION=1 COMPOSER_PROCESS_TIMEOUT=0 \
+              APP_ENV="$APP_ENV" APP_DEBUG="$APP_DEBUG" \
+              DATABASE_URL="sqlite:///$build_dir/app/var/eccube.db" DATABASE_SERVER_VERSION="$DATABASE_SERVER_VERSION" \
+              DATABASE_CHARSET="$DATABASE_CHARSET" \
+              APP_DIR="$build_dir/app" PLUGIN_DIR="$build_dir/plugin" \
+              ARTIFACT_DIR="$build_dir/artifacts" PLUGIN_ARCHIVE="$build_dir/artifacts/Komoju42.tar.gz" \
+              RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}" \
+              /bin/bash --noprofile --norc -euo pipefail -s -- "${protected_paths[@]}" <<'INSTALL'
+          test "$(/usr/bin/id -u)" -ne 0
+          test "$(/usr/bin/id -ru)" -ne 0
+          test "$(/usr/bin/id -g)" -ne 0
+          checked_fields=0
+          while IFS=: read -r key value; do
+            case "$key" in
+              Groups)
+                [[ "$value" =~ ^[[:space:]]*$ ]]
+                checked_fields=$((checked_fields + 1))
+                ;;
+              CapInh|CapPrm|CapEff|CapBnd|CapAmb)
+                [[ "$value" =~ ^[[:space:]]*0+$ ]]
+                checked_fields=$((checked_fields + 1))
+                ;;
+              NoNewPrivs)
+                [[ "$value" =~ ^[[:space:]]*1$ ]]
+                checked_fields=$((checked_fields + 1))
+                ;;
+            esac
+          done < /proc/self/status
+          test "$checked_fields" -eq 7
+
+          assert_readonly() {
+            local path=$1
+            while :; do
+              if test -w "$path" || test "$(/usr/bin/stat -c '%u' -- "$path")" -ne 0; then
+                echo "Unsafe runtime path: $path" >&2
+                exit 1
+              fi
+              test "$path" != / || break
+              path=$(/usr/bin/dirname -- "$path")
+            done
+          }
+          for path in "$@"; do
+            test -e "$path"
+            assert_readonly "$path"
+            assert_readonly "$(/usr/bin/readlink -f -- "$path")"
+          done
+          for path in "$APP_DIR" "$PLUGIN_DIR" "$ARTIFACT_DIR" "$HOME" "$COMPOSER_HOME" "$COMPOSER_CACHE_DIR" "$TMPDIR"; do
+            test -d "$path" && test -w "$path"
+          done
+          echo 'Non-root runtime permission and capability checks passed.'
+
+          cd "$PLUGIN_DIR"
+          /bin/bash .github/scripts/build-plugin-archive.sh staging "$PLUGIN_ARCHIVE"
+          cd "$APP_DIR"
+          "$PHP_BIN" --version
+          "$PHP_BIN" "$COMPOSER_BIN" --version
+          "$PHP_BIN" "$COMPOSER_BIN" install --no-interaction --prefer-dist --no-progress
+          "$PHP_BIN" bin/console doctrine:database:create
+          "$PHP_BIN" bin/console doctrine:schema:create
+          "$PHP_BIN" bin/console eccube:fixtures:load
+          "$PHP_BIN" bin/console eccube:plugin:install --code=Komoju42 --path="$PLUGIN_ARCHIVE"
+          "$PHP_BIN" bin/console cache:clear --no-warmup
+          "$PHP_BIN" bin/console eccube:plugin:enable --code=Komoju42
+          "$PHP_BIN" bin/console cache:warmup
+          INSTALL
