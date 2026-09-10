@@ -17,14 +17,9 @@ permissions:
 jobs:
   build:
     name: Build Plugin Archive
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, beta, public-release]
     steps:
       - uses: actions/checkout@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v4
-
-      # PharData is bundled with PHP itself; we install a pinned PHP so the
-      # release-time PharData verification step uses the same PHP minor that
-      # the bug-report environments run on (8.1.27). Defaulting to whatever
-      # version `ubuntu-latest` ships could mask version-specific Phar quirks.
       - uses: shivammathur/setup-php@11d5960a326750d5838078e36cf38b85af677262 # v2
         with:
           php-version: '8.1'

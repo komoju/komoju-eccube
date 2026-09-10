@@ -11,7 +11,7 @@ permissions:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, beta, public-release]
     steps:
       - uses: actions/checkout@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v4
       - uses: shivammathur/setup-php@11d5960a326750d5838078e36cf38b85af677262 # v2
@@ -23,7 +23,7 @@ jobs:
   test:
     name: Unit tests / PHP ${{ matrix.php }}
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, beta, public-release]
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +39,7 @@ jobs:
   compatibility:
     name: EC-CUBE ${{ matrix.eccube }}
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, beta, public-release]
     strategy:
       fail-fast: false
       matrix:
