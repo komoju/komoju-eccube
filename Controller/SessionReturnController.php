@@ -199,12 +199,13 @@ class SessionReturnController extends AbstractController
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
 
-        // If the webhook already processed this order, do not process it twice.
+        // Purchase acceptance does not imply that capture has been recorded yet.
         $currentStatus = $Order->getOrderStatus()->getId();
         if($currentStatus == OrderStatus::CANCEL){
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
-        if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+        if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])
+            && !($currentStatus == OrderStatus::NEW && $payment_status === 'captured')){
             return $this->redirectAfterCompletion($Order, $browserAuthorized);
         }
 
@@ -229,9 +230,9 @@ class SessionReturnController extends AbstractController
                         return false;
                     }
                     if($payment_status === 'captured'){
-                        $capturedAt = isset($payment['captured_at'])
+                        $capturedAt = $komoju_order->getCapturedAt() ?: (isset($payment['captured_at'])
                             ? new \DateTime($payment['captured_at'])
-                            : new \DateTime();
+                            : new \DateTime());
                         $capturedAmount = isset($payment['amount']) ? (int)$payment['amount'] : null;
                         if(!$this->claimCaptured($komoju_order, $capturedAt, $capturedAmount)){
                             return false;

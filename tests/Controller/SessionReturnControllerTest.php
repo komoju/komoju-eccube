@@ -736,6 +736,100 @@ class SessionReturnControllerTest extends TestCase
 
     // --- happy paths ---
 
+    public function testCapturedAcceptedOrderIsReconciledOnlyOnce()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::NEW);
+        $orderDate = new \DateTime('2026-09-01T10:00:00Z');
+        $capturedAt = new \DateTime('2026-09-02T10:00:00Z');
+        $order->setOrderDate($orderDate);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured', 'captured_at' => $capturedAt->format(DATE_ATOM)],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame(OrderStatus::PAID, $order->getOrderStatus()->getId());
+        $this->assertEquals($capturedAt, $attempt->getCapturedAt());
+        $this->assertEquals($capturedAt, $order->getPaymentDate());
+        $this->assertSame($orderDate, $order->getOrderDate());
+        $paymentDate = $order->getPaymentDate();
+
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame($paymentDate, $order->getPaymentDate());
+        $this->assertSame($orderDate, $order->getOrderDate());
+    }
+
+    public function testAcceptedOrderKeepsPreviouslyRecordedCaptureTime()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::NEW);
+        $capturedAt = new \DateTime('2026-09-02T10:00:00Z');
+        $attempt->setCapturedAt($capturedAt);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
+        $this->purchaseFlow->expects($this->never())->method('commit');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame(OrderStatus::PAID, $order->getOrderStatus()->getId());
+        $this->assertEquals($capturedAt, $order->getPaymentDate());
+        $this->assertEquals($capturedAt, $attempt->getCapturedAt());
+    }
+
+    /** @dataProvider concurrentAcceptedOrderProvider */
+    public function testAcceptedOrderRespectsStatusChangedBeforeLock($lockedStatus)
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::NEW);
+        $capturedAt = new \DateTime('2026-09-02T10:00:00Z');
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $orderRefreshes = 0;
+        $this->em->method('refresh')->willReturnCallback(function ($entity) use (&$orderRefreshes, $lockedStatus, $capturedAt, $attempt) {
+            if ($entity instanceof Order && ++$orderRefreshes === 2) {
+                $entity->setOrderStatus((new OrderStatus())->setId($lockedStatus));
+                if ($lockedStatus === OrderStatus::PAID) {
+                    $entity->setPaymentDate($capturedAt);
+                    $attempt->setCapturedAt($capturedAt);
+                }
+            }
+        });
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame($lockedStatus, $order->getOrderStatus()->getId());
+        if ($lockedStatus === OrderStatus::PAID) {
+            $this->assertSame('shopping_complete', $controller->lastRedirect);
+            $this->assertSame($capturedAt, $order->getPaymentDate());
+        } else {
+            $this->assertSame('shopping', $controller->lastRedirect);
+            $this->assertFalse($attempt->isCaptured());
+            $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+        }
+    }
+
+    public function concurrentAcceptedOrderProvider(): array
+    {
+        return ['canceled concurrently' => [OrderStatus::CANCEL], 'captured concurrently' => [OrderStatus::PAID]];
+    }
+
     public function testCapturedPaymentAdvancesOrderToPaid()
     {
         [$order, $komojuOrder, $status] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);

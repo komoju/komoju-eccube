@@ -13,6 +13,7 @@ class Order
     private $Customer;
     private $OrderItems = [];
     private $payment_date;
+    private $order_date;
     private $order_no;
     private $currency_code;
 
@@ -30,6 +31,8 @@ class Order
     public function setOrderItems($items) { $this->OrderItems = $items; return $this; }
     public function getPaymentDate() { return $this->payment_date; }
     public function setPaymentDate($date) { $this->payment_date = $date; return $this; }
+    public function getOrderDate() { return $this->order_date; }
+    public function setOrderDate($date) { $this->order_date = $date; return $this; }
     public function getOrderNo() { return $this->order_no; }
     public function setOrderNo($no) { $this->order_no = $no; return $this; }
     public function getCurrencyCode() { return $this->currency_code; }
