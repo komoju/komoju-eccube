@@ -15,7 +15,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: [self-hosted, beta, public-release]
+    runs-on: [self-hosted, public-release]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -30,7 +30,7 @@ jobs:
   test:
     name: Unit tests / PHP ${{ matrix.php }}
     needs: lint
-    runs-on: [self-hosted, beta, public-release]
+    runs-on: [self-hosted, public-release]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -49,7 +49,7 @@ jobs:
   compatibility:
     name: EC-CUBE ${{ matrix.eccube }}
     needs: lint
-    runs-on: [self-hosted, beta, public-release]
+    runs-on: [self-hosted, public-release]
     timeout-minutes: 45
     strategy:
       fail-fast: false
