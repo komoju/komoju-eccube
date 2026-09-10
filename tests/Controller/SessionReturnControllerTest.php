@@ -321,6 +321,99 @@ class SessionReturnControllerTest extends TestCase
         ];
     }
 
+    /** @dataProvider lookupFailureProvider */
+    public function testRefreshFailureCannotUseStalePaidOrder($configFailure)
+    {
+        $this->arrangeOrderWithStatus(OrderStatus::PAID);
+        if ($configFailure) {
+            $this->configService = $this->createMock(ConfigService::class);
+            $this->configService->method('getConfigData')
+                ->willThrowException(new \RuntimeException('config unavailable'));
+        } else {
+            $this->komojuClient->method('getSession')->willReturn(null);
+            $this->komojuClient->method('getStatusCode')->willReturn(503);
+        }
+        $this->em->method('refresh')->willThrowException(new \RuntimeException('database unavailable'));
+        $this->em->expects($this->never())->method('flush');
+        $this->cartService->expects($this->never())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+    }
+
+    public function lookupFailureProvider(): array
+    {
+        return ['API unavailable' => [false], 'configuration unavailable' => [true]];
+    }
+
+    /** @dataProvider reconciliationStatusProvider */
+    public function testRefreshFailureBeforePaymentMutationIsContained($paymentStatus)
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => $paymentStatus],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('refresh')->willThrowException(new \RuntimeException('database unavailable'));
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->cartService->expects($this->never())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertFalse($attempt->isCaptured());
+        $this->assertNull($attempt->getCanceledAt());
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+    }
+
+    public function reconciliationStatusProvider(): array
+    {
+        return ['captured payment' => ['captured'], 'terminal payment' => ['cancelled']];
+    }
+
+    /** @dataProvider postReconciliationProvider */
+    public function testRefreshFailureAfterReconciliationDoesNotExposeCompletion($paymentStatus)
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        if ($paymentStatus === 'cancelled') {
+            $attempt->setCanceledAt(new \DateTime());
+        }
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => $paymentStatus],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->purchaseFlow->method('commit')->willReturnCallback(function ($order) {
+            $order->setOrderStatus((new OrderStatus())->setId(OrderStatus::NEW));
+        });
+        $orderRefreshes = 0;
+        $this->em->method('refresh')->willReturnCallback(function ($entity) use (&$orderRefreshes) {
+            if ($entity instanceof Order && ++$orderRefreshes === 3) {
+                throw new \RuntimeException('database unavailable');
+            }
+        });
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->cartService->expects($this->never())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+    }
+
+    public function postReconciliationProvider(): array
+    {
+        return ['accepted authorization' => ['authorized'], 'duplicate cancellation' => ['cancelled']];
+    }
+
     public function testMissingConfigRedirectsWithoutCustomer500()
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);

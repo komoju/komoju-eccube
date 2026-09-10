@@ -98,10 +98,8 @@ class SessionReturnController extends AbstractController
         } catch (\Throwable $e) {
             log_error($e);
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to load payment session: " . $e->getMessage());
-            try {
-                $this->entityManager->refresh($Order);
-            } catch (\Throwable $refreshError) {
-                $this->log_service->writeLog("sessionReturn", $Order->getId(), "failed to refresh order after session error: " . $refreshError->getMessage());
+            if(!$this->refreshOrder($Order)){
+                return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
             }
             $currentStatus = $Order->getOrderStatus()->getId();
             if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
@@ -117,7 +115,9 @@ class SessionReturnController extends AbstractController
             // We must NOT roll back here: if the payment actually succeeded, the
             // webhook (authoritative) will finalize the order, and a rollback
             // would restore stock the paid order still owns -> oversell.
-            $this->entityManager->refresh($Order);
+            if(!$this->refreshOrder($Order)){
+                return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
+            }
             $currentStatus = $Order->getOrderStatus()->getId();
             if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
                 return $this->redirectAfterCompletion($Order, $browserAuthorized);
@@ -142,7 +142,9 @@ class SessionReturnController extends AbstractController
 
         if(!$payment_ok){
             if($payment_terminal || $session_terminal){
-                $this->entityManager->refresh($Order);
+                if(!$this->refreshOrder($Order)){
+                    return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
+                }
                 $currentStatus = $Order->getOrderStatus()->getId();
                 if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
                     if($currentStatus == OrderStatus::PAID){
@@ -175,7 +177,9 @@ class SessionReturnController extends AbstractController
                     return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
                 }
                 if(!$processed){
-                    $this->entityManager->refresh($Order);
+                    if(!$this->refreshOrder($Order)){
+                        return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
+                    }
                     $currentStatus = $Order->getOrderStatus()->getId();
                     if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
                         return $this->redirectAfterCompletion($Order, $browserAuthorized);
@@ -191,7 +195,9 @@ class SessionReturnController extends AbstractController
         }
 
         // Refresh order from DB to get latest status (webhook may have updated it)
-        $this->entityManager->refresh($Order);
+        if(!$this->refreshOrder($Order)){
+            return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
+        }
 
         // If the webhook already processed this order, do not process it twice.
         $currentStatus = $Order->getOrderStatus()->getId();
@@ -259,8 +265,8 @@ class SessionReturnController extends AbstractController
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment attempt is terminal");
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
-        if($payment_status === 'authorized'){
-            $this->entityManager->refresh($Order);
+        if($payment_status === 'authorized' && !$this->refreshOrder($Order)){
+            return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
 
         if($payment_status === 'captured'){
@@ -326,6 +332,17 @@ class SessionReturnController extends AbstractController
             return false;
         }
         return true;
+    }
+
+    private function refreshOrder($Order){
+        try {
+            $this->entityManager->refresh($Order);
+            return true;
+        } catch (\Throwable $e) {
+            // The database may be unavailable; avoid the database-backed payment log.
+            log_error($e);
+            return false;
+        }
     }
 
     private function redirectToShopping($message){
