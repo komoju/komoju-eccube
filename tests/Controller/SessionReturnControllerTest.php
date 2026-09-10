@@ -258,6 +258,69 @@ class SessionReturnControllerTest extends TestCase
         $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
     }
 
+    /** @dataProvider rejectedCompletionProvider */
+    public function testRejectedOrderStatusNeverExposesCompletion($statusId, $lookup)
+    {
+        [$order] = $this->arrangeOrderWithStatus($statusId);
+        if ($lookup === 'config_error') {
+            $this->configService = $this->createMock(ConfigService::class);
+            $this->configService->method('getConfigData')
+                ->willThrowException(new \RuntimeException('config unavailable'));
+        } else {
+            $this->komojuClient->method('getSession')->willReturn($lookup === 'api_error' ? null : [
+                'status' => 'completed',
+                'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+            ]);
+            $this->komojuClient->method('getStatusCode')->willReturn($lookup === 'api_error' ? 503 : 200);
+        }
+        $this->cartService->expects($this->never())->method('clear');
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+        $this->assertSame($statusId, $order->getOrderStatus()->getId());
+    }
+
+    public function rejectedCompletionProvider(): array
+    {
+        return [
+            'canceled order during API outage' => [OrderStatus::CANCEL, 'api_error'],
+            'canceled order with missing config' => [OrderStatus::CANCEL, 'config_error'],
+            'returned order with captured payment' => [OrderStatus::RETURNED, 'captured'],
+            'unknown order status' => [999, 'captured'],
+        ];
+    }
+
+    /** @dataProvider acceptedCompletionProvider */
+    public function testAcceptedOrderRemainsAccessibleDuringApiFailure($statusId)
+    {
+        [$order] = $this->arrangeOrderWithStatus($statusId);
+        $this->komojuClient->method('getSession')->willReturn(null);
+        $this->komojuClient->method('getStatusCode')->willReturn(503);
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame(42, $this->session->get('eccube.front.shopping.order.id'));
+        $this->assertSame($statusId, $order->getOrderStatus()->getId());
+    }
+
+    public function acceptedCompletionProvider(): array
+    {
+        return [
+            'accepted awaiting payment' => [OrderStatus::NEW],
+            'being fulfilled' => [OrderStatus::IN_PROGRESS],
+            'delivered' => [OrderStatus::DELIVERED],
+        ];
+    }
+
     public function testMissingConfigRedirectsWithoutCustomer500()
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
@@ -466,6 +529,9 @@ class SessionReturnControllerTest extends TestCase
         $finalStatus = new OrderStatus();
         $finalStatus->setId($paymentStatus === 'captured' ? OrderStatus::PAID : OrderStatus::NEW);
         $this->em->method('find')->willReturn($finalStatus);
+        $this->purchaseFlow->method('commit')->willReturnCallback(function ($order) use ($finalStatus) {
+            $order->setOrderStatus($finalStatus);
+        });
 
         $this->purchaseFlow->expects($this->never())->method('rollback');
 

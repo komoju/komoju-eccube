@@ -334,7 +334,12 @@ class SessionReturnController extends AbstractController
     }
 
     private function redirectAfterCompletion($Order, $browserAuthorized){
-        if(!$browserAuthorized){
+        if(!$browserAuthorized || !in_array($Order->getOrderStatus()->getId(), [
+            OrderStatus::NEW,
+            OrderStatus::PAID,
+            OrderStatus::IN_PROGRESS,
+            OrderStatus::DELIVERED,
+        ], true)){
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
         try {
