@@ -74,6 +74,28 @@ class WebhookControllerTest extends TestCase
         $this->assertSame(500, $resp->getStatusCode());
     }
 
+    /** @dataProvider missingSecretProvider */
+    public function testMissingSecretReturns503($secret)
+    {
+        $configService = $this->createMock(ConfigService::class);
+        $configService->method('getConfigData')->willReturn(['webhook_secret' => $secret]);
+        $logService = $this->createMock(LogService::class);
+        $logService->expects($this->once())->method('writeLog')
+            ->with('webhook', '', $this->stringContains('not configured'));
+        $webhookService = $this->createMock(WebhookService::class);
+        $webhookService->expects($this->never())->method($this->anything());
+
+        $controller = new WebhookController($logService, $configService, $webhookService);
+        $response = $controller->webhook(new Request([], [], '{}'));
+
+        $this->assertSame(503, $response->getStatusCode());
+    }
+
+    public function missingSecretProvider(): array
+    {
+        return [[null], [''], ['   ']];
+    }
+
     /**
      * Build a Request whose body is signed correctly so the controller's
      * verification passes. $body must already be JSON-encoded.

@@ -52,6 +52,15 @@ class KomojuOrder
      * @ORM\Column(name="komoju_session_id", type="string", nullable=true)
      */
     private $komoju_session_id;
+    /** @ORM\Column(name="expected_amount", type="decimal", precision=12, scale=2, nullable=true) */
+    private $expected_amount;
+
+    /** @ORM\Column(name="expected_currency", type="string", length=3, nullable=true) */
+    private $expected_currency;
+
+    /** @ORM\Column(name="callback_token_hash", type="string", length=64, nullable=true) */
+    private $callback_token_hash;
+
     /**
      * @var string
      * @ORM\Column(name="type", type="string", nullable=true)
@@ -258,6 +267,27 @@ class KomojuOrder
     }
     public function setKomojuSessionId($komoju_session_id){
         $this->komoju_session_id = $komoju_session_id;
+        return $this;
+    }
+    public function getExpectedAmount(){
+        return $this->expected_amount;
+    }
+    public function setExpectedAmount($expected_amount){
+        $this->expected_amount = $expected_amount;
+        return $this;
+    }
+    public function getExpectedCurrency(){
+        return $this->expected_currency;
+    }
+    public function setExpectedCurrency($expected_currency){
+        $this->expected_currency = $expected_currency;
+        return $this;
+    }
+    public function getCallbackTokenHash(){
+        return $this->callback_token_hash;
+    }
+    public function setCallbackTokenHash($callback_token_hash){
+        $this->callback_token_hash = $callback_token_hash;
         return $this;
     }
     public function setCreatedAt($created_at){

@@ -77,6 +77,18 @@ class OrderController extends AbstractController{
             $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
             return $this->redirectToRoute('admin_order');
         }
+        $this->entityManager->lock($Order, LockMode::PESSIMISTIC_WRITE);
+        $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
+        $this->entityManager->refresh($Order);
+        $this->entityManager->refresh($komoju_order);
+        $currentAttempt = $this->komoju_order_repo->findOneBy(['Order' => $Order], ['id' => 'DESC']);
+        $isCurrent = $currentAttempt === $komoju_order
+            || ($currentAttempt && $currentAttempt->getId() && $currentAttempt->getId() === $komoju_order->getId());
+        if(!$isCurrent || $komoju_order->getCanceledAt()
+            || $Order->getOrderStatus()->getId() == OrderStatus::CANCEL){
+            $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
+            return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
+        }
 
         if($komoju_order->getIsChargeRefunded()){
             $this->addError('komoju_payment.admin.order.error.refunded', 'admin');
@@ -171,16 +183,16 @@ class OrderController extends AbstractController{
                 return $this->redirectToRoute('admin_order');
             }
 
+            $this->entityManager->lock($Order, LockMode::PESSIMISTIC_WRITE);
+            $this->entityManager->refresh($Order);
             $komoju_order = $this->komoju_order_repo->findOneBy(['Order' => $Order], ['id' => 'DESC']);
-
             if(empty($komoju_order) || empty($komoju_order->getKomojuPaymentId())){
                 $this->log_service->writeLog("refund", $Order->getId(), "failed: no KOMOJU payment record");
                 $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
                 return $this->redirectToRoute('admin_order');
             }
-
-            // Lock the row to prevent concurrent refund attempts
             $this->entityManager->lock($komoju_order, LockMode::PESSIMISTIC_WRITE);
+            $this->entityManager->refresh($komoju_order);
 
             // Base refund/cancel math on the actually-captured amount, not the
             // (possibly-edited) order total. Fall back to order total for rows

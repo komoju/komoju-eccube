@@ -66,6 +66,9 @@ class KomojuPaymentTest extends TestCase
         $order->setPaymentTotal($paymentTotal);
         $order->setOrderNo('TEST-001');
         $order->setCurrencyCode('JPY');
+        $status = new OrderStatus();
+        $status->setId(OrderStatus::PROCESSING);
+        $order->setOrderStatus($status);
         if ($payment) {
             $order->setPayment($payment);
         } else {
@@ -246,6 +249,38 @@ class KomojuPaymentTest extends TestCase
 
     // --- apply ---
 
+    public function testApplyRejectsOrderFinalizedWhileWaitingForLock()
+    {
+        $order = $this->makeOrder(2000);
+        $this->payment->setOrder($order);
+        $paid = new OrderStatus();
+        $paid->setId(OrderStatus::PAID);
+        $this->entityManager->method('refresh')->willReturnCallback(function ($entity) use ($order, $paid) {
+            if ($entity === $order) {
+                $entity->setOrderStatus($paid);
+            }
+        });
+        $this->purchaseFlow->expects($this->never())->method('prepare');
+        $this->clientFactory->expects($this->never())->method('create');
+
+        $this->expectException(ShoppingException::class);
+        $this->payment->apply();
+    }
+
+    public function testApplyRejectsPendingOrderWithoutPreparingAgain()
+    {
+        $order = $this->makeOrder(2000);
+        $pending = new OrderStatus();
+        $pending->setId(OrderStatus::PENDING);
+        $order->setOrderStatus($pending);
+        $this->payment->setOrder($order);
+        $this->purchaseFlow->expects($this->never())->method('prepare');
+        $this->clientFactory->expects($this->never())->method('create');
+
+        $this->expectException(ShoppingException::class);
+        $this->payment->apply();
+    }
+
     public function testApplySuccess()
     {
         $order = $this->makeOrder(2000);
@@ -269,7 +304,13 @@ class KomojuPaymentTest extends TestCase
         $repo->method('findOneBy')->willReturn($komojuPay);
         $this->entityManager->method('getRepository')->willReturn($repo);
 
-        $this->router->method('generate')->willReturn('https://shop.test/return');
+        $callbackStates = [];
+        $this->router->method('generate')->willReturnCallback(
+            function ($route, $params) use (&$callbackStates) {
+                $callbackStates[] = $params['state'];
+                return 'https://shop.test/return';
+            }
+        );
 
         $client = $this->createMock(KomojuClient::class);
         $client->method('createSession')->willReturn([
@@ -279,13 +320,29 @@ class KomojuPaymentTest extends TestCase
         $client->method('getStatusCode')->willReturn(200);
         $this->clientFactory->method('create')->willReturn($client);
 
-        $this->entityManager->expects($this->atLeastOnce())->method('persist');
+        $persistedAttempt = null;
+        $this->entityManager->expects($this->atLeastOnce())->method('persist')
+            ->willReturnCallback(function ($entity) use (&$persistedAttempt) {
+                if ($entity instanceof KomojuOrder) {
+                    $persistedAttempt = $entity;
+                }
+            });
 
         $dispatcher = $this->payment->apply();
 
         $this->assertNotNull($dispatcher);
         $response = $dispatcher->getResponse();
         $this->assertEquals('https://komoju.com/sessions/ses_abc123', $response->getTargetUrl());
+        $this->assertCount(2, $callbackStates);
+        $this->assertSame($callbackStates[0], $callbackStates[1]);
+        $this->assertSame(2000, (int)$persistedAttempt->getExpectedAmount());
+        $this->assertSame('JPY', $persistedAttempt->getExpectedCurrency());
+        $expectedHash = hash('sha256', $callbackStates[0]);
+        $this->assertSame($expectedHash, $persistedAttempt->getCallbackTokenHash());
+        $this->assertSame(
+            $expectedHash,
+            $this->requestStack->getSession()->get('komoju.callback.ses_abc123')
+        );
     }
 
     public function testApplyCancelsPreviousPendingSessions()
@@ -336,6 +393,42 @@ class KomojuPaymentTest extends TestCase
 
         // The prior KomojuOrder is marked cancelled locally too.
         $this->assertNotNull($priorOrder->getCanceledAt());
+    }
+
+    public function testApplyStopsWhenPriorSessionCancellationFails()
+    {
+        $order = $this->makeOrder(2000);
+        $this->payment->setOrder($order);
+        $status = new OrderStatus();
+        $status->setId(OrderStatus::PROCESSING);
+        $this->orderStatusRepo->method('find')->willReturn($status);
+        $this->configService->method('getConfigData')->willReturn([
+            'secret_key' => 'sk_test',
+            'capture_on' => true,
+        ]);
+
+        $pay = new KomojuPay();
+        $prior = new KomojuOrder();
+        $prior->setOrder($order);
+        $prior->setKomojuSessionId('ses_open');
+        $repo = $this->createMock(StubRepository::class);
+        $repo->method('findOneBy')->willReturn($pay);
+        $repo->method('findBy')->willReturn([$prior]);
+        $this->entityManager->method('getRepository')->willReturn($repo);
+
+        $client = $this->createMock(KomojuClient::class);
+        $client->expects($this->once())->method('cancelSession')->with('ses_open');
+        $client->method('getStatusCode')->willReturn(500);
+        $client->expects($this->never())->method('createSession');
+        $this->clientFactory->method('create')->willReturn($client);
+        $this->purchaseFlow->expects($this->once())->method('rollback');
+
+        $this->expectException(ShoppingException::class);
+        try {
+            $this->payment->apply();
+        } finally {
+            $this->assertNull($prior->getCanceledAt());
+        }
     }
 
     public function testApplyDoesNotCancelCapturedOrCancelledSessions()

@@ -10,6 +10,7 @@ use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Plugin\Komoju42\KomojuClient;
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Payment;
+use Eccube\Entity\PaymentOption;
 use PHPUnit\Framework\TestCase;
 
 class ConfigServiceTest extends TestCase
@@ -185,6 +186,53 @@ class ConfigServiceTest extends TestCase
         $this->entityManager->expects($this->never())->method('persist');
 
         $this->service->disablePlugin();
+    }
+
+    public function testRetireReferencedPaymentHidesInsteadOfDeleting()
+    {
+        $payment = new Payment();
+        $payment->setId(267);
+        $payment->setVisible(true);
+        $options = $this->createMock(StubConfigRepository::class);
+        $options->method('findBy')->willReturn([]);
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->expects($this->once())->method('fetchOne')
+            ->with('SELECT COUNT(*) FROM dtb_order WHERE payment_id = ?', [267])
+            ->willReturn(5);
+        $this->entityManager->method('getConnection')->willReturn($connection);
+        $this->entityManager->method('getRepository')->with(PaymentOption::class)->willReturn($options);
+        $this->entityManager->expects($this->once())->method('persist')->with($payment);
+        $this->entityManager->expects($this->never())->method('remove');
+
+        (new TestableConfigService($this->entityManager, $this->eccubeConfig, $this->clientFactory))
+            ->retire($payment);
+
+        $this->assertFalse($payment->getVisible());
+    }
+
+    public function testRetireUnreferencedPaymentDeletesIt()
+    {
+        $payment = new Payment();
+        $payment->setId(268);
+        $options = $this->createMock(StubConfigRepository::class);
+        $options->method('findBy')->willReturn([]);
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->method('fetchOne')->willReturn(0);
+        $this->entityManager->method('getConnection')->willReturn($connection);
+        $this->entityManager->method('getRepository')->with(PaymentOption::class)->willReturn($options);
+        $this->entityManager->expects($this->never())->method('persist');
+        $this->entityManager->expects($this->once())->method('remove')->with($payment);
+
+        (new TestableConfigService($this->entityManager, $this->eccubeConfig, $this->clientFactory))
+            ->retire($payment);
+    }
+}
+
+class TestableConfigService extends ConfigService
+{
+    public function retire(Payment $Payment)
+    {
+        $this->retirePayment($Payment);
     }
 }
 

@@ -132,11 +132,10 @@ class ConfigService{
             if(!in_array($name, $api_slugs)){
                 $Payment = $pay->getPayment();
                 if($Payment){
-                    $this->removePaymentOptions($Payment);
                     $pay->setPayment(null);
                     $this->entityManager->persist($pay);
                     $this->entityManager->flush();
-                    $this->entityManager->remove($Payment);
+                    $this->retirePayment($Payment);
                 }
                 $this->entityManager->remove($pay);
             }
@@ -223,6 +222,20 @@ class ConfigService{
         $this->entityManager->flush();
     }
 
+    protected function retirePayment(Payment $Payment){
+        $this->removePaymentOptions($Payment);
+        $referenced = (int)$this->entityManager->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM dtb_order WHERE payment_id = ?',
+            [$Payment->getId()]
+        ) > 0;
+        if($referenced){
+            $Payment->setVisible(false);
+            $this->entityManager->persist($Payment);
+        }else{
+            $this->entityManager->remove($Payment);
+        }
+    }
+
     private function getLinkedPaymentIds(){
         $linked = [];
         foreach($this->entityManager->getRepository(KomojuPay::class)->findBy([]) as $kp){
@@ -275,27 +288,16 @@ class ConfigService{
             if(!$activeId){
                 continue;
             }
-            $this->entityManager->createQueryBuilder()
-                ->update(\Eccube\Entity\Order::class, 'o')
-                ->set('o.Payment', ':newId')
-                ->where('o.Payment = :oldId')
-                ->setParameter('newId', $activeId)
-                ->setParameter('oldId', $orphan['id'])
-                ->getQuery()
-                ->execute();
-            $this->entityManager->createQueryBuilder()
-                ->delete(PaymentOption::class, 'po')
-                ->where('po.payment_id = :pid')
-                ->setParameter('pid', $orphan['id'])
-                ->getQuery()
-                ->execute();
-            $this->entityManager->createQueryBuilder()
-                ->delete(Payment::class, 'p')
-                ->where('p.id = :pid')
-                ->setParameter('pid', $orphan['id'])
-                ->getQuery()
-                ->execute();
+            $this->entityManager->getConnection()->executeStatement(
+                'UPDATE dtb_order SET payment_id = ? WHERE payment_id = ?',
+                [$activeId, $orphan['id']]
+            );
+            $Payment = $paymentRepository->find($orphan['id']);
+            if($Payment){
+                $this->retirePayment($Payment);
+            }
         }
+        $this->entityManager->flush();
 
         // Phase 2: Handle remaining orphans (no active equivalent) using DQL
         // Re-query linked IDs from DB to get fresh state after Phase 1 DQL deletes
@@ -320,37 +322,12 @@ class ConfigService{
             if(isset($linkedIdSet[$pid])){
                 continue;
             }
-            $usedByOrder = $this->entityManager->createQueryBuilder()
-                ->select('COUNT(o.id)')
-                ->from(\Eccube\Entity\Order::class, 'o')
-                ->where('o.Payment = :pid')
-                ->setParameter('pid', $pid)
-                ->getQuery()
-                ->getSingleScalarResult();
-            if($usedByOrder > 0){
-                $this->entityManager->createQueryBuilder()
-                    ->update(Payment::class, 'p')
-                    ->set('p.visible', ':vis')
-                    ->where('p.id = :pid')
-                    ->setParameter('vis', false)
-                    ->setParameter('pid', $pid)
-                    ->getQuery()
-                    ->execute();
-            }else{
-                $this->entityManager->createQueryBuilder()
-                    ->delete(PaymentOption::class, 'po')
-                    ->where('po.payment_id = :pid')
-                    ->setParameter('pid', $pid)
-                    ->getQuery()
-                    ->execute();
-                $this->entityManager->createQueryBuilder()
-                    ->delete(Payment::class, 'p')
-                    ->where('p.id = :pid')
-                    ->setParameter('pid', $pid)
-                    ->getQuery()
-                    ->execute();
+            $Payment = $paymentRepository->find($pid);
+            if($Payment){
+                $this->retirePayment($Payment);
             }
         }
+        $this->entityManager->flush();
     }
     private function insertMailTemplate(){
         $template_list = [

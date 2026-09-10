@@ -25,7 +25,7 @@ class WebhookController extends AbstractController
     }
 
     /**
-     * @Route("/plugin/Komoju42/webhook", name="Komoju42_webhook")
+     * @Route("/plugin/Komoju42/webhook", name="Komoju42_webhook", methods={"POST"})
      */
     public function webhook(Request $request){
         // Config/infrastructure failures are NOT the caller's fault. Answering 400
@@ -38,6 +38,10 @@ class WebhookController extends AbstractController
             log_error($ex);
             $this->log_service->writeLog("webhook", "", "config unavailable: " . $ex->getMessage());
             return $this->json(['status' => 'error', 'message' => 'config unavailable'], 500);
+        }
+        if(!is_string($webhook_secret) || trim($webhook_secret) === ''){
+            $this->log_service->writeLog("webhook", "", "webhook secret is not configured");
+            return $this->json(['status' => 'error', 'message' => 'webhook unavailable'], 503);
         }
 
         try{

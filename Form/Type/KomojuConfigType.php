@@ -66,7 +66,10 @@ class KomojuConfigType extends AbstractType{
                 ]
             ])
             ->add('webhook_secret', TextType::class, [
-                'required'  =>  false,
+                'required' => true,
+                'constraints' => [
+                    new Assert\NotBlank(),
+                ],
             ])
             ->add('logging_enabled', CheckboxType::class, [
                 'required' => false,

@@ -28,6 +28,8 @@ services:
             - '@Eccube\Service\OrderStateMachine'
             - '@plg_Komoju42.service.komoju_log'
             - '@eccube.purchase.flow.shopping'
+            - '@Eccube\Service\PurchaseFlow\Processor\PointProcessor'
+            - '@Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor'
     plg_Komoju42.service.komoju_mail_service:
         public: true
         class: Plugin\Komoju42\Service\MailExService
@@ -73,6 +75,9 @@ services:
     Plugin\Komoju42\Controller\:
         resource: '../../Controller/*'
         tags: ['controller.service_arguments']
+    Plugin\Komoju42\Repository\:
+        resource: '../../Repository/*'
+        tags: ['doctrine.repository_service']
 
     # FQCN aliases for type-hinted injection
     Plugin\Komoju42\Service\ConfigService: '@plg_Komoju42.service.config'
