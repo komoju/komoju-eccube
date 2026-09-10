@@ -9,6 +9,9 @@ use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 use Plugin\Komoju42\Service\Method\KomojuPayment;
 use Plugin\Komoju42\KomojuClient;
+use Plugin\Komoju42\Controller\SessionReturnController;
+use Eccube\Entity\Cart;
+use Eccube\Service\CartService;
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Order;
 use Eccube\Entity\Payment;
@@ -343,6 +346,74 @@ class KomojuPaymentTest extends TestCase
             $expectedHash,
             $this->requestStack->getSession()->get('komoju.callback.ses_abc123')
         );
+    }
+
+    /** @dataProvider returnCartProvider */
+    public function testApplyOnlyAuthorizesCleanupOfItsOriginalCart($sameCart)
+    {
+        $order = $this->makeOrder(2000);
+        $order->setPreOrderId('checkout-1');
+        $this->payment->setOrder($order);
+        $this->orderStatusRepo->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PENDING));
+        $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test', 'capture_on' => true]);
+        $cart = $this->createMock(Cart::class);
+        $cart->method('getId')->willReturn(84);
+        $cart->method('getPreOrderId')->willReturn('checkout-1');
+        $cartRepo = $this->createMock(StubRepository::class);
+        $cartRepo->method('findOneBy')->with(['pre_order_id' => 'checkout-1'])->willReturn($cart);
+        $paymentRepo = $this->createMock(StubRepository::class);
+        $paymentRepo->method('findOneBy')->willReturn((new KomojuPay())->setName('credit_card'));
+        $attempt = null;
+        $attemptRepo = $this->createMock(StubRepository::class);
+        $attemptRepo->method('findOneBy')->willReturnCallback(function () use (&$attempt) { return $attempt; });
+        $this->entityManager->method('getRepository')->willReturnMap([
+            [Cart::class, $cartRepo],
+            [KomojuPay::class, $paymentRepo],
+            [KomojuOrder::class, $attemptRepo],
+        ]);
+        $this->entityManager->method('persist')->willReturnCallback(function ($entity) use (&$attempt) {
+            if ($entity instanceof KomojuOrder) {
+                $attempt = $entity;
+            }
+        });
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $this->entityManager->method('getConnection')->willReturn($connection);
+        $state = null;
+        $this->router->method('generate')->willReturnCallback(function ($route, $params) use (&$state) {
+            $state = $params['state'];
+            return 'https://shop.test/return';
+        });
+        $client = $this->createMock(KomojuClient::class);
+        $client->method('createSession')->willReturn(['id' => 'session-bound-cart', 'session_url' => 'https://komoju.com/session-bound-cart']);
+        $client->method('getSession')->willReturn([
+            'id' => 'session-bound-cart', 'status' => 'completed', 'amount' => 2000, 'currency' => 'JPY',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $client->method('getStatusCode')->willReturn(200);
+        $this->clientFactory->method('create')->willReturn($client);
+
+        $this->payment->apply();
+        $order->setOrderStatus((new OrderStatus())->setId(OrderStatus::PAID));
+        $returnCart = $cart;
+        if (!$sameCart) {
+            $returnCart = $this->createMock(Cart::class);
+            $returnCart->method('getId')->willReturn(85);
+            $returnCart->method('getPreOrderId')->willReturn('checkout-1');
+        }
+        $cartService = $this->createMock(CartService::class);
+        $cartService->method('getCart')->willReturn($returnCart);
+        $cartService->expects($sameCart ? $this->once() : $this->never())->method('clear');
+        $controller = new SessionReturnController($this->entityManager, $this->configService, $this->logService,
+            $this->purchaseFlow, $this->requestStack, $cartService, $this->clientFactory);
+
+        $response = $controller->sessionReturn(new Request(['session_id' => 'session-bound-cart', 'state' => $state]));
+
+        $this->assertSame('/route/shopping_complete', $response->getTargetUrl());
+    }
+
+    public function returnCartProvider(): array
+    {
+        return ['original cart' => [true], 'replacement cart' => [false]];
     }
 
     public function testApplyCancelsPreviousPendingSessions()

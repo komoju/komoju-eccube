@@ -16,6 +16,7 @@ class Order
     private $order_date;
     private $order_no;
     private $currency_code;
+    private $pre_order_id;
 
     public function getId() { return $this->id; }
     public function setId($id) { $this->id = $id; return $this; }
@@ -37,4 +38,6 @@ class Order
     public function setOrderNo($no) { $this->order_no = $no; return $this; }
     public function getCurrencyCode() { return $this->currency_code; }
     public function setCurrencyCode($code) { $this->currency_code = $code; return $this; }
+    public function getPreOrderId() { return $this->pre_order_id; }
+    public function setPreOrderId($id) { $this->pre_order_id = $id; return $this; }
 }
