@@ -5,6 +5,7 @@ namespace Tests\Komoju42\Controller;
 use Doctrine\ORM\EntityManagerInterface;
 use Eccube\Entity\Master\OrderStatus;
 use Eccube\Entity\Order;
+use Eccube\Entity\Cart;
 use Eccube\Service\CartService;
 use Eccube\Service\PurchaseFlow\PurchaseFlow;
 use Plugin\Komoju42\Controller\SessionReturnController;
@@ -42,6 +43,7 @@ class SessionReturnControllerTest extends TestCase
     private $requestStack;
     private $session;
     private $cartService;
+    private $checkoutCart;
     private $clientFactory;
     private $komojuClient;
     private $komojuOrderRepo;
@@ -60,6 +62,9 @@ class SessionReturnControllerTest extends TestCase
         $this->session = new Session();
         $this->requestStack = new RequestStack(new Request(), $this->session);
         $this->cartService = $this->createMock(CartService::class);
+        $this->cartService->method('getCart')->willReturnCallback(function () {
+            return $this->checkoutCart;
+        });
         $this->clientFactory = $this->createMock(KomojuClientFactory::class);
         $this->komojuClient = $this->createMock(KomojuClient::class);
         $this->komojuOrderRepo = $this->createMock(\Tests\Komoju42\Service\StubRepository::class);
@@ -105,6 +110,7 @@ class SessionReturnControllerTest extends TestCase
         $order = new Order();
         $order->setId(42);
         $order->setOrderStatus($status);
+        $order->setPreOrderId('checkout-42');
 
         $komojuOrder = new KomojuOrder();
         $komojuOrder->setOrder($order);
@@ -112,10 +118,41 @@ class SessionReturnControllerTest extends TestCase
         $stateHash = hash('sha256', self::CALLBACK_STATE);
         $komojuOrder->setCallbackTokenHash($stateHash);
         $this->session->set('komoju.callback.sess_abc', $stateHash);
+        $this->checkoutCart = $this->makeCart(84, 'checkout-42');
+        $this->session->set('komoju.callback_cart.sess_abc', [
+            'order_id' => 42,
+            'cart_id' => 84,
+            'pre_order_id' => 'checkout-42',
+        ]);
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
         return [$order, $komojuOrder, $status];
+    }
+
+    private function makeCart($id, $preOrderId): Cart
+    {
+        $cart = new Cart();
+        $property = new \ReflectionProperty(Cart::class, 'id');
+        if (PHP_VERSION_ID < 80100) {
+            $property->setAccessible(true);
+        }
+        $property->setValue($cart, $id);
+        $cart->setPreOrderId($preOrderId)->setCartKey('reusable-cart-key');
+        return $cart;
+    }
+
+    private function arrangeCompletedCart(): CheckoutCartService
+    {
+        $this->arrangeOrderWithStatus(OrderStatus::PAID);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $cartService = new CheckoutCartService([$this->checkoutCart], $this->checkoutCart);
+        $this->cartService = $cartService;
+        return $cartService;
     }
 
     // --- early-exit branches ---
@@ -256,6 +293,162 @@ class SessionReturnControllerTest extends TestCase
 
         $this->assertSame('shopping', $controller->lastRedirect);
         $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+    }
+
+    /** @dataProvider rejectedCompletionProvider */
+    public function testRejectedOrderStatusNeverExposesCompletion($statusId, $lookup)
+    {
+        [$order] = $this->arrangeOrderWithStatus($statusId);
+        if ($lookup === 'config_error') {
+            $this->configService = $this->createMock(ConfigService::class);
+            $this->configService->method('getConfigData')
+                ->willThrowException(new \RuntimeException('config unavailable'));
+        } else {
+            $this->komojuClient->method('getSession')->willReturn($lookup === 'api_error' ? null : [
+                'status' => 'completed',
+                'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+            ]);
+            $this->komojuClient->method('getStatusCode')->willReturn($lookup === 'api_error' ? 503 : 200);
+        }
+        $this->cartService->expects($this->never())->method('clear');
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+        $this->assertSame($statusId, $order->getOrderStatus()->getId());
+    }
+
+    public function rejectedCompletionProvider(): array
+    {
+        return [
+            'canceled order during API outage' => [OrderStatus::CANCEL, 'api_error'],
+            'canceled order with missing config' => [OrderStatus::CANCEL, 'config_error'],
+            'returned order with captured payment' => [OrderStatus::RETURNED, 'captured'],
+            'unknown order status' => [999, 'captured'],
+        ];
+    }
+
+    /** @dataProvider acceptedCompletionProvider */
+    public function testAcceptedOrderRemainsAccessibleDuringApiFailure($statusId)
+    {
+        [$order] = $this->arrangeOrderWithStatus($statusId);
+        $this->komojuClient->method('getSession')->willReturn(null);
+        $this->komojuClient->method('getStatusCode')->willReturn(503);
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame(42, $this->session->get('eccube.front.shopping.order.id'));
+        $this->assertSame($statusId, $order->getOrderStatus()->getId());
+    }
+
+    public function acceptedCompletionProvider(): array
+    {
+        return [
+            'accepted awaiting payment' => [OrderStatus::NEW],
+            'being fulfilled' => [OrderStatus::IN_PROGRESS],
+            'delivered' => [OrderStatus::DELIVERED],
+        ];
+    }
+
+    /** @dataProvider lookupFailureProvider */
+    public function testRefreshFailureCannotUseStalePaidOrder($configFailure)
+    {
+        $this->arrangeOrderWithStatus(OrderStatus::PAID);
+        if ($configFailure) {
+            $this->configService = $this->createMock(ConfigService::class);
+            $this->configService->method('getConfigData')
+                ->willThrowException(new \RuntimeException('config unavailable'));
+        } else {
+            $this->komojuClient->method('getSession')->willReturn(null);
+            $this->komojuClient->method('getStatusCode')->willReturn(503);
+        }
+        $this->em->method('refresh')->willThrowException(new \RuntimeException('database unavailable'));
+        $this->em->expects($this->never())->method('flush');
+        $this->cartService->expects($this->never())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+    }
+
+    public function lookupFailureProvider(): array
+    {
+        return ['API unavailable' => [false], 'configuration unavailable' => [true]];
+    }
+
+    /** @dataProvider reconciliationStatusProvider */
+    public function testRefreshFailureBeforePaymentMutationIsContained($paymentStatus)
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => $paymentStatus],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('refresh')->willThrowException(new \RuntimeException('database unavailable'));
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->cartService->expects($this->never())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertFalse($attempt->isCaptured());
+        $this->assertNull($attempt->getCanceledAt());
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+    }
+
+    public function reconciliationStatusProvider(): array
+    {
+        return ['captured payment' => ['captured'], 'terminal payment' => ['cancelled']];
+    }
+
+    /** @dataProvider postReconciliationProvider */
+    public function testRefreshFailureAfterReconciliationDoesNotExposeCompletion($paymentStatus)
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        if ($paymentStatus === 'cancelled') {
+            $attempt->setCanceledAt(new \DateTime());
+        }
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => $paymentStatus],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->purchaseFlow->method('commit')->willReturnCallback(function ($order) {
+            $order->setOrderStatus((new OrderStatus())->setId(OrderStatus::NEW));
+        });
+        $orderRefreshes = 0;
+        $this->em->method('refresh')->willReturnCallback(function ($entity) use (&$orderRefreshes) {
+            if ($entity instanceof Order && ++$orderRefreshes === 3) {
+                throw new \RuntimeException('database unavailable');
+            }
+        });
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->cartService->expects($this->never())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+    }
+
+    public function postReconciliationProvider(): array
+    {
+        return ['accepted authorization' => ['authorized'], 'duplicate cancellation' => ['cancelled']];
     }
 
     public function testMissingConfigRedirectsWithoutCustomer500()
@@ -466,6 +659,9 @@ class SessionReturnControllerTest extends TestCase
         $finalStatus = new OrderStatus();
         $finalStatus->setId($paymentStatus === 'captured' ? OrderStatus::PAID : OrderStatus::NEW);
         $this->em->method('find')->willReturn($finalStatus);
+        $this->purchaseFlow->method('commit')->willReturnCallback(function ($order) use ($finalStatus) {
+            $order->setOrderStatus($finalStatus);
+        });
 
         $this->purchaseFlow->expects($this->never())->method('rollback');
 
@@ -556,10 +752,6 @@ class SessionReturnControllerTest extends TestCase
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
 
-        // refresh() must be called (we always trust the DB after the API
-        // result has been validated) and after it, the controller must NOT
-        // run purchase_flow->commit because the webhook already did.
-        $this->em->expects($this->once())->method('refresh')->with($order);
         $this->purchaseFlow->expects($this->never())->method('commit');
 
         // Cart must still be cleared and the order id stored in the session
@@ -576,6 +768,100 @@ class SessionReturnControllerTest extends TestCase
     }
 
     // --- happy paths ---
+
+    public function testCapturedAcceptedOrderIsReconciledOnlyOnce()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::NEW);
+        $orderDate = new \DateTime('2026-09-01T10:00:00Z');
+        $capturedAt = new \DateTime('2026-09-02T10:00:00Z');
+        $order->setOrderDate($orderDate);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured', 'captured_at' => $capturedAt->format(DATE_ATOM)],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame(OrderStatus::PAID, $order->getOrderStatus()->getId());
+        $this->assertEquals($capturedAt, $attempt->getCapturedAt());
+        $this->assertEquals($capturedAt, $order->getPaymentDate());
+        $this->assertSame($orderDate, $order->getOrderDate());
+        $paymentDate = $order->getPaymentDate();
+
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame($paymentDate, $order->getPaymentDate());
+        $this->assertSame($orderDate, $order->getOrderDate());
+    }
+
+    public function testAcceptedOrderKeepsPreviouslyRecordedCaptureTime()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::NEW);
+        $capturedAt = new \DateTime('2026-09-02T10:00:00Z');
+        $attempt->setCapturedAt($capturedAt);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
+        $this->purchaseFlow->expects($this->never())->method('commit');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame(OrderStatus::PAID, $order->getOrderStatus()->getId());
+        $this->assertEquals($capturedAt, $order->getPaymentDate());
+        $this->assertEquals($capturedAt, $attempt->getCapturedAt());
+    }
+
+    /** @dataProvider concurrentAcceptedOrderProvider */
+    public function testAcceptedOrderRespectsStatusChangedBeforeLock($lockedStatus)
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::NEW);
+        $capturedAt = new \DateTime('2026-09-02T10:00:00Z');
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $orderRefreshes = 0;
+        $this->em->method('refresh')->willReturnCallback(function ($entity) use (&$orderRefreshes, $lockedStatus, $capturedAt, $attempt) {
+            if ($entity instanceof Order && ++$orderRefreshes === 2) {
+                $entity->setOrderStatus((new OrderStatus())->setId($lockedStatus));
+                if ($lockedStatus === OrderStatus::PAID) {
+                    $entity->setPaymentDate($capturedAt);
+                    $attempt->setCapturedAt($capturedAt);
+                }
+            }
+        });
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame($lockedStatus, $order->getOrderStatus()->getId());
+        if ($lockedStatus === OrderStatus::PAID) {
+            $this->assertSame('shopping_complete', $controller->lastRedirect);
+            $this->assertSame($capturedAt, $order->getPaymentDate());
+        } else {
+            $this->assertSame('shopping', $controller->lastRedirect);
+            $this->assertFalse($attempt->isCaptured());
+            $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+        }
+    }
+
+    public function concurrentAcceptedOrderProvider(): array
+    {
+        return ['canceled concurrently' => [OrderStatus::CANCEL], 'captured concurrently' => [OrderStatus::PAID]];
+    }
 
     public function testCapturedPaymentAdvancesOrderToPaid()
     {
@@ -690,40 +976,117 @@ class SessionReturnControllerTest extends TestCase
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
     }
 
-    public function testCartServiceFailureFallsBackToSessionKeyCleanup()
+
+    public function testCompletedCallbackClearsOnlyItsCartAndReplayPreservesNewCart()
     {
-        // The CartService->clear() at the END of sessionReturn() (after the
-        // happy-path commit) is wrapped in try/catch: if the EntityManager was
-        // closed by a webhook race the cart can't be loaded, so the controller
-        // falls back to scrubbing the cart session keys directly. Exercise that
-        // fallback path with the normal captured-payment flow.
-        [$order, $komojuOrder, $status] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $cartService = $this->arrangeCompletedCart();
+        $otherCart = $this->makeCart(85, 'other-checkout');
+        $cartService->carts[85] = $otherCart;
+        $controller = $this->makeController();
 
-        $this->komojuClient->method('getSession')->willReturn([
-            'status' => 'completed',
-            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
-        ]);
-        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $controller->sessionReturn($this->callbackRequest());
 
-        $paidStatus = new OrderStatus();
-        $paidStatus->setId(OrderStatus::PAID);
-        $this->em->method('find')->willReturn($paidStatus);
-        $this->em->method('isOpen')->willReturn(true);
+        $this->assertArrayNotHasKey(84, $cartService->carts);
+        $this->assertSame($otherCart, $cartService->carts[85]);
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
 
-        // Prime the session with stale cart keys so we can assert they're gone.
-        $this->session->set('cart_keys', ['k1', 'k2']);
-        $this->session->set('cart_key', 'k1');
+        $newCart = $this->makeCart(86, 'new-checkout');
+        $cartService->carts[86] = $newCart;
+        $cartService->current = $newCart;
+        $controller->sessionReturn($this->callbackRequest());
 
-        $this->cartService->method('clear')->willThrowException(new \RuntimeException('em closed'));
+        $this->assertSame($newCart, $cartService->carts[86]);
+        $this->assertSame($otherCart, $cartService->carts[85]);
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+    }
+
+    /** @dataProvider changedCheckoutCartProvider */
+    public function testDelayedCallbackCannotClearDifferentCheckout($cartId, $preOrderId)
+    {
+        $cartService = $this->arrangeCompletedCart();
+        $newCart = $this->makeCart($cartId, $preOrderId);
+        $cartService->carts = [$cartId => $newCart];
+        $cartService->current = $newCart;
 
         $controller = $this->makeController();
-        $req = $this->callbackRequest();
-        $controller->sessionReturn($req);
+        $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertNull($this->session->get('cart_keys'),
-            'cart_keys session entry must be cleared when CartService::clear fails');
-        $this->assertNull($this->session->get('cart_key'),
-            'cart_key session entry must be cleared when CartService::clear fails');
+        $this->assertSame($newCart, $cartService->carts[$cartId]);
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+    }
+
+    public function changedCheckoutCartProvider(): array
+    {
+        return [
+            'replacement cart using the same key' => [85, 'checkout-42'],
+            'same cart now belongs to a new order' => [84, 'new-checkout'],
+        ];
+    }
+
+    public function testCartChangedBeforeCleanupLockIsPreserved()
+    {
+        $cartService = $this->arrangeCompletedCart();
+        $cart = $cartService->current;
+        $this->em->method('refresh')->willReturnCallback(function ($entity) {
+            if ($entity instanceof Cart) {
+                $entity->setPreOrderId('new-checkout');
+            }
+        });
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame($cart, $cartService->carts[84]);
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+    }
+
+    /** @dataProvider missingCartBindingProvider */
+    public function testCallbackWithoutCleanupAuthorityPreservesCart($missingKey, $expectedRoute)
+    {
+        $cartService = $this->arrangeCompletedCart();
+        $cart = $cartService->current;
+        $this->session->remove($missingKey);
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame($cart, $cartService->carts[84]);
+        $this->assertSame($expectedRoute, $controller->lastRedirect);
+    }
+
+    public function missingCartBindingProvider(): array
+    {
+        return [
+            'legacy callback without cart identity' => ['komoju.callback_cart.sess_abc', 'shopping_complete'],
+            'missing browser binding' => ['komoju.callback.sess_abc', 'shopping'],
+        ];
+    }
+
+    public function testCleanupFailurePreservesCartsAndDoesNotRetryOnNewCart()
+    {
+        $cartService = $this->arrangeCompletedCart();
+        $original = $cartService->current;
+        $other = $this->makeCart(85, 'other-checkout');
+        $cartService->carts[85] = $other;
+        $cartService->failClear = true;
+        $this->session->set('cart_keys', ['original', 'other']);
+        $this->session->set('cart_key', 'original');
+        $controller = $this->makeController();
+
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame($original, $cartService->carts[84]);
+        $this->assertSame($other, $cartService->carts[85]);
+        $this->assertSame(['original', 'other'], $this->session->get('cart_keys'));
+        $this->assertSame('original', $this->session->get('cart_key'));
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+
+        $cartService->failClear = false;
+        $cartService->current = $other;
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame($other, $cartService->carts[85]);
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
     }
 
     // --- sessionCancel ---
@@ -826,5 +1189,36 @@ class TestableSessionReturnController extends SessionReturnController
     {
         $this->lastRedirect = $route;
         return new RedirectResponse('/route/' . $route);
+    }
+}
+
+class CheckoutCartService extends CartService
+{
+    public $carts = [];
+    public $current;
+    public $failClear = false;
+
+    public function __construct(array $carts, Cart $current)
+    {
+        foreach ($carts as $cart) {
+            $this->carts[$cart->getId()] = $cart;
+        }
+        $this->current = $current;
+    }
+
+    public function getCart()
+    {
+        return $this->current;
+    }
+
+    public function clear()
+    {
+        if ($this->failClear) {
+            throw new \RuntimeException('cart persistence unavailable');
+        }
+        if ($this->current) {
+            unset($this->carts[$this->current->getId()]);
+            $this->current = null;
+        }
     }
 }

@@ -2,11 +2,9 @@
 
 namespace Eccube\Service;
 
-/**
- * Stub of Eccube\Service\CartService. The plugin only calls clear()
- * from SessionReturnController; tests mock this class and assert calls.
- */
+/** Standalone test surface for EC-CUBE's cart service. */
 class CartService
 {
     public function clear() {}
+    public function getCart() {}
 }

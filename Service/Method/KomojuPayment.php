@@ -5,6 +5,7 @@ namespace Plugin\Komoju42\Service\Method;
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Master\OrderStatus;
 use Eccube\Entity\Order;
+use Eccube\Entity\Cart;
 use Eccube\Entity\Customer;
 use Eccube\Entity\Payment;
 use Eccube\Repository\Master\OrderStatusRepository;
@@ -222,6 +223,18 @@ class KomojuPayment implements PaymentMethodInterface{
             'komoju.callback.' . $session['id'],
             hash('sha256', $callbackToken)
         );
+        $preOrderId = $this->Order->getPreOrderId();
+        if($preOrderId){
+            $Cart = $this->entityManager->getRepository(Cart::class)
+                ->findOneBy(['pre_order_id' => $preOrderId]);
+            if($Cart && $Cart->getId()){
+                $this->requestStack->getSession()->set('komoju.callback_cart.' . $session['id'], [
+                    'order_id' => $this->Order->getId(),
+                    'cart_id' => $Cart->getId(),
+                    'pre_order_id' => $preOrderId,
+                ]);
+            }
+        }
 
         // Redirect to KOMOJU hosted payment page
         $session_url = $session['session_url'];
