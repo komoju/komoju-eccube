@@ -2,12 +2,15 @@
 
 namespace Tests\Komoju42\Controller;
 
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Knp\Component\Pager\PaginatorInterface;
 use PHPUnit\Framework\TestCase;
 use Plugin\Komoju42\Controller\Admin\LogController;
+use Plugin\Komoju42\Entity\KomojuConfig;
 use Plugin\Komoju42\Entity\KomojuLog;
 use Plugin\Komoju42\Repository\KomojuLogRepository;
+use Plugin\Komoju42\Service\LogService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -19,6 +22,7 @@ class LogControllerTest extends TestCase
     private $query;
     private $form;
     private $controller;
+    private $config;
 
     protected function setUp(): void
     {
@@ -40,12 +44,17 @@ class LogControllerTest extends TestCase
             ->onlyMethods(get_class_methods(EntityManagerInterface::class))
             ->addMethods(['detach'])
             ->getMock();
+        $configRepository = $this->mockMethods(['findOneBy']);
+        $configRepository->method('findOneBy')->willReturnCallback(function () {
+            return $this->config;
+        });
+        $this->entityManager->method('getRepository')->with(KomojuConfig::class)->willReturn($configRepository);
         $this->form = $this->mockMethods([
             'handleRequest', 'isSubmitted', 'isValid', 'getData', 'setData', 'createView',
         ]);
         $this->form->method('createView')->willReturn('form-view');
 
-        $this->controller = new TestableLogController($repository, $this->entityManager);
+        $this->controller = new TestableLogController($repository, $this->entityManager, new LogService($this->entityManager));
         $this->controller->searchForm = $this->form;
         $this->controller->eccubeConfig = $this->mockMethods(['get']);
         $this->controller->eccubeConfig->method('get')
@@ -112,17 +121,36 @@ class LogControllerTest extends TestCase
         $this->assertSame($search, $session->get('komoju_log_search'));
     }
 
-    public function testGetRestoresSavedFormAndOnlyCountsDeletableLogs(): void
+    public function testGetPurgesExpiredOperationalLogsAndKeepsSavedFilters(): void
     {
+        $this->config = (new KomojuConfig())->setLogRetentionDays(30);
+        $database = new \PDO('sqlite::memory:');
+        $database->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $database->exec('CREATE TABLE plg_komoju_log (id INTEGER PRIMARY KEY, created_at TEXT, is_protected INTEGER)');
+        $insert = $database->prepare('INSERT INTO plg_komoju_log VALUES (?, ?, ?)');
+        $old = (new \DateTimeImmutable('-1 year'))->format('Y-m-d H:i:s');
+        $future = (new \DateTimeImmutable('+1 year'))->format('Y-m-d H:i:s');
+        $insert->execute([1, $old, 0]);
+        $insert->execute([2, $old, 1]);
+        $insert->execute([3, $future, 0]);
+        $connection = $this->createMock(Connection::class);
+        $connection->method('executeStatement')->willReturnCallback(function ($sql, $parameters) use ($database) {
+            $statement = $database->prepare($sql);
+            $statement->execute($parameters);
+            return $statement->rowCount();
+        });
+        $this->entityManager->method('getConnection')->willReturn($connection);
+
         $session = new Session();
         $saved = ['keyword' => 'saved'];
         $session->set('komoju_log_search', $saved);
         $this->form->expects($this->once())->method('setData')->with($saved);
         $this->form->expects($this->never())->method('handleRequest');
 
-        $result = $this->controller->index($this->request('GET', $session), $this->expectIndex(2), 2);
+        $this->controller->index($this->request('GET', $session), $this->expectIndex(2), 2);
 
-        $this->assertSame(7, $result['deletable_log_count']);
+        $remainingIds = $database->query('SELECT id FROM plg_komoju_log ORDER BY id')->fetchAll(\PDO::FETCH_COLUMN);
+        $this->assertSame([2, 3], array_map('intval', $remainingIds));
         $this->assertSame($saved, $session->get('komoju_log_search'));
     }
 

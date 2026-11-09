@@ -60,8 +60,9 @@ are unchanged: blank or `0` means unlimited. Set a finite period in the plugin s
 if an existing shop should start expiring logs. Protected order-timeline history is
 never deleted by retention or the operational-log bulk-delete action.
 
-Schedule this command from the EC-CUBE application, using its normal PHP runtime and
-application user (for example, daily during off-peak hours):
+For predictable cleanup even when nobody visits the log page, schedule this command
+using the EC-CUBE application's normal PHP runtime and user (for example, daily
+during off-peak hours):
 
 ```sh
 php bin/console komoju:logs:purge --env=prod --no-debug
@@ -76,8 +77,10 @@ Example crontab entry, adjusting the PHP and application paths for the shop:
 The command reports the number of deleted records and exits nonzero on failure.
 It skips deletion when configuration is absent or retention is unlimited, and runs
 even when operational logging is disabled. Monitor scheduler failures and database
-growth. Viewing the log page no longer deletes records; **configure the scheduler
-when upgrading**. Run the first cleanup of a large existing log table off-peak.
+growth. Opening the log page also runs the same cleanup as a fallback, so existing
+shops retain page-triggered cleanup without configuring cron. Scheduling is
+recommended for predictable expiry and to avoid a large backlog on the next page
+load. Run the first cleanup of a large existing log table off-peak.
 
 Webhook verification failures and return/cancel requests rejected before successful
 state validation do not create database log entries. This prevents unauthenticated

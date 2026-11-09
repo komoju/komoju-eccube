@@ -114,7 +114,7 @@ komoju_payment.admin.log.delete_all.hint: '削除可能な操作ログ: %count% 
 komoju_payment.admin.log.delete_all.disabled: 削除できる操作ログがありません。注文履歴（イベントログ）は削除対象外です。
 komoju_payment.admin.config.label.log_retention_days: ログ保持期間
 komoju_payment.admin.config.label.log_retention_days_hint: 日間（新規設定は90日、空欄または0は無期限）
-komoju_payment.admin.config.label.log_retention_days_tooltip: komoju:logs:purge を定期実行して期限切れの操作ログを削除します。ログ画面の表示では削除しません。注文履歴は保持されます。
+komoju_payment.admin.config.label.log_retention_days_tooltip: ログ画面の表示時と komoju:logs:purge の定期実行で、期限切れの操作ログを削除します。注文履歴は保持されます。
 komoju_payment.admin.config.label.logging_enabled: ログ記録を有効にする
 komoju_payment.admin.config.label.logging_enabled_hint: 無効にすると操作ログは記録されません。注文履歴は引き続き記録されます。
 

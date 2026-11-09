@@ -5,6 +5,7 @@ namespace Plugin\Komoju42\Controller\Admin;
 use Eccube\Controller\AbstractController;
 use Plugin\Komoju42\Repository\KomojuLogRepository;
 use Plugin\Komoju42\Form\Type\KomojuLogSearchType;
+use Plugin\Komoju42\Service\LogService;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,12 +25,16 @@ class LogController extends AbstractController
      */
     protected $entityManager;
 
+    private $logService;
+
     public function __construct(
         KomojuLogRepository $komoju_log_repo,
-        EntityManagerInterface $entityManager
+        EntityManagerInterface $entityManager,
+        LogService $logService
     ) {
         $this->komoju_log_repo = $komoju_log_repo;
         $this->entityManager = $entityManager;
+        $this->logService = $logService;
     }
 
     /**
@@ -38,6 +43,8 @@ class LogController extends AbstractController
      */
     public function index(Request $request, PaginatorInterface $paginator, $page_no = null)
     {
+        $this->logService->purgeExpiredLogs(new \DateTimeImmutable());
+
         $page_count = $this->eccubeConfig->get('eccube_default_page_count');
         $session = $request->getSession();
         $searchData = $session->get('komoju_log_search');
