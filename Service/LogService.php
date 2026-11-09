@@ -48,4 +48,21 @@ class LogService{
             log_error('KOMOJU writeLog failed: ' . $e->getMessage());
         }
     }
+
+    public function purgeExpiredLogs(\DateTimeImmutable $now): int
+    {
+        $config = $this->entityManager->getRepository(KomojuConfig::class)->findOneBy([]);
+        $retentionDays = $config ? (int) $config->getLogRetentionDays() : 0;
+        if ($retentionDays <= 0) {
+            return 0;
+        }
+
+        $cutoff = $now->modify('-' . $retentionDays . ' days');
+
+        return (int) $this->entityManager->getConnection()->executeStatement(
+            'DELETE FROM plg_komoju_log WHERE created_at < ? '
+            . 'AND (is_protected = 0 OR is_protected IS NULL)',
+            [$cutoff->format('Y-m-d H:i:s')]
+        );
+    }
 }

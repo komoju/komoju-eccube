@@ -157,13 +157,11 @@ class SessionReturnControllerTest extends TestCase
 
     // --- early-exit branches ---
 
-    public function testEmptySessionIdRedirectsToShoppingAndLogs()
+    public function testEmptySessionIdRedirectsToShoppingWithoutLogging()
     {
         $controller = $this->makeController();
 
-        $this->logService->expects($this->once())
-            ->method('writeLog')
-            ->with('sessionReturn', 0, $this->stringContains('no session_id'));
+        $this->logService->expects($this->never())->method('writeLog');
 
         $req = new Request([] /* no session_id */);
         $resp = $controller->sessionReturn($req);
@@ -173,15 +171,13 @@ class SessionReturnControllerTest extends TestCase
         $this->assertInstanceOf(RedirectResponse::class, $resp);
     }
 
-    public function testUnknownSessionIdRedirectsToShoppingAndLogs()
+    public function testUnknownSessionIdRedirectsToShoppingWithoutLogging()
     {
         $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
 
         $controller = $this->makeController();
 
-        $this->logService->expects($this->once())
-            ->method('writeLog')
-            ->with('sessionReturn', 0, $this->stringContains('no komoju_order'));
+        $this->logService->expects($this->never())->method('writeLog');
 
         $req = new Request(['session_id' => 'sess_unknown']);
         $resp = $controller->sessionReturn($req);
@@ -198,9 +194,7 @@ class SessionReturnControllerTest extends TestCase
 
         $controller = $this->makeController();
 
-        $this->logService->expects($this->once())
-            ->method('writeLog')
-            ->with('sessionReturn', 0, $this->stringContains('no EC-CUBE order'));
+        $this->logService->expects($this->never())->method('writeLog');
 
         $req = new Request(['session_id' => 'sess_orphan']);
         $controller->sessionReturn($req);
@@ -212,6 +206,7 @@ class SessionReturnControllerTest extends TestCase
     {
         $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->expects($this->never())->method('getSession');
+        $this->logService->expects($this->never())->method('writeLog');
 
         $controller = $this->makeController();
         $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
@@ -220,18 +215,35 @@ class SessionReturnControllerTest extends TestCase
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
     }
 
-    public function testInvalidCallbackStateIsRejected()
+    public function testRepeatedInvalidStatesAcrossControllersNeverLogOrProcessPayment()
     {
-        $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->logService->expects($this->never())->method($this->anything());
+        $this->em->expects($this->never())->method('persist');
+        $this->em->expects($this->never())->method('flush');
+        $this->em->expects($this->never())->method('getConnection');
+        $this->configService->expects($this->never())->method('getConfigData');
+        $this->clientFactory->expects($this->never())->method('create');
         $this->komojuClient->expects($this->never())->method('getSession');
+        $this->purchaseFlow->expects($this->never())->method($this->anything());
+        $this->cartService->expects($this->never())->method('clear');
 
-        $controller = $this->makeController();
-        $controller->sessionReturn(new Request([
-            'session_id' => 'sess_abc',
-            'state' => 'forged',
-        ]));
+        for ($i = 0; $i < 25; $i++) {
+            $controller = $this->makeController();
+            $request = new Request([
+                'session_id' => 'sess_abc',
+                'state' => 'forged_' . $i,
+            ]);
+            $method = $i % 2 === 0 ? 'sessionReturn' : 'sessionCancel';
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+            $response = $controller->$method($request);
+
+            $this->assertSame('/route/shopping', $response->getTargetUrl());
+            $this->assertSame('shopping', $controller->lastRedirect);
+            $this->assertContains('komoju_payment.shopping.payment_pending', $controller->flashes['messages']);
+            $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+            $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+        }
     }
 
     public function testMissingBrowserBindingDoesNotExposeCompletion()
@@ -1115,6 +1127,7 @@ class SessionReturnControllerTest extends TestCase
     public function testSessionCancelWithoutSessionIdStillRedirects()
     {
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->logService->expects($this->never())->method('writeLog');
 
         $controller = $this->makeController();
         $resp = $controller->sessionCancel(new Request([]));

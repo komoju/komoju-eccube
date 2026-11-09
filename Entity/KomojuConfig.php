@@ -68,7 +68,7 @@ class KomojuConfig
      *
      * @ORM\Column(name="log_retention_days", type="integer", nullable=true)
      */
-    private $log_retention_days;
+    private $log_retention_days = 90;
 
     /**
      * @var boolean

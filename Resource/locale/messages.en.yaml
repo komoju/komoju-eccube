@@ -96,7 +96,7 @@ komoju_payment.admin.log.search.order_id: Order ID
 komoju_payment.admin.log.search.api: Operation
 komoju_payment.admin.log.search.date_from: From
 komoju_payment.admin.log.search.date_to: To
-komoju_payment.admin.log.search.keyword: Keyword
+komoju_payment.admin.log.search.keyword: Keyword (literal text)
 komoju_payment.admin.log.search.button: Search
 komoju_payment.admin.log.search.clear: Clear
 komoju_payment.admin.log.search.api.all: All
@@ -113,10 +113,10 @@ komoju_payment.admin.log.delete_all.nothing: No operational logs to delete. Orde
 komoju_payment.admin.log.delete_all.hint: 'Deletable operational logs: %count% (order history not included)'
 komoju_payment.admin.log.delete_all.disabled: 'No operational logs to delete. Order history (timeline events) is never deleted.'
 komoju_payment.admin.config.label.log_retention_days: Log Retention Period
-komoju_payment.admin.config.label.log_retention_days_hint: days (leave blank to keep logs indefinitely)
-komoju_payment.admin.config.label.log_retention_days_tooltip: Old logs are automatically deleted when visiting the log page, based on the retention period set here.
+komoju_payment.admin.config.label.log_retention_days_hint: days (new configurations use 90; blank or 0 keeps logs indefinitely)
+komoju_payment.admin.config.label.log_retention_days_tooltip: Schedule komoju:logs:purge to delete expired operational logs. Viewing the log page does not delete logs. Order history is kept.
 komoju_payment.admin.config.label.logging_enabled: Enable Logging
-komoju_payment.admin.config.label.logging_enabled_hint: When disabled, no new log entries will be recorded.
+komoju_payment.admin.config.label.logging_enabled_hint: When disabled, operational logs are not recorded. Order history is still recorded.
 
 komoju_payment.admin.config.back: Plugin List
 komoju_payment.badge.required: Required
