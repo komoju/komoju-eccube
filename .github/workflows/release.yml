@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build:
     name: Build Plugin Archive
-    runs-on: [self-hosted, beta, public-release]
+    runs-on: [self-hosted, public-release]
     timeout-minutes: 10
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -81,7 +81,7 @@ jobs:
     name: Publish GitHub Release
     if: github.event_name == 'push'
     needs: build
-    runs-on: [self-hosted, beta, public-release]
+    runs-on: [self-hosted, public-release]
     timeout-minutes: 10
     permissions:
       contents: write
