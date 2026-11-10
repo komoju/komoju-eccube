@@ -53,6 +53,49 @@ Payment methods enabled in your KOMOJU account are automatically synced to EC-CU
 
 Webhooks are verified using HMAC-SHA256 signature validation.
 
+## Log Maintenance
+
+New configurations keep operational logs for **90 days**. Existing retention settings
+are unchanged: blank or `0` means unlimited. Set a finite period in the plugin settings
+if an existing shop should start expiring logs. Protected order-timeline history is
+never deleted by retention or the operational-log bulk-delete action.
+
+For predictable cleanup even when nobody visits the log page, schedule this command
+using the EC-CUBE application's normal PHP runtime and user (for example, daily
+during off-peak hours):
+
+```sh
+php bin/console komoju:logs:purge --env=prod --no-debug
+```
+
+Example crontab entry, adjusting the PHP and application paths for the shop:
+
+```cron
+0 3 * * * /usr/bin/php /path/to/eccube/bin/console komoju:logs:purge --env=prod --no-debug
+```
+
+The command reports the number of deleted records and exits nonzero on failure.
+It skips deletion when configuration is absent or retention is unlimited, and runs
+even when operational logging is disabled. Monitor scheduler failures and database
+growth. Opening the log page also runs the same cleanup as a fallback, so existing
+shops retain page-triggered cleanup without configuring cron. Scheduling is
+recommended for predictable expiry and to avoid a large backlog on the next page
+load. Run the first cleanup of a large existing log table off-peak.
+
+Webhook verification failures and return/cancel requests rejected before successful
+state validation do not create database log entries. This prevents unauthenticated
+request noise from growing the plugin log table across workers, without shared
+counters. Infrastructure exceptions still reach application logs; authenticated
+processing failures and protected payment history remain available. Use web-server
+metrics and appropriate edge request limits to monitor rejected requests. This is
+not an HTTP rate limiter or a volume cap on authenticated payment events.
+
+Log keyword searches match literal substrings, including `%`, `_`, and `!` rather
+than treating them as wildcard syntax. Invalid search submissions retain the last
+valid filters. CSV export prefixes potentially executable spreadsheet cells (and
+invalid UTF-8 cells) with an apostrophe; automated CSV consumers should account for
+this safety prefix. Ordinary Unicode text and CSV quoting are preserved.
+
 ## Development
 
 Plugin installation, enabling, and disabling are done through the EC-CUBE admin panel.
