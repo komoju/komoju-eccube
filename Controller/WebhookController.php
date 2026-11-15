@@ -28,19 +28,16 @@ class WebhookController extends AbstractController
      * @Route("/plugin/Komoju42/webhook", name="Komoju42_webhook", methods={"POST"})
      */
     public function webhook(Request $request){
-        // Config/infrastructure failures are NOT the caller's fault. Answering 400
-        // would tell KOMOJU the event is permanently invalid and stop retries,
-        // losing the event; 500 keeps it in the retry queue.
+        // Unauthenticated requests must not create database logs.
+        // Keep infrastructure failures retriable.
         try{
             $config_data = $this->config_service->getConfigData();
             $webhook_secret = $config_data['webhook_secret'] ?? null;
         }catch(\Throwable $ex){
             log_error($ex);
-            $this->log_service->writeLog("webhook", "", "config unavailable: " . $ex->getMessage());
             return $this->json(['status' => 'error', 'message' => 'config unavailable'], 500);
         }
         if(!is_string($webhook_secret) || trim($webhook_secret) === ''){
-            $this->log_service->writeLog("webhook", "", "webhook secret is not configured");
             return $this->json(['status' => 'error', 'message' => 'webhook unavailable'], 503);
         }
 
@@ -50,7 +47,6 @@ class WebhookController extends AbstractController
                 $request->headers->get('X-Komoju-Signature'),
                 $webhook_secret);
         }catch(\Throwable $ex){
-            $this->log_service->writeLog("webhook", "", "verification failed: " . $ex->getMessage());
             return $this->json(['status' => 'error'], 400);
         }
         $type = $data->type ?? 'unknown';

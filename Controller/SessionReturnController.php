@@ -57,9 +57,9 @@ class SessionReturnController extends AbstractController
      * @Route("/plugin/Komoju42/session/return", name="Komoju42_session_return")
      */
     public function sessionReturn(Request $request){
+        // Do not persist callback noise before validating the stored state.
         $session_id = $request->query->get('session_id');
         if(empty($session_id)){
-            $this->log_service->writeLog("sessionReturn", 0, "no session_id in request");
             return $this->redirectToShopping('komoju_payment.shopping.payment_failed');
         }
 
@@ -67,20 +67,17 @@ class SessionReturnController extends AbstractController
             ->findOneBy(['komoju_session_id' => $session_id]);
 
         if(empty($komoju_order)){
-            $this->log_service->writeLog("sessionReturn", 0, "no komoju_order found for session: $session_id");
             return $this->redirectToShopping('komoju_payment.shopping.payment_failed');
         }
 
         $Order = $komoju_order->getOrder();
         if(empty($Order)){
-            $this->log_service->writeLog("sessionReturn", 0, "no EC-CUBE order for session: $session_id");
             return $this->redirectToShopping('komoju_payment.shopping.payment_failed');
         }
         $state = (string)$request->query->get('state');
         $stateHash = hash('sha256', $state);
         $storedStateHash = $komoju_order->getCallbackTokenHash();
         if(empty($state) || empty($storedStateHash) || !hash_equals($storedStateHash, $stateHash)){
-            $this->log_service->writeLog("sessionReturn", $Order->getId(), "callback state rejected");
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
 

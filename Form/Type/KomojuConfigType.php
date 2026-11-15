@@ -76,7 +76,7 @@ class KomojuConfigType extends AbstractType{
             ])
             ->add('log_retention_days', IntegerType::class, [
                 'required' => false,
-                'attr' => ['min' => 1],
+                'attr' => ['min' => 0],
                 'constraints' => [
                     new Assert\PositiveOrZero(),
                 ],

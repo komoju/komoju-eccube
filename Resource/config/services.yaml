@@ -20,6 +20,9 @@ services:
         class: Plugin\Komoju42\Service\LogService
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
+    Plugin\Komoju42\Command\PurgeLogsCommand:
+        arguments:
+            - '@plg_Komoju42.service.komoju_log'
     plg_Komoju42.service.komoju_webhook:
         public: true
         class: Plugin\Komoju42\Service\WebhookService

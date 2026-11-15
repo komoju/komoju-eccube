@@ -4,7 +4,6 @@ namespace Plugin\Komoju42\Controller\Admin;
 
 use Eccube\Controller\AbstractController;
 use Plugin\Komoju42\Repository\KomojuLogRepository;
-use Plugin\Komoju42\Repository\KomojuConfigRepository;
 use Plugin\Komoju42\Form\Type\KomojuLogSearchType;
 use Plugin\Komoju42\Service\LogService;
 use Symfony\Component\Routing\Annotation\Route;
@@ -22,30 +21,20 @@ class LogController extends AbstractController
     protected $komoju_log_repo;
 
     /**
-     * @var KomojuConfigRepository
-     */
-    protected $komoju_config_repo;
-
-    /**
      * @var EntityManagerInterface
      */
     protected $entityManager;
 
-    /**
-     * @var LogService
-     */
-    protected $log_service;
+    private $logService;
 
     public function __construct(
         KomojuLogRepository $komoju_log_repo,
-        KomojuConfigRepository $komoju_config_repo,
         EntityManagerInterface $entityManager,
-        LogService $log_service
+        LogService $logService
     ) {
         $this->komoju_log_repo = $komoju_log_repo;
-        $this->komoju_config_repo = $komoju_config_repo;
         $this->entityManager = $entityManager;
-        $this->log_service = $log_service;
+        $this->logService = $logService;
     }
 
     /**
@@ -54,10 +43,11 @@ class LogController extends AbstractController
      */
     public function index(Request $request, PaginatorInterface $paginator, $page_no = null)
     {
-        $this->purgeExpiredLogs();
+        $this->logService->purgeExpiredLogs(new \DateTimeImmutable());
 
         $page_count = $this->eccubeConfig->get('eccube_default_page_count');
         $session = $request->getSession();
+        $searchData = $session->get('komoju_log_search');
 
         $searchForm = $this->createForm(KomojuLogSearchType::class);
 
@@ -69,7 +59,6 @@ class LogController extends AbstractController
                 $page_no = 1;
             }
         } else {
-            $searchData = $session->get('komoju_log_search');
             if ($searchData) {
                 $searchForm->setData($searchData);
             }
@@ -155,21 +144,17 @@ class LogController extends AbstractController
             $handle = fopen('php://output', 'w');
             fprintf($handle, "\xEF\xBB\xBF");
 
-            fputcsv($handle, [
+            $this->writeCsvRow($handle, [
                 trans('komoju_payment.admin.log.label.create_at'),
                 trans('komoju_payment.admin.log.label.api'),
                 trans('komoju_payment.admin.log.label.order_id'),
                 trans('komoju_payment.admin.log.label.msg'),
             ]);
 
-            // Query::iterate() was deprecated in Doctrine ORM 2.7 and removed
-            // in 3.0; toIterable() is the replacement. Note the iteration shape
-            // also changed: iterate() yielded [$entity] (1-element arrays) so
-            // the old code did `$log = $row[0]`, while toIterable() yields the
-            // entity directly.
+            // Stream bounded results without retaining hydrated entities.
             $results = $qb->setMaxResults(50000)->getQuery()->toIterable();
             foreach ($results as $log) {
-                fputcsv($handle, [
+                $this->writeCsvRow($handle, [
                     $log->getCreatedAt()->format('Y-m-d H:i:s'),
                     $log->getApi(),
                     $log->getOrderId(),
@@ -186,6 +171,18 @@ class LogController extends AbstractController
         $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
 
         return $response;
+    }
+
+    private function writeCsvRow($handle, array $values): void
+    {
+        foreach ($values as $index => $value) {
+            // Invalid UTF-8 must not bypass formula protection.
+            if (is_string($value) && preg_match('/\A[\p{Z}\p{C}]*[=+\-@\t\r\n]/u', $value) !== 0) {
+                $values[$index] = "'" . $value;
+            }
+        }
+
+        fputcsv($handle, $values, ',', '"', '');
     }
 
     private function buildSearchQuery($searchData = null)
@@ -212,36 +209,13 @@ class LogController extends AbstractController
                 $qb->andWhere('s.created_at < :date_to')
                     ->setParameter('date_to', $dateTo);
             }
-            if (!empty($searchData['keyword'])) {
-                $qb->andWhere('s.msg LIKE :keyword')
-                    ->setParameter('keyword', '%' . $searchData['keyword'] . '%');
+            if (isset($searchData['keyword']) && $searchData['keyword'] !== '') {
+                $keyword = strtr($searchData['keyword'], ['!' => '!!', '%' => '!%', '_' => '!_']);
+                $qb->andWhere("s.msg LIKE :keyword ESCAPE '!'")
+                    ->setParameter('keyword', '%' . $keyword . '%');
             }
         }
 
         return $qb;
-    }
-
-    private function purgeExpiredLogs()
-    {
-        $config = $this->komoju_config_repo->get();
-        if (!$config) {
-            return;
-        }
-
-        $retentionDays = (int) $config->getLogRetentionDays();
-        if ($retentionDays <= 0) {
-            return;
-        }
-
-        $cutoff = new \DateTime();
-        $cutoff->modify("-{$retentionDays} days");
-
-        $this->entityManager->createQueryBuilder()
-            ->delete('Plugin\Komoju42\Entity\KomojuLog', 's')
-            ->where('s.created_at < :cutoff')
-            ->andWhere('s.is_protected = 0 OR s.is_protected IS NULL')
-            ->setParameter('cutoff', $cutoff)
-            ->getQuery()
-            ->execute();
     }
 }

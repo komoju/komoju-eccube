@@ -62,8 +62,7 @@ class WebhookControllerTest extends TestCase
             ->willThrowException(new \RuntimeException('db is down'));
 
         $logService = $this->createMock(LogService::class);
-        $logService->expects($this->once())->method('writeLog')
-            ->with('webhook', '', $this->stringContains('config unavailable'));
+        $logService->expects($this->never())->method('writeLog');
 
         $webhookService = $this->createMock(WebhookService::class);
         $webhookService->expects($this->never())->method($this->anything());
@@ -80,8 +79,7 @@ class WebhookControllerTest extends TestCase
         $configService = $this->createMock(ConfigService::class);
         $configService->method('getConfigData')->willReturn(['webhook_secret' => $secret]);
         $logService = $this->createMock(LogService::class);
-        $logService->expects($this->once())->method('writeLog')
-            ->with('webhook', '', $this->stringContains('not configured'));
+        $logService->expects($this->never())->method('writeLog');
         $webhookService = $this->createMock(WebhookService::class);
         $webhookService->expects($this->never())->method($this->anything());
 
@@ -113,8 +111,7 @@ class WebhookControllerTest extends TestCase
         $req = new Request([], [], '{"type":"payment.captured","data":{"id":"pay_1"}}');
 
         $this->webhookService->expects($this->never())->method($this->anything());
-        $this->logService->expects($this->once())->method('writeLog')
-            ->with('webhook', '', $this->stringContains('verification failed'));
+        $this->logService->expects($this->never())->method('writeLog');
 
         $resp = $this->controller->webhook($req);
 
@@ -123,15 +120,25 @@ class WebhookControllerTest extends TestCase
         $this->assertSame(['status' => 'error'], $resp->getData());
     }
 
-    public function testRejectsBadSignatureWith400()
+    public function testRepeatedBadSignaturesAcrossControllersNeverLogOrDispatch()
     {
-        $req = new Request([], ['X-Komoju-Signature' => 'bad'], '{"type":"payment.captured","data":{"id":"x"}}');
-
         $this->webhookService->expects($this->never())->method($this->anything());
-        $this->logService->expects($this->once())->method('writeLog');
+        $this->logService->expects($this->never())->method($this->anything());
 
-        $resp = $this->controller->webhook($req);
-        $this->assertSame(400, $resp->getStatusCode());
+        for ($i = 0; $i < 25; $i++) {
+            $controller = new WebhookController(
+                $this->logService,
+                $this->configService,
+                $this->webhookService
+            );
+            $body = json_encode(['type' => 'payment.captured', 'data' => ['id' => 'pay_' . $i]]);
+            $request = new Request([], ['X-Komoju-Signature' => 'bad'], $body);
+
+            $response = $controller->webhook($request);
+
+            $this->assertSame(400, $response->getStatusCode());
+            $this->assertSame(['status' => 'error'], $response->getData());
+        }
     }
 
     public function testRejectsMalformedJsonWith400()
@@ -140,7 +147,7 @@ class WebhookControllerTest extends TestCase
         $req = $this->signedRequest($body);
 
         $this->webhookService->expects($this->never())->method($this->anything());
-        $this->logService->expects($this->once())->method('writeLog');
+        $this->logService->expects($this->never())->method('writeLog');
 
         $resp = $this->controller->webhook($req);
         $this->assertSame(400, $resp->getStatusCode());
