@@ -34,9 +34,9 @@ services:
     Plugin\Komoju42\Service\OrderConfirmationMailer:
         arguments:
             $getMailService: !service_closure '@Eccube\Service\MailService'
-        tags:
-            # Run after EC-CUBE's request transaction listener (priority 0).
-            - { name: kernel.event_listener, event: kernel.terminate, method: onKernelTerminate, priority: -128 }
+    Eccube\EventListener\TransactionListener:
+        class: Plugin\Komoju42\EventListener\OrderConfirmationTransactionListener
+    Plugin\Komoju42\EventListener\OrderConfirmationTransactionListener: '@Eccube\EventListener\TransactionListener'
     plg_Komoju42.service.komoju_mail_service:
         public: true
         class: Plugin\Komoju42\Service\MailExService

@@ -1,0 +1,7 @@
+services:
+    Eccube\EventListener\TransactionListener:
+        class: Plugin\Komoju42\EventListener\OrderConfirmationTransactionListener
+        autowire: true
+        autoconfigure: true
+        arguments:
+            $isEnabled: false

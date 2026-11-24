@@ -64,6 +64,10 @@ Use [KOMOJU test cards](https://docs.komoju.com/en/api/overview/#payment_details
 
 Order confirmations use the shop's EC-CUBE mail service after order acceptance commits, including authorized payments awaiting collection. Rolled-back orders do not send mail; repeated callbacks and later capture do not resend it. A mail or history-write failure does not roll back the payment. Delivery is not retried automatically. Check the mail logs before resending from the admin order: a missing history row does not necessarily mean SMTP delivery failed. Previously completed orders are not emailed retroactively.
 
+Confirmation delivery runs at EC-CUBE's root request commit boundary, with a separate transaction for mail history. If another extension leaves a nested transaction open at termination, mail is skipped rather than committing that extension's work. Committing it later does not trigger delivery; after a rollback, a new successful callback can still send.
+
+CI runs `tests/integration/order_confirmation.php` against fresh EC-CUBE 4.2.3/PHP 7.4 and 4.3.1/PHP 8.1 installations with MailCatcher. It asserts actual SMTP delivery, customer and shop Bcc recipients, text/HTML content, rollback/retry, duplicates, persistent PDO, commit/history failures, and transaction cleanup.
+
 ## Security
 
 - HMAC-SHA256 webhook signature verification
