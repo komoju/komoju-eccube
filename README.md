@@ -28,6 +28,7 @@ Payment methods enabled in your KOMOJU account are automatically synced to EC-CU
 - **Full and partial refunds** from the EC-CUBE order edit page
 - **Webhook-driven status sync** -- order statuses update automatically when payments are captured, refunded, cancelled, expired, or failed
 - **Admin audit log** with search, CSV export, retention policy, and toggle
+- **Order confirmation emails** -- EC-CUBE's configured order email and mail history are generated when KOMOJU first finalizes the order, through either the browser return or a webhook
 - **KOMOJU dashboard link** on every order for quick reference
 
 ## Installation
@@ -60,6 +61,8 @@ Plugin installation, enabling, and disabling are done through the EC-CUBE admin 
 ## Testing
 
 Use [KOMOJU test cards](https://docs.komoju.com/en/api/overview/#payment_details) in your test environment to verify the payment flow.
+
+Order confirmations are sent when an order is accepted, including authorized payments awaiting collection. Repeated callbacks and later capture do not send another confirmation. Mail errors are logged by EC-CUBE; after correcting the mail configuration, use the admin order's mail notification action to resend. Previously completed orders are not emailed retroactively.
 
 ## Security
 

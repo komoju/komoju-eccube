@@ -11,4 +11,8 @@ class MailService
     public function __construct()
     {
     }
+
+    public function sendOrderMail(\Eccube\Entity\Order $Order)
+    {
+    }
 }

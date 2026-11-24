@@ -30,6 +30,7 @@ services:
             - '@eccube.purchase.flow.shopping'
             - '@Eccube\Service\PurchaseFlow\Processor\PointProcessor'
             - '@Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor'
+            - '@plg_Komoju42.service.komoju_mail_service'
     plg_Komoju42.service.komoju_mail_service:
         public: true
         class: Plugin\Komoju42\Service\MailExService

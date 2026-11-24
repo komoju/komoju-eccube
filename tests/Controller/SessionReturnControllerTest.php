@@ -14,6 +14,7 @@ use Plugin\Komoju42\KomojuClient;
 use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 use Plugin\Komoju42\Service\LogService;
+use Plugin\Komoju42\Service\MailExService;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -46,6 +47,7 @@ class SessionReturnControllerTest extends TestCase
     private $checkoutCart;
     private $clientFactory;
     private $komojuClient;
+    private $mailService;
     private $komojuOrderRepo;
     private const CALLBACK_STATE = 'callback_state_abc';
 
@@ -67,6 +69,7 @@ class SessionReturnControllerTest extends TestCase
         });
         $this->clientFactory = $this->createMock(KomojuClientFactory::class);
         $this->komojuClient = $this->createMock(KomojuClient::class);
+        $this->mailService = $this->createMock(MailExService::class);
         $this->komojuOrderRepo = $this->createMock(\Tests\Komoju42\Service\StubRepository::class);
 
         $this->configService->method('getConfigData')
@@ -90,7 +93,8 @@ class SessionReturnControllerTest extends TestCase
             $this->purchaseFlow,
             $this->requestStack,
             $this->cartService,
-            $this->clientFactory
+            $this->clientFactory,
+            $this->mailService
         );
     }
     private function callbackRequest(): Request
@@ -212,6 +216,7 @@ class SessionReturnControllerTest extends TestCase
     {
         $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->expects($this->never())->method('getSession');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
@@ -224,6 +229,7 @@ class SessionReturnControllerTest extends TestCase
     {
         $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->expects($this->never())->method('getSession');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn(new Request([
@@ -244,6 +250,7 @@ class SessionReturnControllerTest extends TestCase
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
         $this->em->expects($this->once())->method('refresh')->with($order);
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -267,6 +274,7 @@ class SessionReturnControllerTest extends TestCase
         $this->komojuClient->method('getStatusCode')->willReturn(200);
         $this->purchaseFlow->expects($this->never())->method('commit');
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -287,6 +295,7 @@ class SessionReturnControllerTest extends TestCase
         $this->komojuClient->method('getStatusCode')->willReturn(200);
         $this->purchaseFlow->expects($this->never())->method('commit');
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -313,6 +322,7 @@ class SessionReturnControllerTest extends TestCase
         $this->cartService->expects($this->never())->method('clear');
         $this->purchaseFlow->expects($this->never())->method('commit');
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -340,6 +350,7 @@ class SessionReturnControllerTest extends TestCase
         $this->komojuClient->method('getStatusCode')->willReturn(503);
         $this->purchaseFlow->expects($this->never())->method('commit');
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -373,6 +384,7 @@ class SessionReturnControllerTest extends TestCase
         $this->em->method('refresh')->willThrowException(new \RuntimeException('database unavailable'));
         $this->em->expects($this->never())->method('flush');
         $this->cartService->expects($this->never())->method('clear');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -399,6 +411,7 @@ class SessionReturnControllerTest extends TestCase
         $this->purchaseFlow->expects($this->never())->method('commit');
         $this->purchaseFlow->expects($this->never())->method('rollback');
         $this->cartService->expects($this->never())->method('clear');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -503,6 +516,7 @@ class SessionReturnControllerTest extends TestCase
 
         $this->purchaseFlow->expects($this->never())->method('rollback');
         $this->cartService->expects($this->once())->method('clear');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -546,6 +560,7 @@ class SessionReturnControllerTest extends TestCase
 
         // Must NOT roll back an already-finalized order.
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $req = $this->callbackRequest();
@@ -569,6 +584,7 @@ class SessionReturnControllerTest extends TestCase
         $processing->setId(OrderStatus::PROCESSING);
         $this->em->method('find')->willReturn($processing);
         $this->purchaseFlow->expects($this->once())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -596,6 +612,7 @@ class SessionReturnControllerTest extends TestCase
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -631,6 +648,7 @@ class SessionReturnControllerTest extends TestCase
         });
         $this->em = $em;
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -664,6 +682,7 @@ class SessionReturnControllerTest extends TestCase
         });
 
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')->with($order);
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -701,6 +720,7 @@ class SessionReturnControllerTest extends TestCase
 
         $this->purchaseFlow->expects($this->never())->method('rollback');
         $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -730,6 +750,7 @@ class SessionReturnControllerTest extends TestCase
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -753,6 +774,7 @@ class SessionReturnControllerTest extends TestCase
         $this->komojuClient->method('getStatusCode')->willReturn(200);
 
         $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         // Cart must still be cleared and the order id stored in the session
         // so /shopping_complete renders the receipt.
@@ -783,6 +805,7 @@ class SessionReturnControllerTest extends TestCase
         $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
         $this->purchaseFlow->expects($this->never())->method('commit');
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -812,6 +835,7 @@ class SessionReturnControllerTest extends TestCase
         $this->komojuClient->method('getStatusCode')->willReturn(200);
         $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
         $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -843,6 +867,7 @@ class SessionReturnControllerTest extends TestCase
         });
         $this->purchaseFlow->expects($this->never())->method('commit');
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
@@ -883,6 +908,17 @@ class SessionReturnControllerTest extends TestCase
         $this->em->method('isOpen')->willReturn(true);
 
         $this->purchaseFlow->expects($this->once())->method('commit');
+        $transactionCompleted = false;
+        $this->em->getConnection()->method('commit')->willReturnCallback(function () use (&$transactionCompleted) {
+            $transactionCompleted = true;
+            return true;
+        });
+        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')->with($order)
+            ->willReturnCallback(function () use (&$transactionCompleted, $order, $paidStatus, $komojuOrder) {
+                $this->assertTrue($transactionCompleted);
+                $this->assertSame($paidStatus, $order->getOrderStatus());
+                $this->assertTrue($komojuOrder->isCaptured());
+            });
 
         $controller = $this->makeController();
         $resp = $controller->sessionReturn($this->callbackRequest());
@@ -916,17 +952,15 @@ class SessionReturnControllerTest extends TestCase
         $newStatus->setId(OrderStatus::NEW);
         $this->em->method('find')->willReturn($newStatus);
         $this->em->method('isOpen')->willReturn(true);
-        $refreshCount = 0;
-        $this->em->method('refresh')->willReturnCallback(
-            function ($entity) use (&$refreshCount, $newStatus) {
-                if($entity instanceof Order){
-                    $refreshCount++;
-                    if($refreshCount >= 2){
-                        $entity->setOrderStatus($newStatus);
-                    }
-                }
-            }
-        );
+        $this->purchaseFlow->expects($this->once())->method('commit')->with($order)
+            ->willReturnCallback(function ($order) use ($newStatus) {
+                $order->setOrderStatus($newStatus);
+            });
+        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')->with($order)
+            ->willReturnCallback(function () use ($order, $newStatus) {
+                $this->assertSame($newStatus, $order->getOrderStatus());
+                $this->assertNull($order->getPaymentDate());
+            });
 
         $controller = $this->makeController();
         $req = $this->callbackRequest();
@@ -940,7 +974,131 @@ class SessionReturnControllerTest extends TestCase
             'authorized-only payments must not mark KomojuOrder as captured');
     }
 
+    public function testAuthorizedOrderSendsOneConfirmationAcrossLaterCaptureAndReplay()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $authorized = [
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'authorized'],
+        ];
+        $captured = [
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ];
+        $this->komojuClient->method('getSession')->willReturnOnConsecutiveCalls($authorized, $captured, $captured);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
+        $this->purchaseFlow->expects($this->once())->method('commit')->with($order)
+            ->willReturnCallback(function ($order) {
+                $order->setOrderStatus((new OrderStatus())->setId(OrderStatus::NEW));
+            });
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')->with($order)
+            ->willReturnCallback(function () use ($order) {
+                $this->assertSame(OrderStatus::NEW, $order->getOrderStatus()->getId());
+            });
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::NEW, $order->getOrderStatus()->getId());
+        $this->assertFalse($attempt->isCaptured());
+
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PAID, $order->getOrderStatus()->getId());
+        $this->assertTrue($attempt->isCaptured());
+        $paymentDate = $order->getPaymentDate();
+
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame($paymentDate, $order->getPaymentDate());
+    }
+
+    /** @dataProvider finalizationPaymentProvider */
+    public function testLosingFinalizationClaimDoesNotSendConfirmation($paymentStatus)
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => $paymentStatus],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $finalStatus = (new OrderStatus())->setId($paymentStatus === 'captured' ? OrderStatus::PAID : OrderStatus::NEW);
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->expects($this->once())->method('executeStatement')->with(
+            'UPDATE dtb_order SET order_status_id = ? WHERE id = ? AND order_status_id IN (?, ?)',
+            [$finalStatus->getId(), $order->getId(), OrderStatus::PENDING, OrderStatus::PROCESSING]
+        )->willReturn(0);
+        $this->em = $this->createMock(EntityManagerInterface::class);
+        $this->em->method('getConnection')->willReturn($connection);
+        $this->em->method('getRepository')->willReturn($this->komojuOrderRepo);
+        $this->em->method('find')->willReturn($finalStatus);
+        $orderRefreshes = 0;
+        $this->em->method('refresh')->willReturnCallback(function ($entity) use (&$orderRefreshes, $finalStatus) {
+            if ($entity instanceof Order && ++$orderRefreshes === 3) {
+                $entity->setOrderStatus($finalStatus);
+            }
+        });
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
+        $this->assertSame($finalStatus, $order->getOrderStatus());
+    }
+
+    public function finalizationPaymentProvider(): array
+    {
+        return ['captured' => ['captured'], 'authorized' => ['authorized']];
+    }
+
     // --- crash-safety ---
+
+    /** @dataProvider transactionCompletionFailureProvider */
+    public function testTransactionCompletionFailureDoesNotSendConfirmation($outerTransaction)
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn([
+            'status' => 'completed',
+            'payment' => ['id' => 'pay_1', 'status' => 'captured'],
+        ]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
+        $connection = $this->em->getConnection();
+        $connection->method('isTransactionActive')->willReturn($outerTransaction);
+        if ($outerTransaction) {
+            $releaseCount = 0;
+            $connection->method('releaseSavepoint')->willReturnCallback(function () use (&$releaseCount) {
+                if (++$releaseCount === 1) {
+                    throw new \RuntimeException('savepoint release failed');
+                }
+            });
+        } else {
+            $connection->method('commit')->willThrowException(new \RuntimeException('commit failed'));
+        }
+        $this->purchaseFlow->expects($this->once())->method('commit')->with($order);
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->cartService->expects($this->never())->method('clear');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+    }
+
+    public function transactionCompletionFailureProvider(): array
+    {
+        return ['own transaction' => [false], 'outer request transaction' => [true]];
+    }
 
     public function testEntityManagerFailureShowsPendingInsteadOfCompletion()
     {
@@ -966,6 +1124,7 @@ class SessionReturnControllerTest extends TestCase
         $this->em->method('isOpen')->willReturnCallback(function () use (&$flushCount) {
             return $flushCount < 2;
         });
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $req = $this->callbackRequest();
@@ -980,6 +1139,7 @@ class SessionReturnControllerTest extends TestCase
     public function testCompletedCallbackClearsOnlyItsCartAndReplayPreservesNewCart()
     {
         $cartService = $this->arrangeCompletedCart();
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
         $otherCart = $this->makeCart(85, 'other-checkout');
         $cartService->carts[85] = $otherCart;
         $controller = $this->makeController();
@@ -1104,6 +1264,7 @@ class SessionReturnControllerTest extends TestCase
         $processing->setId(OrderStatus::PROCESSING);
         $this->em->method('find')->willReturn($processing);
         $this->purchaseFlow->expects($this->once())->method('rollback')->with($order);
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionCancel($this->callbackRequest());
@@ -1115,6 +1276,7 @@ class SessionReturnControllerTest extends TestCase
     public function testSessionCancelWithoutSessionIdStillRedirects()
     {
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $resp = $controller->sessionCancel(new Request([]));
@@ -1131,6 +1293,7 @@ class SessionReturnControllerTest extends TestCase
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $controller->sessionCancel($this->callbackRequest());
@@ -1157,6 +1320,7 @@ class SessionReturnControllerTest extends TestCase
         $this->purchaseFlow->method('commit')
             ->willThrowException(new \RuntimeException('over stock'));
         $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
 
         $controller = $this->makeController();
         $req = $this->callbackRequest();
