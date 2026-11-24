@@ -30,13 +30,7 @@ services:
             - '@eccube.purchase.flow.shopping'
             - '@Eccube\Service\PurchaseFlow\Processor\PointProcessor'
             - '@Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor'
-            - '@Plugin\Komoju42\Service\OrderConfirmationMailer'
-    Plugin\Komoju42\Service\OrderConfirmationMailer:
-        arguments:
-            $getMailService: !service_closure '@Eccube\Service\MailService'
-    Eccube\EventListener\TransactionListener:
-        class: Plugin\Komoju42\EventListener\OrderConfirmationTransactionListener
-    Plugin\Komoju42\EventListener\OrderConfirmationTransactionListener: '@Eccube\EventListener\TransactionListener'
+            - '@Eccube\Service\MailService'
     plg_Komoju42.service.komoju_mail_service:
         public: true
         class: Plugin\Komoju42\Service\MailExService

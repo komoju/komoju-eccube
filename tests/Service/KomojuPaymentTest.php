@@ -8,11 +8,11 @@ use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 use Plugin\Komoju42\Service\Method\KomojuPayment;
-use Plugin\Komoju42\Service\OrderConfirmationMailer;
 use Plugin\Komoju42\KomojuClient;
 use Plugin\Komoju42\Controller\SessionReturnController;
 use Eccube\Entity\Cart;
 use Eccube\Service\CartService;
+use Eccube\Service\MailService;
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Order;
 use Eccube\Entity\Payment;
@@ -404,10 +404,10 @@ class KomojuPaymentTest extends TestCase
         $cartService = $this->createMock(CartService::class);
         $cartService->method('getCart')->willReturn($returnCart);
         $cartService->expects($sameCart ? $this->once() : $this->never())->method('clear');
-        $confirmationMailer = $this->createMock(OrderConfirmationMailer::class);
-        $confirmationMailer->expects($this->never())->method('schedule');
+        $mailService = $this->createMock(MailService::class);
+        $mailService->expects($this->never())->method('sendOrderMail');
         $controller = new SessionReturnController($this->entityManager, $this->configService, $this->logService,
-            $this->purchaseFlow, $this->requestStack, $cartService, $this->clientFactory, $confirmationMailer);
+            $this->purchaseFlow, $this->requestStack, $cartService, $this->clientFactory, $mailService);
 
         $response = $controller->sessionReturn(new Request(['session_id' => 'session-bound-cart', 'state' => $state]));
 

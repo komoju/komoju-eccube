@@ -62,11 +62,11 @@ Plugin installation, enabling, and disabling are done through the EC-CUBE admin 
 
 Use [KOMOJU test cards](https://docs.komoju.com/en/api/overview/#payment_details) in your test environment to verify the payment flow.
 
-Order confirmations use the shop's EC-CUBE mail service after order acceptance commits, including authorized payments awaiting collection. Rolled-back orders do not send mail; repeated callbacks and later capture do not resend it. A mail or history-write failure does not roll back the payment. Delivery is not retried automatically. Check the mail logs before resending from the admin order: a missing history row does not necessarily mean SMTP delivery failed. Previously completed orders are not emailed retroactively.
+Order confirmations use the shop's EC-CUBE mail service when a browser return or webhook first accepts the order, including authorized payments awaiting collection. Repeated callbacks and later capture do not resend. Delivery is not retried automatically; check the mail logs before resending from the admin order. Mail history is not proof of SMTP delivery. Previously completed orders are not emailed retroactively.
 
-Confirmation delivery runs at EC-CUBE's root request commit boundary, with a separate transaction for mail history. If another extension leaves a nested transaction open at termination, mail is skipped rather than committing that extension's work. Committing it later does not trigger delivery; after a rollback, a new successful callback can still send.
+Confirmation delivery follows EC-CUBE's normal request transaction: mail can be sent before the outer database commit. A later rollback cannot unsend it, and mail-history database errors can affect that transaction.
 
-CI runs `tests/integration/order_confirmation.php` against fresh EC-CUBE 4.2.3/PHP 7.4 and 4.3.1/PHP 8.1 installations with MailCatcher on `[self-hosted, public-release]` runners. Installation and regression checks run as the isolated non-root build user, with the validation database inside that job's `TMPDIR`. The checks cover actual SMTP delivery, customer and shop Bcc recipients, text/HTML content, rollback/retry, duplicates, persistent PDO, commit/history failures, and transaction cleanup.
+CI runs `tests/integration/order_confirmation.php` against fresh EC-CUBE 4.2.3/PHP 7.4 and 4.3.1/PHP 8.1 installations with MailCatcher on `[self-hosted, public-release]` runners. Installation and regression checks run as the isolated non-root build user, with the validation database inside that job's `TMPDIR`. The checks cover actual SMTP delivery, customer and shop Bcc recipients, text/HTML content, duplicate callbacks, authorization followed by capture, rejected amounts, and SMTP failure without automatic retry.
 
 ## Security
 
