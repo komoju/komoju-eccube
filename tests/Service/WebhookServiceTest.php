@@ -4,7 +4,7 @@ namespace Tests\Komoju42\Service;
 
 use Plugin\Komoju42\Entity\KomojuOrder;
 use Plugin\Komoju42\Service\LogService;
-use Plugin\Komoju42\Service\MailExService;
+use Plugin\Komoju42\Service\OrderConfirmationMailer;
 use Plugin\Komoju42\Service\WebhookService;
 use Eccube\Entity\Master\OrderStatus;
 use Eccube\Entity\Order;
@@ -23,7 +23,7 @@ class WebhookServiceTest extends TestCase
     private $purchaseFlow;
     private $pointProcessor;
     private $stockReduceProcessor;
-    private $mailService;
+    private $confirmationMailer;
     private $service;
 
     protected function setUp(): void
@@ -34,7 +34,7 @@ class WebhookServiceTest extends TestCase
         $this->purchaseFlow = $this->createMock(\Eccube\Service\PurchaseFlow\PurchaseFlow::class);
         $this->pointProcessor = $this->createMock(PointProcessor::class);
         $this->stockReduceProcessor = $this->createMock(StockReduceProcessor::class);
-        $this->mailService = $this->createMock(MailExService::class);
+        $this->confirmationMailer = $this->createMock(OrderConfirmationMailer::class);
         $this->komojuOrderRepo = $this->createMock(StubRepository::class);
 
         // The refund path performs an atomic compare-and-swap UPDATE via the
@@ -62,7 +62,7 @@ class WebhookServiceTest extends TestCase
             $this->purchaseFlow,
             $this->pointProcessor,
             $this->stockReduceProcessor,
-            $this->mailService
+            $this->confirmationMailer
         );
     }
 
@@ -79,7 +79,7 @@ class WebhookServiceTest extends TestCase
         $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
         $this->logService->expects($this->once())->method('writeLog');
         $this->entityManager->expects($this->never())->method('persist');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCaptured($this->makeWebhookObject('pay_1'));
     }
@@ -91,7 +91,7 @@ class WebhookServiceTest extends TestCase
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
         $this->entityManager->expects($this->never())->method('persist');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCaptured($this->makeWebhookObject('pay_1'));
     }
@@ -110,7 +110,7 @@ class WebhookServiceTest extends TestCase
         $attempt->setCapturedAt(new \DateTime('2026-01-01T00:00:00Z'));
         $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
         $this->purchaseFlow->expects($this->never())->method('commit');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCaptured($this->makeWebhookObject('pay_refunded', [
             'captured_at' => '2026-01-01T00:00:00Z',
@@ -152,21 +152,10 @@ class WebhookServiceTest extends TestCase
                 return $this->createMock(StubRepository::class);
             });
 
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
-        $transactionCompleted = false;
-        $this->connection->expects($this->exactly(2))->method('commit')
-            ->willReturnCallback(function () use (&$transactionCompleted) {
-                $transactionCompleted = true;
-                return true;
-            });
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
+        $this->connection->expects($this->exactly(2))->method('commit');
         $this->purchaseFlow->expects($this->once())->method('commit')->with($eccubeOrder);
-        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')
-            ->with($eccubeOrder)
-            ->willReturnCallback(function (Order $order) use (&$transactionCompleted) {
-                $this->assertTrue($transactionCompleted);
-                $this->assertSame(OrderStatus::PAID, $order->getOrderStatus()->getId());
-                $this->assertNotNull($order->getPaymentDate());
-            });
+        $this->confirmationMailer->expects($this->once())->method('schedule')->with($eccubeOrder);
 
         $object = $this->makeWebhookObject('pay_1', ['captured_at' => '2024-01-15T10:00:00Z']);
 
@@ -174,6 +163,7 @@ class WebhookServiceTest extends TestCase
         $this->service->paymentCaptured($object);
 
         $this->assertTrue($komojuOrder->isCaptured());
+        $this->assertSame(OrderStatus::PAID, $eccubeOrder->getOrderStatus()->getId());
         $this->assertNotNull($eccubeOrder->getPaymentDate());
     }
 
@@ -211,9 +201,9 @@ class WebhookServiceTest extends TestCase
         $em->method('getConnection')->willReturn($conn);
 
         $this->purchaseFlow->expects($this->never())->method('commit');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
-        $this->service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_1', ['captured_at' => '2024-01-15T10:00:00Z']);
         $this->service->paymentCaptured($object);
@@ -229,7 +219,7 @@ class WebhookServiceTest extends TestCase
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
         $this->logService->expects($this->once())->method('writeLog');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $object = $this->makeWebhookObject('pay_1', ['captured_at' => '2024-01-15T10:00:00Z']);
         $this->service->paymentCaptured($object);
@@ -288,7 +278,7 @@ class WebhookServiceTest extends TestCase
 
         $this->orderStateMachine->method('can')->willReturn(true);
 
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_1', [
             'refunds' => [(object)['id' => 'ref_1', 'amount' => 500]]
@@ -329,7 +319,7 @@ class WebhookServiceTest extends TestCase
 
         $this->orderStateMachine->method('can')->willReturn(true);
 
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_1', [
             'refunds' => [
@@ -377,7 +367,7 @@ class WebhookServiceTest extends TestCase
         $this->orderStateMachine->method('can')->willReturn(true);
         $this->orderStateMachine->expects($this->once())->method('apply');
 
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_1', [
             'refunds' => [(object)['id' => 'ref_1', 'amount' => 4080]]
@@ -394,7 +384,7 @@ class WebhookServiceTest extends TestCase
     {
         $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
         $this->logService->expects($this->once())->method('writeLog');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_1'));
     }
@@ -416,7 +406,7 @@ class WebhookServiceTest extends TestCase
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
         $this->orderStateMachine->expects($this->never())->method('apply');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_1'));
     }
@@ -445,7 +435,7 @@ class WebhookServiceTest extends TestCase
         $this->purchaseFlow->expects($this->never())->method('rollback');
         $this->pointProcessor->expects($this->once())->method('rollback')->with($eccubeOrder);
         $this->stockReduceProcessor->expects($this->once())->method('rollback')->with($eccubeOrder);
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_1'));
 
@@ -468,7 +458,7 @@ class WebhookServiceTest extends TestCase
 
         $this->orderStateMachine->expects($this->never())->method('apply');
         $this->purchaseFlow->expects($this->never())->method('rollback');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_1'));
 
@@ -550,7 +540,7 @@ class WebhookServiceTest extends TestCase
         $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
         $this->logService->expects($this->once())->method('writeLog');
         $this->entityManager->expects($this->never())->method('persist');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentAuthorized($this->makeWebhookObject('pay_1'));
     }
@@ -572,7 +562,7 @@ class WebhookServiceTest extends TestCase
         $newStatus = new OrderStatus();
         $newStatus->setId(OrderStatus::NEW);
         $this->entityManager->method('find')->willReturn($newStatus);
-        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')->with($eccubeOrder);
+        $this->confirmationMailer->expects($this->once())->method('schedule')->with($eccubeOrder);
 
         $object = $this->makeWebhookObject('pay_auth_1', [
             'payment_details' => (object)['type' => 'konbini'],
@@ -606,19 +596,9 @@ class WebhookServiceTest extends TestCase
                 $entity->setOrderStatus($newStatus);
             }
         });
-        $transactionCompleted = false;
-        $this->connection->expects($this->once())->method('commit')
-            ->willReturnCallback(function () use (&$transactionCompleted) {
-                $transactionCompleted = true;
-                return true;
-            });
+        $this->connection->expects($this->once())->method('commit');
         $this->purchaseFlow->expects($this->once())->method('commit')->with($eccubeOrder);
-        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')
-            ->with($eccubeOrder)
-            ->willReturnCallback(function (Order $order) use (&$transactionCompleted) {
-                $this->assertTrue($transactionCompleted);
-                $this->assertSame(OrderStatus::NEW, $order->getOrderStatus()->getId());
-            });
+        $this->confirmationMailer->expects($this->once())->method('schedule')->with($eccubeOrder);
 
         $object = $this->makeWebhookObject('pay_auth_2');
         $this->service->paymentAuthorized($object);
@@ -626,7 +606,7 @@ class WebhookServiceTest extends TestCase
         $this->assertEquals(OrderStatus::NEW, $eccubeOrder->getOrderStatus()->getId());
     }
 
-    public function testLaterCaptureDoesNotResendConfirmationForAcceptedOrder()
+    public function testLaterCaptureDoesNotScheduleAnotherConfirmationForAcceptedOrder()
     {
         $newStatus = new OrderStatus();
         $newStatus->setId(OrderStatus::NEW);
@@ -648,8 +628,8 @@ class WebhookServiceTest extends TestCase
             return $class === OrderStatus::class ? $statusRepo : $this->komojuOrderRepo;
         });
         $this->purchaseFlow->expects($this->never())->method('commit');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
-        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->confirmationMailer->expects($this->never())->method('schedule');
+        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_later_capture', ['captured_at' => '2024-01-15T10:00:00Z']);
         $service->paymentCaptured($object);
@@ -661,7 +641,7 @@ class WebhookServiceTest extends TestCase
     }
 
     /** @dataProvider finalizationFailureProvider */
-    public function testFinalizationFailureDoesNotSendConfirmation($handler, $failureStage)
+    public function testFinalizationFailureDoesNotScheduleConfirmation($handler, $failureStage)
     {
         $pendingStatus = new OrderStatus();
         $pendingStatus->setId(OrderStatus::PENDING);
@@ -688,7 +668,7 @@ class WebhookServiceTest extends TestCase
         $connection->expects($this->once())->method('rollBack');
         $em->method('getConnection')->willReturn($connection);
         $em->expects($this->once())->method('clear');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $failure = new \RuntimeException('finalization failed');
         $purchaseCommit = $this->purchaseFlow->expects($this->once())->method('commit')->with($order);
@@ -705,7 +685,7 @@ class WebhookServiceTest extends TestCase
         } else {
             $connection->expects($this->never())->method('commit');
         }
-        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('finalization failed');
@@ -744,8 +724,8 @@ class WebhookServiceTest extends TestCase
         $em->method('getConnection')->willReturn($connection);
         $em->method('getRepository')->willReturn($this->komojuOrderRepo);
         $this->purchaseFlow->expects($this->never())->method('commit');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
-        $this->service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->confirmationMailer->expects($this->never())->method('schedule');
+        $this->service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_already_set');
         $this->service->paymentAuthorized($object);
@@ -784,9 +764,9 @@ class WebhookServiceTest extends TestCase
         $newStatus = new OrderStatus();
         $newStatus->setId(OrderStatus::NEW);
         $em->method('find')->willReturn($newStatus);
-        $this->mailService->expects($this->once())->method('sendOrderConfirmationMail')->with($eccubeOrder);
+        $this->confirmationMailer->expects($this->once())->method('schedule')->with($eccubeOrder);
 
-        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_new_1', [
             'session' => 'sess_exact',
@@ -803,7 +783,7 @@ class WebhookServiceTest extends TestCase
     {
         $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
         $this->entityManager->expects($this->never())->method('persist');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentAuthorized($this->makeWebhookObject('pay_metadata', [
             'metadata' => (object)['eccube_order_id' => '93'],
@@ -836,7 +816,7 @@ class WebhookServiceTest extends TestCase
         $this->purchaseFlow->expects($this->never())->method('rollback');
         $this->pointProcessor->expects($this->never())->method('rollback');
         $this->stockReduceProcessor->expects($this->never())->method('rollback');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentFailed($this->makeWebhookObject('pay_failed', [
             'session' => 'sess_failed',
@@ -867,7 +847,7 @@ class WebhookServiceTest extends TestCase
             ->with('webhook[canceled]', 94, 'rejected: payment mismatch');
         $this->pointProcessor->expects($this->never())->method('rollback');
         $this->stockReduceProcessor->expects($this->never())->method('rollback');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_old', [
             'session' => 'sess_retry',
@@ -906,7 +886,7 @@ class WebhookServiceTest extends TestCase
         );
         $this->purchaseFlow->expects($this->never())->method('rollback');
         $this->orderStateMachine->expects($this->never())->method('apply');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentCanceled($this->makeWebhookObject('pay_old', [
             'session' => 'sess_old',
@@ -941,9 +921,9 @@ class WebhookServiceTest extends TestCase
         $em->method('getConnection')->willReturn($connection);
         $em->method('getRepository')->willReturn($repo);
 
-        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $service = new WebhookService($em, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
         $this->purchaseFlow->expects($this->never())->method('rollback');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $service->paymentCanceled($this->makeWebhookObject('pay_race'));
 
@@ -967,7 +947,7 @@ class WebhookServiceTest extends TestCase
         $attempt->setExpectedCurrency('JPY');
         $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
         $this->purchaseFlow->expects($this->never())->method('commit');
-        $this->mailService->expects($this->never())->method('sendOrderConfirmationMail');
+        $this->confirmationMailer->expects($this->never())->method('schedule');
 
         $this->service->paymentAuthorized($this->makeWebhookObject('pay_wrong_amount', [
             'session' => 'sess_amount',
@@ -1064,7 +1044,7 @@ class WebhookServiceTest extends TestCase
         $this->orderStateMachine->method('can')->willReturn(true);
         $this->orderStateMachine->expects($this->once())->method('apply');
 
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_full_1', [
             'refunds' => [
@@ -1106,7 +1086,7 @@ class WebhookServiceTest extends TestCase
                 if ($class === KomojuOrder::class) return $this->komojuOrderRepo;
                 return $this->createMock(StubRepository::class);
             });
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $this->logService->expects($this->never())->method('writeLog');
 
@@ -1205,7 +1185,7 @@ class WebhookServiceTest extends TestCase
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
         $this->orderStateMachine->method('can')->willReturn(true);
 
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         // The refund log line must be written exactly once across BOTH events,
         // even though both deliveries carry the same refund id 'ref_dup'.
@@ -1282,7 +1262,7 @@ class WebhookServiceTest extends TestCase
             if ($class === KomojuOrder::class) return $repo1;
             return $this->createMock(StubRepository::class);
         });
-        (new WebhookService($em1, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService))
+        (new WebhookService($em1, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer))
             ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
 
         // Second handler: CAS loses — row already has this id set (0 affected).
@@ -1297,7 +1277,7 @@ class WebhookServiceTest extends TestCase
             if ($class === KomojuOrder::class) return $repo2;
             return $this->createMock(StubRepository::class);
         });
-        (new WebhookService($em2, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService))
+        (new WebhookService($em2, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer))
             ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
 
         $this->assertEquals(1, $refundLogCalls, 'concurrent duplicate must not double-log');
@@ -1336,7 +1316,7 @@ class WebhookServiceTest extends TestCase
             });
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $object = $this->makeWebhookObject('pay_cas', [
             'refunds' => [(object)['id' => 'ref_cas', 'amount' => 300]]
@@ -1436,7 +1416,7 @@ class WebhookServiceTest extends TestCase
                 if ($class === OrderStatus::class) return $statusRepo;
                 return $this->createMock(StubRepository::class);
             });
-        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->confirmationMailer);
 
         $this->logService->expects($this->never())->method('writeLog');
 

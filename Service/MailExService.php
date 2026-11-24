@@ -52,19 +52,6 @@ class MailExService extends MailService{
         $this->mailHistoryRepository = $mailHistoryRepository;
     }
 
-    public function sendOrderConfirmationMail($Order)
-    {
-        try {
-            $this->sendOrderMail($Order);
-            $this->em->flush();
-        } catch (\Throwable $e) {
-            log_error('KOMOJU order confirmation email failed', [
-                'order_id' => $Order->getId(),
-                'exception' => $e,
-            ]);
-        }
-    }
-
     public function sendRefundRedirectMail($Order, $redirect_url){
         $template = $this->em->getRepository(MailTemplate::class)->findOneBy([
             'name'  =>  ConfigService::MAIL_TEMPLATE_REFUND_REDIRECT

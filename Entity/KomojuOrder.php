@@ -61,6 +61,14 @@ class KomojuOrder
     /** @ORM\Column(name="callback_token_hash", type="string", length=64, nullable=true) */
     private $callback_token_hash;
 
+    /** @ORM\Column(name="confirmation_token", type="string", length=32, nullable=true) */
+    private $confirmation_token;
+
+    public function prepareOrderConfirmation(): string
+    {
+        return $this->confirmation_token = bin2hex(random_bytes(16));
+    }
+
     /**
      * @var string
      * @ORM\Column(name="type", type="string", nullable=true)

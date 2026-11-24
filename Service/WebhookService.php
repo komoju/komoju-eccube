@@ -20,7 +20,7 @@ class WebhookService{
     protected $purchase_flow;
     protected $point_processor;
     protected $stock_reduce_processor;
-    protected $mail_service;
+    protected $confirmationMailer;
 
 
     public function __construct(
@@ -30,7 +30,7 @@ class WebhookService{
         \Eccube\Service\PurchaseFlow\PurchaseFlow $shoppingPurchaseFlow,
         PointProcessor $pointProcessor,
         StockReduceProcessor $stockReduceProcessor,
-        MailExService $mailService
+        OrderConfirmationMailer $confirmationMailer
     ){
         $this->entityManager = $entityManager;
         $this->komoju_order_repo = $this->entityManager->getRepository(KomojuOrder::class);
@@ -39,7 +39,7 @@ class WebhookService{
         $this->purchase_flow = $shoppingPurchaseFlow;
         $this->point_processor = $pointProcessor;
         $this->stock_reduce_processor = $stockReduceProcessor;
-        $this->mail_service = $mailService;
+        $this->confirmationMailer = $confirmationMailer;
     }
 
     private function commitPurchaseFlow($order){
@@ -174,8 +174,8 @@ class WebhookService{
             return;
         }
 
-        $finalized = false;
-        $processed = $this->transactional(function () use ($attempt, $object, $order, $paymentId, &$finalized) {
+        $confirmationToken = null;
+        $processed = $this->transactional(function () use ($attempt, $object, $order, $paymentId, &$confirmationToken) {
             $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->refresh($order);
@@ -190,19 +190,19 @@ class WebhookService{
             $this->entityManager->persist($attempt);
             if($this->claimFinalization($order, OrderStatus::NEW)){
                 $this->commitPurchaseFlow($order);
-                $finalized = true;
+                $confirmationToken = $attempt->prepareOrderConfirmation();
             }
             $this->entityManager->flush();
             return true;
         });
 
+        if ($confirmationToken !== null) {
+            $this->confirmationMailer->schedule($order, $confirmationToken);
+        }
         $this->entityManager->refresh($order);
         if(!$processed){
             $this->log_service->writeLog("webhook[authorized]", 0, "payment correlation failed: $paymentId");
             return;
-        }
-        if($finalized){
-            $this->mail_service->sendOrderConfirmationMail($order);
         }
         $this->log_service->writeLog("webhook[authorized]", $order->getId(), "payment authorized", true);
     }
@@ -226,8 +226,8 @@ class WebhookService{
             ? new \DateTime($object->data->captured_at)
             : ($attempt->getCapturedAt() ?: new \DateTime());
         $capturedAmount = isset($object->data->amount) ? (int)$object->data->amount : null;
-        $finalized = false;
-        $processed = $this->transactional(function () use ($attempt, $object, $order, $paymentId, $capturedAt, $capturedAmount, &$finalized) {
+        $confirmationToken = null;
+        $processed = $this->transactional(function () use ($attempt, $object, $order, $paymentId, $capturedAt, $capturedAmount, &$confirmationToken) {
             if($order){
                 $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             }
@@ -259,7 +259,7 @@ class WebhookService{
                 if(in_array($status, [OrderStatus::PENDING, OrderStatus::PROCESSING])
                     && $this->claimFinalization($order, OrderStatus::PAID)){
                     $this->commitPurchaseFlow($order);
-                    $finalized = true;
+                    $confirmationToken = $attempt->prepareOrderConfirmation();
                 }
                 if(in_array($status, [OrderStatus::PENDING, OrderStatus::PROCESSING, OrderStatus::NEW])){
                     $order->setPaymentDate($capturedAt);
@@ -279,8 +279,8 @@ class WebhookService{
             $this->log_service->writeLog("webhook[captured]", 0, "no EC-CUBE order for payment: $paymentId");
             return;
         }
-        if($finalized){
-            $this->mail_service->sendOrderConfirmationMail($order);
+        if ($confirmationToken !== null) {
+            $this->confirmationMailer->schedule($order, $confirmationToken);
         }
         $this->log_service->writeLog("webhook[captured]", $order->getId(), "payment captured", true);
     }

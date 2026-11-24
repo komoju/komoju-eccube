@@ -62,7 +62,7 @@ Plugin installation, enabling, and disabling are done through the EC-CUBE admin 
 
 Use [KOMOJU test cards](https://docs.komoju.com/en/api/overview/#payment_details) in your test environment to verify the payment flow.
 
-Order confirmations are sent when an order is accepted, including authorized payments awaiting collection. Repeated callbacks and later capture do not send another confirmation. Mail errors are logged by EC-CUBE; after correcting the mail configuration, use the admin order's mail notification action to resend. Previously completed orders are not emailed retroactively.
+Order confirmations use the shop's EC-CUBE mail service after order acceptance commits, including authorized payments awaiting collection. Rolled-back orders do not send mail; repeated callbacks and later capture do not resend it. A mail or history-write failure does not roll back the payment. Delivery is not retried automatically. Check the mail logs before resending from the admin order: a missing history row does not necessarily mean SMTP delivery failed. Previously completed orders are not emailed retroactively.
 
 ## Security
 

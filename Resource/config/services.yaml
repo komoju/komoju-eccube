@@ -30,7 +30,13 @@ services:
             - '@eccube.purchase.flow.shopping'
             - '@Eccube\Service\PurchaseFlow\Processor\PointProcessor'
             - '@Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor'
-            - '@plg_Komoju42.service.komoju_mail_service'
+            - '@Plugin\Komoju42\Service\OrderConfirmationMailer'
+    Plugin\Komoju42\Service\OrderConfirmationMailer:
+        arguments:
+            $getMailService: !service_closure '@Eccube\Service\MailService'
+        tags:
+            # Run after EC-CUBE's request transaction listener (priority 0).
+            - { name: kernel.event_listener, event: kernel.terminate, method: onKernelTerminate, priority: -128 }
     plg_Komoju42.service.komoju_mail_service:
         public: true
         class: Plugin\Komoju42\Service\MailExService
