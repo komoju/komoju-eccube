@@ -1,7 +1,7 @@
 <?php
 
 // From a disposable EC-CUBE installation with core fixtures and Komoju42 enabled:
-// APP_ENV=dev APP_DEBUG=0 DATABASE_URL=sqlite:////tmp/komoju-order-confirmation.sqlite \
+// TMPDIR=/tmp APP_ENV=dev APP_DEBUG=0 DATABASE_URL=sqlite:////tmp/komoju-order-confirmation.sqlite \
 // MAILER_DSN=smtp://127.0.0.1:1025 MAILCATCHER_URL=http://127.0.0.1:1080 \
 // php /path/to/tests/integration/order_confirmation.php
 // Only a local SMTP catcher is allowed. Do not run on a shop.
@@ -19,7 +19,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\KernelEvents;
 
-const DB = '/tmp/komoju-order-confirmation.sqlite';
+define(__NAMESPACE__ . '\\DB', sys_get_temp_dir() . '/komoju-order-confirmation.sqlite');
 const SECRET = 'disposable-webhook-secret';
 const STATE = 'disposable-browser-state';
 const AMOUNT = 1200;

@@ -66,7 +66,7 @@ Order confirmations use the shop's EC-CUBE mail service after order acceptance c
 
 Confirmation delivery runs at EC-CUBE's root request commit boundary, with a separate transaction for mail history. If another extension leaves a nested transaction open at termination, mail is skipped rather than committing that extension's work. Committing it later does not trigger delivery; after a rollback, a new successful callback can still send.
 
-CI runs `tests/integration/order_confirmation.php` against fresh EC-CUBE 4.2.3/PHP 7.4 and 4.3.1/PHP 8.1 installations with MailCatcher. It asserts actual SMTP delivery, customer and shop Bcc recipients, text/HTML content, rollback/retry, duplicates, persistent PDO, commit/history failures, and transaction cleanup.
+CI runs `tests/integration/order_confirmation.php` against fresh EC-CUBE 4.2.3/PHP 7.4 and 4.3.1/PHP 8.1 installations with MailCatcher on `[self-hosted, public-release]` runners. Installation and regression checks run as the isolated non-root build user, with the validation database inside that job's `TMPDIR`. The checks cover actual SMTP delivery, customer and shop Bcc recipients, text/HTML content, rollback/retry, duplicates, persistent PDO, commit/history failures, and transaction cleanup.
 
 ## Security
 
