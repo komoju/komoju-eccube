@@ -12,6 +12,7 @@ use Plugin\Komoju42\KomojuClient;
 use Plugin\Komoju42\Controller\SessionReturnController;
 use Eccube\Entity\Cart;
 use Eccube\Service\CartService;
+use Eccube\Service\MailService;
 use Eccube\Common\EccubeConfig;
 use Eccube\Entity\Order;
 use Eccube\Entity\Payment;
@@ -403,8 +404,10 @@ class KomojuPaymentTest extends TestCase
         $cartService = $this->createMock(CartService::class);
         $cartService->method('getCart')->willReturn($returnCart);
         $cartService->expects($sameCart ? $this->once() : $this->never())->method('clear');
+        $mailService = $this->createMock(MailService::class);
+        $mailService->expects($this->never())->method('sendOrderMail');
         $controller = new SessionReturnController($this->entityManager, $this->configService, $this->logService,
-            $this->purchaseFlow, $this->requestStack, $cartService, $this->clientFactory);
+            $this->purchaseFlow, $this->requestStack, $cartService, $this->clientFactory, $mailService);
 
         $response = $controller->sessionReturn(new Request(['session_id' => 'session-bound-cart', 'state' => $state]));
 

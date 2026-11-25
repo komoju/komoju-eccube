@@ -59,11 +59,24 @@ jobs:
             php: '7.4'
           - eccube: '4.3.1'
             php: '8.1'
+    services:
+      mailcatcher:
+        image: sj26/mailcatcher@sha256:572048324658d2198e0a96785cca4f0260f2c4cadb2cb057bd837b9ee0c60533 # 0.11.0
+        ports:
+          - 127.0.0.1:1025:1025
+          - 127.0.0.1:1080:1080
+        options: >-
+          --health-cmd "ruby -rsocket -e '[1025,1080].each { |port| TCPSocket.new(%q{127.0.0.1}, port).close }'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      APP_ENV: test
-      APP_DEBUG: 0
+      APP_ENV: dev
+      APP_DEBUG: '0'
       DATABASE_SERVER_VERSION: '3'
       DATABASE_CHARSET: utf8
+      MAILER_DSN: smtp://127.0.0.1:1025
+      MAILCATCHER_URL: http://127.0.0.1:1080
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -182,7 +195,8 @@ jobs:
               COMPOSER_CACHE_DIR="$build_dir/home/.cache/composer" \
               COMPOSER_NO_INTERACTION=1 COMPOSER_PROCESS_TIMEOUT=0 \
               APP_ENV="$APP_ENV" APP_DEBUG="$APP_DEBUG" \
-              DATABASE_URL="sqlite:///$build_dir/app/var/eccube.db" DATABASE_SERVER_VERSION="$DATABASE_SERVER_VERSION" \
+              MAILER_DSN="$MAILER_DSN" MAILCATCHER_URL="$MAILCATCHER_URL" \
+              DATABASE_URL="sqlite:///$build_dir/tmp/komoju-order-confirmation.sqlite" DATABASE_SERVER_VERSION="$DATABASE_SERVER_VERSION" \
               DATABASE_CHARSET="$DATABASE_CHARSET" \
               APP_DIR="$build_dir/app" PLUGIN_DIR="$build_dir/plugin" \
               ARTIFACT_DIR="$build_dir/artifacts" PLUGIN_ARCHIVE="$build_dir/artifacts/Komoju42.tar.gz" \
@@ -244,4 +258,5 @@ jobs:
           "$PHP_BIN" bin/console cache:clear --no-warmup
           "$PHP_BIN" bin/console eccube:plugin:enable --code=Komoju42
           "$PHP_BIN" bin/console cache:warmup
+          "$PHP_BIN" "$PLUGIN_DIR/tests/integration/order_confirmation.php"
           INSTALL

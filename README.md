@@ -28,6 +28,7 @@ Payment methods enabled in your KOMOJU account are automatically synced to EC-CU
 - **Full and partial refunds** from the EC-CUBE order edit page
 - **Webhook-driven status sync** -- order statuses update automatically when payments are captured, refunded, cancelled, expired, or failed
 - **Admin audit log** with search, CSV export, retention policy, and toggle
+- **Order confirmation emails** -- EC-CUBE's configured order email and mail history are generated when KOMOJU first finalizes the order, through either the browser return or a webhook
 - **KOMOJU dashboard link** on every order for quick reference
 
 ## Installation
@@ -60,6 +61,12 @@ Plugin installation, enabling, and disabling are done through the EC-CUBE admin 
 ## Testing
 
 Use [KOMOJU test cards](https://docs.komoju.com/en/api/overview/#payment_details) in your test environment to verify the payment flow.
+
+Order confirmations use the shop's EC-CUBE mail service when a browser return or webhook first accepts the order, including authorized payments awaiting collection. Repeated callbacks and later capture do not resend. Delivery is not retried automatically; check the mail logs before resending from the admin order. Mail history is not proof of SMTP delivery. Previously completed orders are not emailed retroactively.
+
+Confirmation delivery follows EC-CUBE's normal request transaction: mail can be sent before the outer database commit. A later rollback cannot unsend it, and mail-history database errors can affect that transaction.
+
+CI runs `tests/integration/order_confirmation.php` against fresh EC-CUBE 4.2.3/PHP 7.4 and 4.3.1/PHP 8.1 installations with MailCatcher on `[self-hosted, public-release]` runners. Installation and regression checks run as the isolated non-root build user, with the validation database inside that job's `TMPDIR`. The checks cover actual SMTP delivery, customer and shop Bcc recipients, text/HTML content, duplicate callbacks, authorization followed by capture, rejected amounts, and SMTP failure without automatic retry.
 
 ## Security
 

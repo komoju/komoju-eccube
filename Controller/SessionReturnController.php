@@ -13,6 +13,7 @@ use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 use Plugin\Komoju42\Service\PaymentAttemptTransitionTrait;
+use Eccube\Service\MailService;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Eccube\Service\CartService;
 
@@ -33,6 +34,7 @@ class SessionReturnController extends AbstractController
     protected $requestStack;
     protected $cartService;
     protected $client_factory;
+    protected $mailService;
 
     public function __construct(
         EntityManagerInterface $entityManager,
@@ -41,7 +43,8 @@ class SessionReturnController extends AbstractController
         PurchaseFlow $shoppingPurchaseFlow,
         RequestStack $requestStack,
         CartService $cartService,
-        KomojuClientFactory $clientFactory
+        KomojuClientFactory $clientFactory,
+        MailService $mailService
     ){
         $this->entityManager = $entityManager;
         $this->config_service = $configService;
@@ -50,6 +53,7 @@ class SessionReturnController extends AbstractController
         $this->requestStack = $requestStack;
         $this->cartService = $cartService;
         $this->client_factory = $clientFactory;
+        $this->mailService = $mailService;
     }
 
 
@@ -209,8 +213,9 @@ class SessionReturnController extends AbstractController
             return $this->redirectAfterCompletion($Order, $browserAuthorized, $session_id);
         }
 
+        $sendConfirmation = false;
         try {
-            $processed = $this->transactional(function () use ($session, $payment_status, $komoju_order, $Order) {
+            $processed = $this->transactional(function () use ($session, $payment_status, $komoju_order, $Order, &$sendConfirmation) {
                 $this->entityManager->lock($Order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
                 $this->entityManager->lock($komoju_order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
                 $this->entityManager->refresh($Order);
@@ -248,6 +253,7 @@ class SessionReturnController extends AbstractController
                     $targetStatus = $payment_status === 'captured' ? OrderStatus::PAID : OrderStatus::NEW;
                     if($this->claimFinalization($Order, $targetStatus)){
                         $this->purchase_flow->commit($Order, new PurchaseContext());
+                        $sendConfirmation = true;
                     }
                 }
                 if($payment_status === 'captured'
@@ -268,6 +274,10 @@ class SessionReturnController extends AbstractController
         }
         if($payment_status === 'authorized' && !$this->refreshOrder($Order)){
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
+        }
+        if ($sendConfirmation) {
+            $this->mailService->sendOrderMail($Order);
+            $this->entityManager->flush();
         }
 
         if($payment_status === 'captured'){
