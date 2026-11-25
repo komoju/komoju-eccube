@@ -116,7 +116,7 @@ class WebhookService{
         $order = $attempt->getOrder();
         $orderId = $order->getId();
         $paymentId = (string)$data->id;
-        $currency = isset($data->currency) ? strtoupper((string)$data->currency) : '';
+        $currency = isset($data->currency) && is_string($data->currency) ? strtoupper($data->currency) : '';
         $refundIds = [];
         $seen = [];
         $total = 0;
@@ -128,11 +128,11 @@ class WebhookService{
                 $this->log_service->writeLog("webhook[refund]", $orderId, "rejected: invalid refund entry");
                 return null;
             }
-            if(!isset($refund->payment) || !hash_equals($paymentId, (string)$refund->payment)){
+            if(!isset($refund->payment) || !is_string($refund->payment) || !hash_equals($paymentId, $refund->payment)){
                 $this->rejectAttempt('refund', $orderId, 'refund payment');
                 return null;
             }
-            if(!isset($refund->currency) || strtoupper((string)$refund->currency) !== $currency){
+            if(!isset($refund->currency) || !is_string($refund->currency) || strtoupper($refund->currency) !== $currency){
                 $this->rejectAttempt('refund', $orderId, 'refund currency');
                 return null;
             }

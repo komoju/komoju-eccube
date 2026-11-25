@@ -323,13 +323,11 @@ class WebhookServiceTest extends TestCase
                 foreach ($data->refunds as $refund) { $refund->currency = 'USD'; }
             }, 'rejected: currency mismatch'],
             'payment amount differs from session' => [function ($data) { $data->amount = 999; }, 'rejected: amount mismatch'],
-            'refund total above captured amount' => [function ($data) {
-                $data->refunds[0]->amount = 1500;
-                $data->amount_refunded = 1500;
-            }, 'rejected: refund total 1500 exceeds captured amount 1000'],
             'refund for another payment' => [$setRefund('payment', 'pay_other'), 'rejected: refund payment mismatch'],
             'refund missing payment' => [function ($data) { unset($data->refunds[0]->payment); }, 'rejected: refund payment mismatch'],
+            'object refund payment' => [$setRefund('payment', (object)['id' => 'pay_bad']), 'rejected: refund payment mismatch'],
             'refund currency differs' => [$setRefund('currency', 'USD'), 'rejected: refund currency mismatch'],
+            'object refund currency' => [$setRefund('currency', (object)['code' => 'JPY']), 'rejected: refund currency mismatch'],
             'duplicate refund id' => [function ($data) {
                 $data->refunds[0]->amount = 500;
                 $data->refunds[] = clone $data->refunds[0];
@@ -340,9 +338,49 @@ class WebhookServiceTest extends TestCase
             'fractional amount' => [$setRefund('amount', 1000.5), $invalid],
             'missing refund id' => [function ($data) { unset($data->refunds[0]->id); }, $invalid],
             'empty refund id' => [$setRefund('id', ''), $invalid],
+            'numeric refund id' => [$setRefund('id', 123), $invalid],
             'non-object refund' => [function ($data) { $data->refunds[0] = 'ref_1'; }, $invalid],
             'amount_refunded disagrees with refunds' => [function ($data) { $data->amount_refunded = 300; }, 'rejected: amount_refunded mismatch'],
             'amount_refunded missing' => [function ($data) { unset($data->amount_refunded); }, 'rejected: amount_refunded mismatch'],
+            'string amount_refunded' => [function ($data) { $data->amount_refunded = '1000'; }, 'rejected: amount_refunded mismatch'],
+        ];
+    }
+
+    /**
+     * The cap is the captured amount when it is stored, else the order total.
+     *
+     * @dataProvider refundCapProvider
+     */
+    public function testRefundedRejectsTotalAboveCapturedBasis($capturedAmount, int $paymentTotal, int $expectedCap)
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(71);
+        $eccubeOrder->setPaymentTotal($paymentTotal);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_cap');
+        $komojuOrder->setCapturedAmount($capturedAmount);
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $this->orderStateMachine->expects($this->never())->method('apply');
+        $this->connection->expects($this->never())->method('executeStatement');
+        $this->logService->expects($this->once())->method('writeLog')
+            ->with('webhook[refund]', 71, 'rejected: refund total 1500 exceeds captured amount ' . $expectedCap);
+
+        $this->service->paymentRefunded($this->refundEvent('pay_cap', [(object)['id' => 'ref_1', 'amount' => 1500]]));
+
+        $this->assertEquals(0, $komojuOrder->getRefundedAmount());
+    }
+
+    public function refundCapProvider(): array
+    {
+        return [
+            'order edited up after capture: captured amount caps' => [1000, 2000, 1000],
+            'no captured amount stored: order total caps' => [null, 1000, 1000],
         ];
     }
 
