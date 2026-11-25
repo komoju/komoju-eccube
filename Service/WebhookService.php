@@ -102,10 +102,60 @@ class WebhookService{
             && $current->getKomojuSessionId() === $komoju_order->getKomojuSessionId();
     }
 
+    private function capturedBasis($attempt, $order){
+        return $attempt->getCapturedAmount() !== null
+            ? (int)$attempt->getCapturedAmount()
+            : (int)$order->getPaymentTotal();
+    }
+
+    /**
+     * Check the refunds[] list of a refund event against the payment it names.
+     * Returns [refund IDs, refund total], or null after logging the rejection.
+     */
+    private function validateRefunds($attempt, $data){
+        $order = $attempt->getOrder();
+        $orderId = $order->getId();
+        $paymentId = (string)$data->id;
+        $currency = isset($data->currency) ? strtoupper((string)$data->currency) : '';
+        $refundIds = [];
+        $seen = [];
+        $total = 0;
+        foreach($data->refunds as $refund){
+            if(!is_object($refund)
+                || !isset($refund->id) || !is_string($refund->id) || $refund->id === ''
+                || isset($seen[$refund->id])
+                || !isset($refund->amount) || !is_int($refund->amount) || $refund->amount <= 0){
+                $this->log_service->writeLog("webhook[refund]", $orderId, "rejected: invalid refund entry");
+                return null;
+            }
+            if(!isset($refund->payment) || !hash_equals($paymentId, (string)$refund->payment)){
+                $this->rejectAttempt('refund', $orderId, 'refund payment');
+                return null;
+            }
+            if(!isset($refund->currency) || strtoupper((string)$refund->currency) !== $currency){
+                $this->rejectAttempt('refund', $orderId, 'refund currency');
+                return null;
+            }
+            $seen[$refund->id] = true;
+            $refundIds[] = $refund->id;
+            $total += $refund->amount;
+        }
+        if(!isset($data->amount_refunded) || !is_int($data->amount_refunded) || $data->amount_refunded !== $total){
+            $this->rejectAttempt('refund', $orderId, 'amount_refunded');
+            return null;
+        }
+        $captured = $this->capturedBasis($attempt, $order);
+        if($total > $captured){
+            $this->log_service->writeLog("webhook[refund]", $orderId, "rejected: refund total $total exceeds captured amount $captured");
+            return null;
+        }
+        return [$refundIds, $total];
+    }
+
     public function paymentRefunded($object){
         $paymentId = $object->data->id;
-        $refunds = $object->data->refunds;
-        if(empty($refunds)){
+        $refunds = $object->data->refunds ?? null;
+        if(empty($refunds) || !is_array($refunds)){
             $this->log_service->writeLog("webhook[refund]", 0, "no refunds in payload for payment: $paymentId");
             return;
         }
@@ -116,12 +166,14 @@ class WebhookService{
             return;
         }
         $order = $attempt->getOrder();
-        $refundIds = [];
-        $refundAmount = 0;
-        foreach($refunds as $refund){
-            $refundIds[] = $refund->id;
-            $refundAmount += $refund->amount;
+        if(!$this->validateAttempt($attempt, $object, 'refund')){
+            return;
         }
+        $validated = $this->validateRefunds($attempt, $object->data);
+        if($validated === null){
+            return;
+        }
+        [$refundIds, $refundAmount] = $validated;
         $refundIdSet = KomojuOrder::canonicalRefundIds($refundIds);
 
         $newAmount = $this->transactional(function () use ($attempt, $order, $refundIdSet, $refundAmount) {
@@ -146,9 +198,7 @@ class WebhookService{
             $attempt->setRefundId($refundIdSet);
             $attempt->setRefundedAmount($refundAmount);
             $this->entityManager->persist($attempt);
-            $capturedAmount = $attempt->getCapturedAmount() !== null
-                ? (int)$attempt->getCapturedAmount()
-                : (int)$order->getPaymentTotal();
+            $capturedAmount = $this->capturedBasis($attempt, $order);
             if($refundAmount >= $capturedAmount){
                 $cancelStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
                 if($this->order_state_machine->can($order, $cancelStatus)){

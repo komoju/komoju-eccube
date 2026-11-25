@@ -72,6 +72,26 @@ class WebhookServiceTest extends TestCase
         return (object) ['data' => $data];
     }
 
+    /**
+     * A well-formed refund event, shaped like KOMOJU's payment payload: every
+     * refund names this payment and its currency, and amount_refunded is the
+     * refund total.
+     */
+    private function refundEvent($paymentId, array $refunds, $extras = [])
+    {
+        $total = 0;
+        $entries = [];
+        foreach ($refunds as $refund) {
+            $entries[] = (object) array_merge(['payment' => $paymentId, 'currency' => 'JPY'], (array) $refund);
+            $total += $refund->amount;
+        }
+        return $this->makeWebhookObject($paymentId, array_merge([
+            'currency' => 'JPY',
+            'amount_refunded' => $total,
+            'refunds' => $entries,
+        ], $extras));
+    }
+
     // --- paymentCaptured ---
 
     public function testCapturedNoOrder()
@@ -235,7 +255,7 @@ class WebhookServiceTest extends TestCase
 
     public function testRefundedEmptyRefunds()
     {
-        $object = $this->makeWebhookObject('pay_1', ['refunds' => []]);
+        $object = $this->refundEvent('pay_1', []);
 
         $this->logService->expects($this->once())->method('writeLog');
         $this->entityManager->expects($this->never())->method('persist');
@@ -245,12 +265,85 @@ class WebhookServiceTest extends TestCase
 
     public function testRefundedNoOrder()
     {
-        $object = $this->makeWebhookObject('pay_1', ['refunds' => [(object)['id' => 'ref_1', 'amount' => 100]]]);
+        $object = $this->refundEvent('pay_1', [(object)['id' => 'ref_1', 'amount' => 100]]);
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
         $this->logService->expects($this->once())->method('writeLog');
 
         $this->service->paymentRefunded($object);
+    }
+
+    /**
+     * Each case starts from a full refund of a captured 1000 JPY payment, which
+     * would otherwise cancel the order, and breaks one rule.
+     *
+     * @dataProvider malformedRefundEventProvider
+     */
+    public function testRefundedRejectsMalformedEvent(callable $break, string $expectedLog)
+    {
+        $orderStatus = new OrderStatus();
+        $orderStatus->setId(OrderStatus::PAID);
+        $eccubeOrder = new Order();
+        $eccubeOrder->setId(70);
+        $eccubeOrder->setPaymentTotal(1000);
+        $eccubeOrder->setOrderStatus($orderStatus);
+
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_bad');
+        $komojuOrder->setCapturedAmount(1000);
+        $komojuOrder->setExpectedAmount(1000);
+        $komojuOrder->setExpectedCurrency('JPY');
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+
+        $this->orderStateMachine->method('can')->willReturn(true);
+        $this->orderStateMachine->expects($this->never())->method('apply');
+        $this->connection->expects($this->never())->method('executeStatement');
+        $this->logService->expects($this->once())->method('writeLog')
+            ->with('webhook[refund]', 70, $expectedLog);
+
+        $object = $this->refundEvent('pay_bad', [(object)['id' => 'ref_1', 'amount' => 1000]], ['amount' => 1000]);
+        $break($object->data);
+
+        $this->service->paymentRefunded($object);
+
+        $this->assertEquals(0, $komojuOrder->getRefundedAmount());
+        $this->assertSame(OrderStatus::PAID, $eccubeOrder->getOrderStatus()->getId());
+    }
+
+    public function malformedRefundEventProvider(): array
+    {
+        $invalid = 'rejected: invalid refund entry';
+        $setRefund = function ($field, $value) {
+            return function ($data) use ($field, $value) { $data->refunds[0]->$field = $value; };
+        };
+        return [
+            'payment currency differs from session' => [function ($data) {
+                $data->currency = 'USD';
+                foreach ($data->refunds as $refund) { $refund->currency = 'USD'; }
+            }, 'rejected: currency mismatch'],
+            'payment amount differs from session' => [function ($data) { $data->amount = 999; }, 'rejected: amount mismatch'],
+            'refund total above captured amount' => [function ($data) {
+                $data->refunds[0]->amount = 1500;
+                $data->amount_refunded = 1500;
+            }, 'rejected: refund total 1500 exceeds captured amount 1000'],
+            'refund for another payment' => [$setRefund('payment', 'pay_other'), 'rejected: refund payment mismatch'],
+            'refund missing payment' => [function ($data) { unset($data->refunds[0]->payment); }, 'rejected: refund payment mismatch'],
+            'refund currency differs' => [$setRefund('currency', 'USD'), 'rejected: refund currency mismatch'],
+            'duplicate refund id' => [function ($data) {
+                $data->refunds[0]->amount = 500;
+                $data->refunds[] = clone $data->refunds[0];
+            }, $invalid],
+            'zero amount' => [$setRefund('amount', 0), $invalid],
+            'negative amount' => [$setRefund('amount', -1000), $invalid],
+            'string amount' => [$setRefund('amount', '1000'), $invalid],
+            'fractional amount' => [$setRefund('amount', 1000.5), $invalid],
+            'missing refund id' => [function ($data) { unset($data->refunds[0]->id); }, $invalid],
+            'empty refund id' => [$setRefund('id', ''), $invalid],
+            'non-object refund' => [function ($data) { $data->refunds[0] = 'ref_1'; }, $invalid],
+            'amount_refunded disagrees with refunds' => [function ($data) { $data->amount_refunded = 300; }, 'rejected: amount_refunded mismatch'],
+            'amount_refunded missing' => [function ($data) { unset($data->amount_refunded); }, 'rejected: amount_refunded mismatch'],
+        ];
     }
 
     public function testRefundedSuccess()
@@ -260,6 +353,7 @@ class WebhookServiceTest extends TestCase
 
         $eccubeOrder = new Order();
         $eccubeOrder->setId(55);
+        $eccubeOrder->setPaymentTotal(1000);
         $eccubeOrder->setOrderStatus($orderStatus);
 
         $komojuOrder = new KomojuOrder();
@@ -284,9 +378,7 @@ class WebhookServiceTest extends TestCase
 
         $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
 
-        $object = $this->makeWebhookObject('pay_1', [
-            'refunds' => [(object)['id' => 'ref_1', 'amount' => 500]]
-        ]);
+        $object = $this->refundEvent('pay_1', [(object)['id' => 'ref_1', 'amount' => 500]]);
 
         $this->service->paymentRefunded($object);
 
@@ -301,6 +393,7 @@ class WebhookServiceTest extends TestCase
 
         $eccubeOrder = new Order();
         $eccubeOrder->setId(56);
+        $eccubeOrder->setPaymentTotal(1000);
         $eccubeOrder->setOrderStatus($orderStatus);
 
         $komojuOrder = new KomojuOrder();
@@ -325,11 +418,9 @@ class WebhookServiceTest extends TestCase
 
         $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
 
-        $object = $this->makeWebhookObject('pay_1', [
-            'refunds' => [
-                (object)['id' => 'ref_1', 'amount' => 300],
-                (object)['id' => 'ref_2', 'amount' => 200],
-            ]
+        $object = $this->refundEvent('pay_1', [
+            (object)['id' => 'ref_1', 'amount' => 300],
+            (object)['id' => 'ref_2', 'amount' => 200],
         ]);
 
         $this->service->paymentRefunded($object);
@@ -373,9 +464,7 @@ class WebhookServiceTest extends TestCase
 
         $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
 
-        $object = $this->makeWebhookObject('pay_1', [
-            'refunds' => [(object)['id' => 'ref_1', 'amount' => 4080]]
-        ]);
+        $object = $this->refundEvent('pay_1', [(object)['id' => 'ref_1', 'amount' => 4080]]);
 
         $this->service->paymentRefunded($object);
 
@@ -984,9 +1073,7 @@ class WebhookServiceTest extends TestCase
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
-        $object = $this->makeWebhookObject('pay_partial_1', [
-            'refunds' => [(object)['id' => 'ref_1', 'amount' => 300]]
-        ]);
+        $object = $this->refundEvent('pay_partial_1', [(object)['id' => 'ref_1', 'amount' => 300]]);
 
         $this->service->paymentRefunded($object);
 
@@ -1011,9 +1098,7 @@ class WebhookServiceTest extends TestCase
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
         $this->orderStateMachine->expects($this->never())->method('apply');
 
-        $object = $this->makeWebhookObject('pay_partial_2', [
-            'refunds' => [(object)['id' => 'ref_1', 'amount' => 300]]
-        ]);
+        $object = $this->refundEvent('pay_partial_2', [(object)['id' => 'ref_1', 'amount' => 300]]);
 
         $this->service->paymentRefunded($object);
 
@@ -1054,11 +1139,9 @@ class WebhookServiceTest extends TestCase
 
         $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
 
-        $object = $this->makeWebhookObject('pay_full_1', [
-            'refunds' => [
-                (object)['id' => 'ref_1', 'amount' => 500],
-                (object)['id' => 'ref_2', 'amount' => 500],
-            ]
+        $object = $this->refundEvent('pay_full_1', [
+            (object)['id' => 'ref_1', 'amount' => 500],
+            (object)['id' => 'ref_2', 'amount' => 500],
         ]);
 
         $this->service->paymentRefunded($object);
@@ -1098,11 +1181,9 @@ class WebhookServiceTest extends TestCase
 
         $this->logService->expects($this->never())->method('writeLog');
 
-        $object = $this->makeWebhookObject('pay_dup_1', [
-            'refunds' => [
-                (object)['id' => 'ref_1', 'amount' => 300],
-                (object)['id' => 'ref_2', 'amount' => 200],
-            ],
+        $object = $this->refundEvent('pay_dup_1', [
+            (object)['id' => 'ref_1', 'amount' => 300],
+            (object)['id' => 'ref_2', 'amount' => 200],
         ]);
 
         $this->service->paymentRefunded($object);
@@ -1138,11 +1219,9 @@ class WebhookServiceTest extends TestCase
                 $this->equalTo(true)
             );
 
-        $object = $this->makeWebhookObject('pay_inc_1', [
-            'refunds' => [
-                (object)['id' => 'ref_1', 'amount' => 300],
-                (object)['id' => 'ref_2', 'amount' => 200],
-            ]
+        $object = $this->refundEvent('pay_inc_1', [
+            (object)['id' => 'ref_1', 'amount' => 300],
+            (object)['id' => 'ref_2', 'amount' => 200],
         ]);
 
         $this->service->paymentRefunded($object);
@@ -1205,12 +1284,12 @@ class WebhookServiceTest extends TestCase
                 }
             });
 
-        $payload = ['refunds' => [(object)['id' => 'ref_dup', 'amount' => 6500]]];
+        $refunds = [(object)['id' => 'ref_dup', 'amount' => 6500]];
 
         // First event (e.g. payment.refunded) -> CAS affects 1 row -> logs.
-        $this->service->paymentRefunded($this->makeWebhookObject('pay_dup', $payload));
+        $this->service->paymentRefunded($this->refundEvent('pay_dup', $refunds));
         // Second event (e.g. payment.refund.created) -> CAS affects 0 -> skips.
-        $this->service->paymentRefunded($this->makeWebhookObject('pay_dup', $payload));
+        $this->service->paymentRefunded($this->refundEvent('pay_dup', $refunds));
 
         $this->assertEquals(1, $refundLogCalls, 'refund must be logged exactly once across duplicate events');
         $this->assertEquals(6500, $komojuOrder->getRefundedAmount());
@@ -1256,7 +1335,7 @@ class WebhookServiceTest extends TestCase
                 }
             });
 
-        $payload = ['refunds' => [(object)['id' => 'ref_race', 'amount' => 6500]]];
+        $refunds = [(object)['id' => 'ref_race', 'amount' => 6500]];
 
         // First handler: CAS wins (1 affected).
         $conn1 = $this->createMock(\Doctrine\DBAL\Connection::class);
@@ -1271,7 +1350,7 @@ class WebhookServiceTest extends TestCase
             return $this->createMock(StubRepository::class);
         });
         (new WebhookService($em1, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService))
-            ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
+            ->paymentRefunded($this->refundEvent('pay_race', $refunds));
 
         // Second handler: CAS loses — row already has this id set (0 affected).
         $conn2 = $this->createMock(\Doctrine\DBAL\Connection::class);
@@ -1286,7 +1365,7 @@ class WebhookServiceTest extends TestCase
             return $this->createMock(StubRepository::class);
         });
         (new WebhookService($em2, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService))
-            ->paymentRefunded($this->makeWebhookObject('pay_race', $payload));
+            ->paymentRefunded($this->refundEvent('pay_race', $refunds));
 
         $this->assertEquals(1, $refundLogCalls, 'concurrent duplicate must not double-log');
     }
@@ -1326,9 +1405,7 @@ class WebhookServiceTest extends TestCase
 
         $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
 
-        $object = $this->makeWebhookObject('pay_cas', [
-            'refunds' => [(object)['id' => 'ref_cas', 'amount' => 300]]
-        ]);
+        $object = $this->refundEvent('pay_cas', [(object)['id' => 'ref_cas', 'amount' => 300]]);
         $this->service->paymentRefunded($object);
 
         $this->assertNotNull($capturedSql, 'a compare-and-swap UPDATE must be issued');
@@ -1366,11 +1443,9 @@ class WebhookServiceTest extends TestCase
                 $this->equalTo(true)
             );
 
-        $object = $this->makeWebhookObject('pay_partial', [
-            'refunds' => [
-                (object)['id' => 'ref_a', 'amount' => 300],
-                (object)['id' => 'ref_b', 'amount' => 200],
-            ]
+        $object = $this->refundEvent('pay_partial', [
+            (object)['id' => 'ref_a', 'amount' => 300],
+            (object)['id' => 'ref_b', 'amount' => 200],
         ]);
 
         $this->service->paymentRefunded($object);
@@ -1429,11 +1504,9 @@ class WebhookServiceTest extends TestCase
         $this->logService->expects($this->never())->method('writeLog');
 
         // KOMOJU returns refunds newest-first.
-        $object = $this->makeWebhookObject('pay_o24', [
-            'refunds' => [
-                (object)['id' => 'ref_newest_9', 'amount' => 4500],
-                (object)['id' => 'ref_oldest_3', 'amount' => 2000],
-            ]
+        $object = $this->refundEvent('pay_o24', [
+            (object)['id' => 'ref_newest_9', 'amount' => 4500],
+            (object)['id' => 'ref_oldest_3', 'amount' => 2000],
         ]);
 
         $this->service->paymentRefunded($object);
@@ -1461,11 +1534,9 @@ class WebhookServiceTest extends TestCase
 
         $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
 
-        $this->service->paymentRefunded($this->makeWebhookObject('pay_order_indep', [
-            'refunds' => [
-                (object)['id' => 'zzz_late', 'amount' => 4500],
-                (object)['id' => 'aaa_early', 'amount' => 2000],
-            ]
+        $this->service->paymentRefunded($this->refundEvent('pay_order_indep', [
+            (object)['id' => 'zzz_late', 'amount' => 4500],
+            (object)['id' => 'aaa_early', 'amount' => 2000],
         ]));
 
         $this->assertSame('aaa_early,zzz_late', $komojuOrder->getRefundId(),
