@@ -236,7 +236,7 @@ class OrderControllerTest extends TestCase
     private $stockProcessor;
     private $pointProcessor;
 
-    private function arrangePendingOrder(): array
+    private function arrangePendingOrder(int $komojuStatusCode = 200): array
     {
         $this->em->method('getConnection')->willReturn($this->createMock(\Doctrine\DBAL\Connection::class));
         $this->em->method('getRepository')->willReturn($this->komojuOrderRepo);
@@ -251,7 +251,7 @@ class OrderControllerTest extends TestCase
         $attempt->setKomojuSessionId('sess_1');
         $this->orderRepo->method('find')->willReturn($order);
         $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
-        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->komojuClient->method('getStatusCode')->willReturn($komojuStatusCode);
         return [$order, $attempt];
     }
 
@@ -334,11 +334,7 @@ class OrderControllerTest extends TestCase
 
     public function testReleaseKeepsStockWhenKomojuIsUnreachable()
     {
-        [$order] = $this->arrangePendingOrder();
-        $this->komojuClient = $this->createMock(KomojuClient::class);
-        $this->clientFactory = $this->createMock(KomojuClientFactory::class);
-        $this->clientFactory->method('create')->willReturn($this->komojuClient);
-        $this->komojuClient->method('getStatusCode')->willReturn(500);
+        [$order] = $this->arrangePendingOrder(500);
         $this->komojuClient->method('getSession')->willReturn(null);
         $this->komojuClient->expects($this->never())->method('cancelSession');
         $this->stockProcessor->expects($this->never())->method('rollback');

@@ -117,9 +117,7 @@ class PendingReservationService
             $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->refresh($Order);
             $this->entityManager->refresh($attempt);
-            if ($Order->getOrderStatus()->getId() != OrderStatus::PENDING
-                || !$this->isCurrentAttempt($attempt, $Order)
-                || !$this->claimCancellation($attempt)) {
+            if (!$this->isOpen($attempt, $Order) || !$this->claimCancellation($attempt)) {
                 return false;
             }
             $restore();
@@ -130,7 +128,16 @@ class PendingReservationService
         });
     }
 
-    public function isCurrentAttempt(KomojuOrder $attempt, $Order): bool
+    /** The order is still 決済処理中 and this unsettled KOMOJU attempt holds its reservation. */
+    public function isOpen(KomojuOrder $attempt, $Order): bool
+    {
+        return $Order->getOrderStatus()->getId() == OrderStatus::PENDING
+            && !empty($attempt->getKomojuSessionId())
+            && !$attempt->getCanceledAt() && !$attempt->isCaptured()
+            && $this->isCurrentAttempt($attempt, $Order);
+    }
+
+    private function isCurrentAttempt(KomojuOrder $attempt, $Order): bool
     {
         $current = $this->entityManager->getRepository(KomojuOrder::class)
             ->findOneBy(['Order' => $Order], ['id' => 'DESC']);

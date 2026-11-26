@@ -90,10 +90,7 @@ class SessionReturnController extends AbstractController
             ->findOneBy(['komoju_session_id' => $session_id]);
         $Order = $attempt ? $attempt->getOrder() : null;
         if($Order && $this->isCsrfTokenValid('komoju_abandon_' . $session_id, $request->request->get('_token'))
-            && $this->isBrowserBound($attempt, $session_id)
-            && $Order->getOrderStatus()->getId() == OrderStatus::PENDING
-            && !$attempt->getCanceledAt() && !$attempt->isCaptured()
-            && $this->isCurrentAttempt($attempt, $Order)){
+            && $this->isBrowserBound($attempt, $session_id) && $this->reservations->isOpen($attempt, $Order)){
             try {
                 $config_data = $this->config_service->getConfigData($Order);
                 $this->reservations->closeSession($this->client_factory->create($config_data['secret_key']), $session_id, $Order->getId());
@@ -236,9 +233,7 @@ class SessionReturnController extends AbstractController
             if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
                 return $this->redirectAfterCompletion($Order, $browserAuthorized, $session_id);
             }
-            $this->canCancelPayment = $browserAuthorized && $currentStatus == OrderStatus::PENDING
-                && $this->isCurrentAttempt($komoju_order, $Order)
-                && !$komoju_order->getCanceledAt() && !$komoju_order->isCaptured()
+            $this->canCancelPayment = $browserAuthorized && $this->reservations->isOpen($komoju_order, $Order)
                 && $session_status === 'pending' && ($session['expired'] ?? true) === false;
             $this->canResumePayment = $this->canCancelPayment
                 && (array_key_exists('payment', $session) && $session['payment'] === null
@@ -350,10 +345,6 @@ class SessionReturnController extends AbstractController
         $browserStateHash = $this->requestStack->getSession()->get('komoju.callback.' . $sessionId);
         return is_string($storedStateHash) && $storedStateHash !== ''
             && is_string($browserStateHash) && hash_equals($storedStateHash, $browserStateHash);
-    }
-
-    private function isCurrentAttempt($attempt, $Order){
-        return $this->reservations->isCurrentAttempt($attempt, $Order);
     }
 
     private function sessionMatchesAttempt($komojuOrder, $Order, array $session){

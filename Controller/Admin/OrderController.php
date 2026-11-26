@@ -342,9 +342,7 @@ class OrderController extends AbstractController{
             return $this->redirectToRoute('admin_order');
         }
         $attempt = $this->komoju_order_repo->findOneBy(['Order' => $Order], ['id' => 'DESC']);
-        if(empty($attempt) || empty($attempt->getKomojuSessionId())
-            || $Order->getOrderStatus()->getId() != OrderStatus::PENDING
-            || $attempt->getCanceledAt() || $attempt->isCaptured()){
+        if(empty($attempt) || !$this->reservations->isOpen($attempt, $Order)){
             $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
             return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
         }
@@ -356,8 +354,8 @@ class OrderController extends AbstractController{
             $session = $this->fetchSession($client, $sessionId);
             if(($session['status'] ?? null) === 'pending' && ($session['expired'] ?? false) !== true
                 && !$this->paymentTaken($session)){
-                $this->reservations->closeSession($client, $sessionId, $Order->getId());
-                $session = $this->fetchSession($client, $sessionId);
+                $session = $this->reservations->closeSession($client, $sessionId, $Order->getId())
+                    ?? $this->fetchSession($client, $sessionId);
             }
             if($this->paymentTaken($session)){
                 $this->log_service->writeLog("releaseReservation", $Order->getId(), "not released: KOMOJU payment is " . $session['payment']['status'], true);

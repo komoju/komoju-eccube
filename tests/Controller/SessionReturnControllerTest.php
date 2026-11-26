@@ -757,39 +757,6 @@ class SessionReturnControllerTest extends TestCase
         $this->assertSame('shopping_complete', $controller->lastRedirect);
     }
 
-    // --- failed payment branch ---
-
-    /** @dataProvider terminalFailureProvider */
-    public function testClosedSessionWithLivePaymentWaitsForPaymentWebhook($sessionStatus, $paymentStatus)
-    {
-        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
-        $this->komojuClient->method('getSession')->willReturn([
-            'status' => $sessionStatus,
-            'payment' => ['status' => $paymentStatus],
-        ]);
-        $this->komojuClient->method('getStatusCode')->willReturn(200);
-        $processing = new OrderStatus();
-        $processing->setId(OrderStatus::PROCESSING);
-        $this->em->method('find')->willReturn($processing);
-        $this->purchaseFlow->expects($this->never())->method('rollback');
-        $this->mailService->expects($this->never())->method('sendOrderMail');
-
-        $controller = $this->makeController();
-        $controller->sessionReturn($this->callbackRequest());
-
-        $this->assertSame('payment_pending', $controller->lastRedirect);
-        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
-    }
-
-    public function terminalFailureProvider(): array
-    {
-        return [
-            'session cancelled, payment cancellation queued' => ['cancelled', 'pending'],
-            'konbini awaiting payment' => ['completed', 'pending'],
-            'unknown session status' => ['failed', 'failed'],
-        ];
-    }
-
     public function testTerminalReturnDoesNotRollbackAuthorizedOrder()
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::NEW);
@@ -924,6 +891,8 @@ class SessionReturnControllerTest extends TestCase
             'missing payment block' => ['completed', []],
             'unknown payment status' => ['completed', ['status' => 'weird_new_status']],
             'session still pending' => ['pending', ['status' => 'pending']],
+            'session cancelled, payment cancellation queued' => ['cancelled', ['status' => 'pending']],
+            'unknown session status' => ['failed', ['status' => 'failed']],
         ];
     }
 
