@@ -126,6 +126,13 @@ komoju_payment.shopping.verify.error.payment_total.too_much: The payment amount 
 komoju_payment.shopping.payment_failed: KOMOJU payment failed.
 komoju_payment.shopping.payment_cancelled: Payment was cancelled.
 komoju_payment.shopping.payment_pending: We are confirming your payment. Please wait a moment for it to complete.
+komoju_payment.shopping.pending_title: Check payment status
+komoju_payment.shopping.pending_help: We cannot yet confirm completion or cancellation. To prevent duplicate orders, cart changes and new checkouts are paused. Your cart items and reserved inventory are preserved.
+komoju_payment.shopping.pending_contact: To continue paying, use the payment-page button below if available. To cancel, or if the status does not change, contact the shop. Do not pay again through a new order.
+komoju_payment.shopping.check_status: Check payment status again
+komoju_payment.shopping.resume_payment: Return to KOMOJU payment page
+komoju_payment.shopping.contact_shop: Contact the shop
+komoju_payment.shopping.checkout_locked: A payment is awaiting confirmation. Open your cart to check its status. Your cart was not changed, to prevent duplicate orders.
 komoju_payment.shopping.komoju_method_label: KOMOJU Payment
 komoju_payment.shopping.not_enough_error: Insufficient balance.
 

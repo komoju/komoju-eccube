@@ -126,6 +126,13 @@ komoju_payment.shopping.verify.error.payment_total.too_much: 支払額が多す�
 komoju_payment.shopping.payment_failed: KOMOJU支払いが失敗しました
 komoju_payment.shopping.payment_cancelled: お支払いがキャンセルされました。
 komoju_payment.shopping.payment_pending: お支払いを確認しています。完了までしばらくお待ちください。
+komoju_payment.shopping.pending_title: お支払い状況の確認
+komoju_payment.shopping.pending_help: お支払いの完了または取消しを確認できていません。重複注文を防ぐため、確認が完了するまでカートの変更と新しいご注文を停止しています。カートの商品と確保済みの在庫は維持されます。
+komoju_payment.shopping.pending_contact: お支払いを続ける場合は、下に決済画面へのボタンが表示されていればご利用ください。取消しをご希望の場合、または状況が変わらない場合は、店舗へお問い合わせください。別のご注文としてお支払いをやり直さないでください。
+komoju_payment.shopping.check_status: 支払い状況を再確認
+komoju_payment.shopping.resume_payment: KOMOJUの決済画面に戻る
+komoju_payment.shopping.contact_shop: 店舗に問い合わせる
+komoju_payment.shopping.checkout_locked: 確認中のお支払いがあります。カートを開いて支払い状況をご確認ください。重複注文を防ぐため、カートは変更していません。
 komoju_payment.shopping.komoju_method_label: KOMOJU決済
 komoju_payment.shopping.not_enough_error: 残高が不足です。
 

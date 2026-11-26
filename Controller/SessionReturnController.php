@@ -23,9 +23,6 @@ class SessionReturnController extends AbstractController
 
     /** KOMOJU may already hold the customer's money; never roll these back. */
     const MONEY_TAKEN_PAYMENT_STATUSES = ['captured', 'authorized'];
-    const TERMINAL_PAYMENT_STATUSES = ['cancelled', 'canceled', 'expired'];
-
-    const TERMINAL_SESSION_STATUSES = ['failed', 'cancelled', 'canceled'];
 
     protected $entityManager;
     protected $config_service;
@@ -35,6 +32,9 @@ class SessionReturnController extends AbstractController
     protected $cartService;
     protected $client_factory;
     protected $mailService;
+
+    private $pendingSessionId;
+    private $canResumePayment = false;
 
     public function __construct(
         EntityManagerInterface $entityManager,
@@ -61,6 +61,20 @@ class SessionReturnController extends AbstractController
      * @Route("/plugin/Komoju42/session/return", name="Komoju42_session_return")
      */
     public function sessionReturn(Request $request){
+        return $this->handleReturn($request, false);
+    }
+
+    /**
+     * Browser-bound recovery also works after Back, without exposing the callback token.
+     * @Route("/plugin/Komoju42/session/status", name="Komoju42_session_status", methods={"GET"})
+     */
+    public function sessionStatus(Request $request){
+        return $this->handleReturn($request, true);
+    }
+
+    private function handleReturn(Request $request, $browserOnly){
+        $this->pendingSessionId = null;
+        $this->canResumePayment = false;
         $session_id = $request->query->get('session_id');
         if(empty($session_id)){
             $this->log_service->writeLog("sessionReturn", 0, "no session_id in request");
@@ -83,13 +97,20 @@ class SessionReturnController extends AbstractController
         $state = (string)$request->query->get('state');
         $stateHash = hash('sha256', $state);
         $storedStateHash = $komoju_order->getCallbackTokenHash();
-        if(empty($state) || empty($storedStateHash) || !hash_equals($storedStateHash, $stateHash)){
+        if(!$browserOnly && (empty($state) || empty($storedStateHash) || !hash_equals($storedStateHash, $stateHash))){
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "callback state rejected");
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
 
         $browserStateHash = $this->requestStack->getSession()->get('komoju.callback.' . $session_id);
-        $browserAuthorized = is_string($browserStateHash) && hash_equals($storedStateHash, $browserStateHash);
+        $browserAuthorized = is_string($storedStateHash) && $storedStateHash !== ''
+            && is_string($browserStateHash) && hash_equals($storedStateHash, $browserStateHash);
+        if($browserOnly && !$browserAuthorized){
+            return $this->renderPending();
+        }
+        if($browserAuthorized){
+            $this->pendingSessionId = $session_id;
+        }
 
 
         try {
@@ -139,63 +160,29 @@ class SessionReturnController extends AbstractController
         $session_status = $session['status'] ?? 'unknown';
         $payment_status = $session['payment']['status'] ?? 'unknown';
 
-        // A failed payment can be retried while the hosted session remains open.
-        $payment_ok = in_array($payment_status, self::MONEY_TAKEN_PAYMENT_STATUSES);
-        $payment_terminal = in_array($payment_status, self::TERMINAL_PAYMENT_STATUSES);
-        $session_terminal = in_array($session_status, self::TERMINAL_SESSION_STATUSES);
-
-        if(!$payment_ok){
-            if($payment_terminal || $session_terminal){
-                if(!$this->refreshOrder($Order)){
-                    return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
-                }
-                $currentStatus = $Order->getOrderStatus()->getId();
-                if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
-                    if($currentStatus == OrderStatus::PAID){
-                        return $this->redirectAfterCompletion($Order, $browserAuthorized, $session_id);
-                    }
-                    return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
-                }
-                try {
-                    $processed = $this->transactional(function () use ($komoju_order, $Order) {
-                        $this->entityManager->lock($Order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
-                        $this->entityManager->lock($komoju_order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
-                        $this->entityManager->refresh($Order);
-                        $this->entityManager->refresh($komoju_order);
-                        $lockedStatus = $Order->getOrderStatus()->getId();
-                        if(!in_array($lockedStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])
-                            || !$this->isCurrentAttempt($komoju_order, $Order)){
-                            return false;
-                        }
-                        if(!$this->claimCancellation($komoju_order)){
-                            return false;
-                        }
-                        $this->purchase_flow->rollback($Order, new PurchaseContext());
-                        $Order->setOrderStatus($this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING));
-                        $this->entityManager->persist($komoju_order);
-                        $this->entityManager->flush();
-                        return true;
-                    });
-                } catch (\Throwable $e) {
-                    $this->log_service->writeLog("sessionReturn", $Order->getId(), "cancel failed: " . $e->getMessage());
-                    return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
-                }
-                if(!$processed){
-                    if(!$this->refreshOrder($Order)){
-                        return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
-                    }
-                    $currentStatus = $Order->getOrderStatus()->getId();
-                    if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
-                        return $this->redirectAfterCompletion($Order, $browserAuthorized, $session_id);
-                    }
-                } else {
-                    $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment failed: session=$session_status, payment=$payment_status");
-                }
-                return $this->redirectToShopping('komoju_payment.shopping.payment_failed');
+        // Session cancellation queues payment cancellation asynchronously. Neither
+        // a closed session nor an empty payment proves that in-flight money is safe
+        // to release. Terminal payment webhooks own inventory/point restoration.
+        if(!in_array($payment_status, self::MONEY_TAKEN_PAYMENT_STATUSES)){
+            if(!$this->refreshOrder($Order)){
+                return $this->renderPending();
             }
-
+            $currentStatus = $Order->getOrderStatus()->getId();
+            if($currentStatus == OrderStatus::CANCEL
+                || ($currentStatus == OrderStatus::PROCESSING && $komoju_order->getCanceledAt())){
+                return $this->redirectToShopping('komoju_payment.shopping.payment_cancelled');
+            }
+            if(!in_array($currentStatus, [OrderStatus::PENDING, OrderStatus::PROCESSING])){
+                return $this->redirectAfterCompletion($Order, $browserAuthorized, $session_id);
+            }
+            $this->canResumePayment = $browserAuthorized && $currentStatus == OrderStatus::PENDING
+                && $this->isCurrentAttempt($komoju_order, $Order)
+                && !$komoju_order->getCanceledAt() && !$komoju_order->isCaptured()
+                && $session_status === 'pending' && ($session['expired'] ?? true) === false
+                && (array_key_exists('payment', $session) && $session['payment'] === null
+                    || in_array($payment_status, ['pending', 'failed'], true));
             $this->log_service->writeLog("sessionReturn", $Order->getId(), "payment not settled yet: session=$session_status, payment=$payment_status");
-            return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
+            return $this->renderPending();
         }
 
         // Refresh order from DB to get latest status (webhook may have updated it)
@@ -357,8 +344,27 @@ class SessionReturnController extends AbstractController
     }
 
     private function redirectToShopping($message){
+        if($message === 'komoju_payment.shopping.payment_pending'){
+            return $this->renderPending();
+        }
         $this->addFlash('eccube.front.shopping.error', trans($message));
         return $this->redirectToRoute('shopping');
+    }
+
+    protected function renderPending(){
+        $page = new \Eccube\Entity\Page();
+        $page->setEditType(\Eccube\Entity\Page::EDIT_TYPE_DEFAULT);
+        $page->setMetaRobots('noindex, nofollow');
+        $response = $this->render('@Komoju42/default/shopping/payment_pending.twig', [
+            'Page' => $page,
+            'title' => trans('komoju_payment.shopping.pending_title'),
+            'session_id' => $this->pendingSessionId,
+            'resume_url' => $this->canResumePayment
+                ? 'https://komoju.com/sessions/' . rawurlencode($this->pendingSessionId) : null,
+        ]);
+        $response->headers->set('Cache-Control', 'no-store, private');
+        $response->headers->set('Referrer-Policy', 'no-referrer');
+        return $response;
     }
 
     private function redirectAfterCompletion($Order, $browserAuthorized, $sessionId){

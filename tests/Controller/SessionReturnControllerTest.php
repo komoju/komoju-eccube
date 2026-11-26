@@ -21,20 +21,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Session\Session;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Tests for the customer-facing return URL after KOMOJU redirects back.
- *
- * This is the entry point on which orders flip from PENDING -> PAID (captured
- * payments) or PENDING -> NEW (authorized-only payments like konbini). It has
- * subtle race conditions with the webhook \u2014 the webhook may finalize the
- * order before the customer's browser comes back, in which case this
- * controller must NOT re-process. The test suite below pins these branches:
- *
- *   - Missing / invalid session_id \u2192 flash error, redirect to /shopping.
- *   - KOMOJU API failure \u2192 flash error, redirect to /shopping.
- *   - Payment failed (session not completed, payment not auth/captured) \u2192
- *     rollback purchase flow, set order to PROCESSING, flash + redirect.
- *   - Webhook already finalized \u2192 short-circuit to shopping_complete.\n *   - Happy path (captured) \u2192 set Order PAID, set paymentDate, clear cart.\n *   - Happy path (authorized) \u2192 set Order NEW (so konbini orders surface in\n *     the admin order list before payment is captured).\n *   - flush() throws because the EntityManager was closed by a webhook race \u2192\n *     must NOT crash; must still clear the cart and redirect.\n *\n * The controller depends on Symfony's AbstractController, so we use a\n * Testable subclass that overrides addFlash and redirectToRoute to capture\n * the calls without booting Symfony.\n */
+/** Browser returns must preserve reserved carts until a payment outcome is known. */
 class SessionReturnControllerTest extends TestCase
 {
     private $em;
@@ -221,7 +208,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn(new Request(['session_id' => 'sess_abc']));
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
     }
 
@@ -237,7 +224,7 @@ class SessionReturnControllerTest extends TestCase
             'state' => 'forged',
         ]));
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
     }
 
     public function testMissingBrowserBindingDoesNotExposeCompletion()
@@ -255,7 +242,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
     }
 
@@ -279,7 +266,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
     }
 
@@ -300,7 +287,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
     }
 
@@ -327,7 +314,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
         $this->assertSame($statusId, $order->getOrderStatus()->getId());
     }
@@ -389,7 +376,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
     }
 
@@ -416,7 +403,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
         $this->assertFalse($attempt->isCaptured());
         $this->assertNull($attempt->getCanceledAt());
@@ -428,29 +415,68 @@ class SessionReturnControllerTest extends TestCase
         return ['captured payment' => ['captured'], 'terminal payment' => ['cancelled']];
     }
 
-    public function testRefreshFailureAfterDuplicateCancellationDoesNotExposeCompletion()
+    /** @dataProvider unresolvedSessionProvider */
+    public function testUnresolvedSessionPreservesReservationAndOnlyResumesOpenSessions($session, $resume)
     {
         [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
-        $attempt->setCanceledAt(new \DateTime());
+        $this->komojuClient->method('getSession')->willReturn($session);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->komojuClient->expects($this->never())->method('cancelSession');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->cartService->expects($this->never())->method('clear');
+        $controller = $this->makeController();
+
+        $response = $controller->sessionStatus(new Request(['session_id' => 'sess_abc']));
+
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+        $this->assertSame('sess_abc', $controller->pendingParameters['session_id']);
+        $this->assertSame($resume ? 'https://komoju.com/sessions/sess_abc' : null, $controller->pendingParameters['resume_url']);
+        $this->assertSame('no-store, private', $response->headers->get('Cache-Control'));
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertNull($attempt->getCanceledAt());
+    }
+
+    public function unresolvedSessionProvider(): array
+    {
+        return [
+            'unsubmitted checkout' => [['status' => 'pending', 'expired' => false, 'payment' => null], true],
+            'pending payment' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'pending']], true],
+            'retryable failure' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'failed']], true],
+            'expired checkout' => [['status' => 'pending', 'expired' => true, 'payment' => null], false],
+            'cancelled empty session' => [['status' => 'cancelled', 'expired' => false, 'payment' => null], false],
+            'cancellation still processing' => [['status' => 'cancelled', 'payment' => ['status' => 'pending']], false],
+            'missing payment field' => [['status' => 'pending', 'expired' => false], false],
+            'unknown payment status' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'new_status']], false],
+        ];
+    }
+
+    public function testStatusRecoveryRequiresBrowserBindingEvenWithCallbackToken()
+    {
+        $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->session->remove('komoju.callback.sess_abc');
+        $this->komojuClient->expects($this->never())->method('getSession');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $controller = $this->makeController();
+        $controller->sessionStatus($this->callbackRequest());
+        $this->assertNull($controller->pendingParameters['session_id']);
+        $this->assertNull($controller->pendingParameters['resume_url']);
+    }
+
+    public function testStatusRecoveryCompletesCapturedPaymentWithoutCreatingAnotherOrder()
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->method('getSession')->willReturn([
-            'status' => 'completed',
-            'payment' => ['id' => 'pay_1', 'status' => 'cancelled'],
+            'status' => 'completed', 'payment' => ['id' => 'pay_1', 'status' => 'captured'],
         ]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
-        $orderRefreshes = 0;
-        $this->em->method('refresh')->willReturnCallback(function ($entity) use (&$orderRefreshes) {
-            if ($entity instanceof Order && ++$orderRefreshes === 3) {
-                throw new \RuntimeException('database unavailable');
-            }
-        });
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PAID));
+        $this->purchaseFlow->expects($this->once())->method('commit')->with($order);
         $this->purchaseFlow->expects($this->never())->method('rollback');
-        $this->cartService->expects($this->never())->method('clear');
-
+        $this->cartService->expects($this->once())->method('clear');
         $controller = $this->makeController();
-        $controller->sessionReturn($this->callbackRequest());
-
-        $this->assertSame('shopping', $controller->lastRedirect);
-        $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
+        $controller->sessionStatus(new Request(['session_id' => 'sess_abc']));
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
     }
 
     public function testMissingConfigRedirectsWithoutCustomer500()
@@ -464,8 +490,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
-        $this->assertContains('eccube.front.shopping.error', $controller->flashes['types']);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
     }
 
     /**
@@ -487,7 +512,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
     }
 
     /**
@@ -532,7 +557,7 @@ class SessionReturnControllerTest extends TestCase
         $req = $this->callbackRequest();
         $controller->sessionReturn($req);
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertSame($status, $order->getOrderStatus(),
             'API failure must leave the order in its PENDING status for the webhook');
     }
@@ -561,7 +586,7 @@ class SessionReturnControllerTest extends TestCase
     // --- failed payment branch ---
 
     /** @dataProvider terminalFailureProvider */
-    public function testTerminalSessionRollsBackStock($sessionStatus, $paymentStatus)
+    public function testTerminalReturnWaitsForPaymentWebhook($sessionStatus, $paymentStatus)
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->method('getSession')->willReturn([
@@ -572,14 +597,14 @@ class SessionReturnControllerTest extends TestCase
         $processing = new OrderStatus();
         $processing->setId(OrderStatus::PROCESSING);
         $this->em->method('find')->willReturn($processing);
-        $this->purchaseFlow->expects($this->once())->method('rollback');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
         $this->mailService->expects($this->never())->method('sendOrderMail');
 
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
-        $this->assertSame($processing, $order->getOrderStatus());
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
     }
 
     public function terminalFailureProvider(): array
@@ -606,7 +631,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('shopping_complete', $controller->lastRedirect);
         $this->assertSame(OrderStatus::NEW, $order->getOrderStatus()->getId());
     }
 
@@ -714,7 +739,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertSame($status, $order->getOrderStatus(),
             'an indeterminate outcome must leave the order status untouched for the webhook');
     }
@@ -744,7 +769,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertSame($status, $order->getOrderStatus());
         $this->assertNull($komojuOrder->getCanceledAt());
     }
@@ -866,7 +891,7 @@ class SessionReturnControllerTest extends TestCase
             $this->assertSame('shopping_complete', $controller->lastRedirect);
             $this->assertSame($capturedAt, $order->getPaymentDate());
         } else {
-            $this->assertSame('shopping', $controller->lastRedirect);
+            $this->assertSame('payment_pending', $controller->lastRedirect);
             $this->assertFalse($attempt->isCaptured());
             $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
         }
@@ -1063,7 +1088,7 @@ class SessionReturnControllerTest extends TestCase
         $controller = $this->makeController();
         $controller->sessionReturn($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
     }
 
@@ -1098,7 +1123,7 @@ class SessionReturnControllerTest extends TestCase
 
         $resp = $controller->sessionReturn($req);
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertNull($this->session->get('eccube.front.shopping.order.id'));
     }
 
@@ -1185,7 +1210,7 @@ class SessionReturnControllerTest extends TestCase
     {
         return [
             'legacy callback without cart identity' => ['komoju.callback_cart.sess_abc', 'shopping_complete'],
-            'missing browser binding' => ['komoju.callback.sess_abc', 'shopping'],
+            'missing browser binding' => ['komoju.callback.sess_abc', 'payment_pending'],
         ];
     }
 
@@ -1218,7 +1243,7 @@ class SessionReturnControllerTest extends TestCase
 
     // --- sessionCancel ---
 
-    public function testSessionCancelUsesVerifiedRemoteStatus()
+    public function testCancelledSessionWithPendingPaymentDoesNotReleaseStock()
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->method('getSession')->willReturn([
@@ -1230,14 +1255,14 @@ class SessionReturnControllerTest extends TestCase
         $processing = new OrderStatus();
         $processing->setId(OrderStatus::PROCESSING);
         $this->em->method('find')->willReturn($processing);
-        $this->purchaseFlow->expects($this->once())->method('rollback')->with($order);
+        $this->purchaseFlow->expects($this->never())->method('rollback')->with($order);
         $this->mailService->expects($this->never())->method('sendOrderMail');
 
         $controller = $this->makeController();
         $controller->sessionCancel($this->callbackRequest());
 
-        $this->assertSame('shopping', $controller->lastRedirect);
-        $this->assertSame($processing, $order->getOrderStatus());
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
     }
 
     public function testSessionCancelWithoutSessionIdStillRedirects()
@@ -1293,7 +1318,7 @@ class SessionReturnControllerTest extends TestCase
         $req = $this->callbackRequest();
         $controller->sessionReturn($req);
 
-        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame('payment_pending', $controller->lastRedirect);
     }
 }
 
@@ -1309,6 +1334,15 @@ class TestableSessionReturnController extends SessionReturnController
 
     /** @var array{types: string[], messages: string[]} */
     public $flashes = ['types' => [], 'messages' => []];
+
+    public $pendingParameters;
+
+    public function render($view, array $parameters = [])
+    {
+        $this->lastRedirect = 'payment_pending';
+        $this->pendingParameters = $parameters;
+        return (object) ['headers' => new \Symfony\Component\HttpFoundation\ParameterBag()];
+    }
 
     public function addFlash($type, $message)
     {

@@ -13,6 +13,7 @@ class Request
     public $headers;
     /** @var ParameterBag */
     public $request;
+    public $attributes;
     private $method = 'POST';
 
     public function __construct(array $query = [], array $headers = [], string $content = '', array $request = [])
@@ -20,11 +21,13 @@ class Request
         $this->query = new ParameterBag($query);
         $this->headers = new ParameterBag($headers);
         $this->request = new ParameterBag($request);
+        $this->attributes = new ParameterBag();
         $this->content = $content;
     }
 
     public function getMethod() { return $this->method; }
     public function setMethod($method) { $this->method = $method; }
+    public function isXmlHttpRequest() { return $this->headers->get('X-Requested-With') === 'XMLHttpRequest'; }
 
     public function getLocale() { return $this->locale; }
     public function setLocale($locale) { $this->locale = $locale; }
