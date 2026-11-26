@@ -47,6 +47,12 @@ class AbstractController
         // no-op stub
     }
 
+    /** EC-CUBE skips the flash when an identical one is already queued. */
+    public function addErrorOnce($message, $namespace = 'front')
+    {
+        $this->addFlash('eccube.' . $namespace . '.error', $message);
+    }
+
     public function addSuccess($message, $type = 'front')
     {
         // no-op stub

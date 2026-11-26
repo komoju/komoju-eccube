@@ -56,9 +56,16 @@ Webhooks are verified using HMAC-SHA256 signature validation.
 
 ## Interrupted Checkout
 
-Returning from KOMOJU before the payment outcome is known shows a payment-status page instead of restarting checkout. The customer can recheck the status or resume the same pending, unexpired session. These links require the original browser session. Cart edits and another checkout are blocked while that cart has an unresolved KOMOJU order, preserving its items, reserved stock, and points. Accepted payments continue to the normal order-completion page.
+Returning from KOMOJU before the payment outcome is known shows a payment-status page instead of restarting checkout. The customer can recheck the status, resume the same pending, unexpired session, or cancel it and return to checkout. These actions require the original browser session. Cart edits and another checkout are blocked while that cart has an unresolved KOMOJU order, preserving its items, reserved stock, and points. Accepted payments continue to the normal order-completion page.
 
-A browser return or a cancelled/expired **session** does not prove that its payment is terminal and does not release inventory. Terminal payment webhooks handle cancellation through the existing payment-state checks. The plugin does not automatically cancel abandoned sessions or payments. Abandoned paymentless sessions, missing webhooks, and unresolved API errors require shop intervention: verify the payment outcome in KOMOJU and reconcile the EC-CUBE order before releasing its reservation. Customers should contact the shop rather than place a second order.
+Reserved stock and points are restored when the order can no longer be paid:
+
+- **No payment can complete on the session** (it is cancelled, completed, or expired, and its payment is absent, failed, cancelled, or expired): the return or status check restores the reservation and reopens the order for checkout. KOMOJU's "back" link and the status page's cancel button first cancel a session that has no submitted payment.
+- **A payment is still in flight** (for example, a session cancelled while its payment is pending): KOMOJU cancels that payment asynchronously, and the `payment.cancelled`/`payment.expired` webhook restores the reservation.
+
+If a payment is nevertheless captured after its reservation was restored, the order is not revived; the capture is recorded in the order's KOMOJU log for review and refund.
+
+KOMOJU sends no notification when a customer leaves a session without paying and never returns. Such orders stay in 決済処理中 with their reservation held until the customer returns to the shop in the same browser. The plugin does not run background cleanup.
 
 ## Development
 

@@ -330,7 +330,10 @@ class WebhookService{
         });
 
         if(!$processed){
-            $this->log_service->writeLog("webhook[captured]", 0, "ignored: payment attempt is terminal");
+            // The order was cancelled or its stock released before this capture
+            // (e.g. a payment racing a session cancellation). Surface it for refund.
+            $this->log_service->writeLog("webhook[captured]", $order ? $order->getId() : 0,
+                "captured payment $paymentId not applied: order attempt is closed; review and refund in KOMOJU", true);
             return;
         }
         if(!$order){

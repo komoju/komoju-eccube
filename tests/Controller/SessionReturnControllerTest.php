@@ -160,7 +160,7 @@ class SessionReturnControllerTest extends TestCase
         $resp = $controller->sessionReturn($req);
 
         $this->assertSame('shopping', $controller->lastRedirect);
-        $this->assertContains('eccube.front.shopping.error', $controller->flashes['types']);
+        $this->assertContains('eccube.front.error', $controller->flashes['types']);
         $this->assertInstanceOf(RedirectResponse::class, $resp);
     }
 
@@ -416,7 +416,7 @@ class SessionReturnControllerTest extends TestCase
     }
 
     /** @dataProvider unresolvedSessionProvider */
-    public function testUnresolvedSessionPreservesReservationAndOnlyResumesOpenSessions($session, $resume)
+    public function testUnresolvedSessionPreservesReservationAndOnlyResumesOpenSessions($session, $resume, $cancel)
     {
         [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->method('getSession')->willReturn($session);
@@ -432,6 +432,7 @@ class SessionReturnControllerTest extends TestCase
         $this->assertSame('payment_pending', $controller->lastRedirect);
         $this->assertSame('sess_abc', $controller->pendingParameters['session_id']);
         $this->assertSame($resume ? 'https://komoju.com/sessions/sess_abc' : null, $controller->pendingParameters['resume_url']);
+        $this->assertSame($cancel, $controller->pendingParameters['can_cancel']);
         $this->assertSame('no-store, private', $response->headers->get('Cache-Control'));
         $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
         $this->assertNull($attempt->getCanceledAt());
@@ -440,15 +441,166 @@ class SessionReturnControllerTest extends TestCase
     public function unresolvedSessionProvider(): array
     {
         return [
-            'unsubmitted checkout' => [['status' => 'pending', 'expired' => false, 'payment' => null], true],
-            'pending payment' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'pending']], true],
-            'retryable failure' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'failed']], true],
-            'expired checkout' => [['status' => 'pending', 'expired' => true, 'payment' => null], false],
-            'cancelled empty session' => [['status' => 'cancelled', 'expired' => false, 'payment' => null], false],
-            'cancellation still processing' => [['status' => 'cancelled', 'payment' => ['status' => 'pending']], false],
-            'missing payment field' => [['status' => 'pending', 'expired' => false], false],
-            'unknown payment status' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'new_status']], false],
+            'unsubmitted checkout' => [['status' => 'pending', 'expired' => false, 'payment' => null], true, true],
+            'pending payment' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'pending']], true, true],
+            'retryable failure' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'failed']], true, true],
+            'cancellation still processing' => [['status' => 'cancelled', 'payment' => ['status' => 'pending']], false, false],
+            'expired with live payment' => [['status' => 'pending', 'expired' => true, 'payment' => ['status' => 'pending']], false, false],
+            'missing payment field' => [['status' => 'cancelled', 'expired' => false], false, false],
+            'unknown payment status' => [['status' => 'pending', 'expired' => false, 'payment' => ['status' => 'new_status']], false, true],
         ];
+    }
+
+    /**
+     * A closed session whose payment is absent or dead can never take money, and
+     * KOMOJU sends no webhook for an empty session, so the return releases the
+     * reservation itself and reopens the order for checkout.
+     *
+     * @dataProvider releasableSessionProvider
+     */
+    public function testClosedSessionWithoutLivePaymentReleasesReservation($session)
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn($session);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PROCESSING));
+        $this->purchaseFlow->expects($this->once())->method('rollback')->with($order);
+        $this->purchaseFlow->expects($this->never())->method('commit');
+        $this->cartService->expects($this->never())->method('clear');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame(['komoju_payment.shopping.payment_cancelled'], $controller->flashes['messages']);
+        $this->assertSame(OrderStatus::PROCESSING, $order->getOrderStatus()->getId());
+        $this->assertNotNull($attempt->getCanceledAt(), 'late webhooks for this attempt must be inert');
+    }
+
+    public function releasableSessionProvider(): array
+    {
+        return [
+            'customer cancelled before paying' => [['status' => 'cancelled', 'payment' => null]],
+            'abandoned session expired' => [['status' => 'pending', 'expired' => true, 'payment' => null]],
+            'expired after failed attempt' => [['status' => 'pending', 'expired' => true, 'payment' => ['status' => 'failed']]],
+            'cancelled after failed attempt' => [['status' => 'cancelled', 'payment' => ['status' => 'failed']]],
+            'payment cancelled' => [['status' => 'completed', 'payment' => ['status' => 'cancelled']]],
+            'konbini expired' => [['status' => 'completed', 'payment' => ['status' => 'expired']]],
+        ];
+    }
+
+    public function testConcurrentReleaseRestoresStockOnlyOnce()
+    {
+        [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $id = new \ReflectionProperty(KomojuOrder::class, 'id');
+        if(PHP_VERSION_ID < 80100){
+            $id->setAccessible(true);
+        }
+        $id->setValue($this->komojuOrderRepo->findOneBy([]), 13);
+        $this->komojuClient->method('getSession')->willReturn(['status' => 'cancelled', 'payment' => null]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $connection->method('executeStatement')->willReturn(0); // another request claimed it
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('getConnection')->willReturn($connection);
+        $em->method('getRepository')->willReturn($this->komojuOrderRepo);
+        $this->em = $em;
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+    }
+
+    public function testCustomerCancelClosesSessionThenReleasesReservation()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $cancelled = false;
+        $this->komojuClient->expects($this->once())->method('cancelSession')->with('sess_abc')
+            ->willReturnCallback(function () use (&$cancelled) { $cancelled = true; return []; });
+        $this->komojuClient->method('getSession')->willReturnCallback(function () use (&$cancelled) {
+            return $cancelled
+                ? ['status' => 'cancelled', 'payment' => null]
+                : ['status' => 'pending', 'expired' => false, 'payment' => null];
+        });
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PROCESSING));
+        $this->purchaseFlow->expects($this->once())->method('rollback')->with($order);
+
+        $controller = $this->makeController();
+        $controller->sessionAbandon(new Request(['session_id' => 'sess_abc'], ['_token' => 't']));
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PROCESSING, $order->getOrderStatus()->getId());
+        $this->assertNotNull($attempt->getCanceledAt());
+    }
+
+    public function testCustomerCancelWaitsForWebhookWhilePaymentIsInFlight()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->expects($this->once())->method('cancelSession');
+        $this->komojuClient->method('getSession')->willReturn(['status' => 'cancelled', 'payment' => ['status' => 'pending']]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionAbandon(new Request(['session_id' => 'sess_abc'], ['_token' => 't']));
+
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+        $this->assertFalse($controller->pendingParameters['can_cancel']);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertNull($attempt->getCanceledAt());
+    }
+
+    public function testCustomerCancelRequiresOriginalBrowser()
+    {
+        $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->session->remove('komoju.callback.sess_abc');
+        $this->komojuClient->expects($this->never())->method('cancelSession');
+        $this->komojuClient->expects($this->never())->method('getSession');
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionAbandon(new Request(['session_id' => 'sess_abc'], ['_token' => 't']));
+
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+    }
+
+    /** KOMOJU's "back" link returns with the session still open and nothing submitted. */
+    public function testBackFromKomojuClosesUnsubmittedSessionAndReleasesReservation()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn(['id' => 'sess_abc', 'status' => 'pending', 'expired' => false, 'payment' => null]);
+        $this->komojuClient->expects($this->once())->method('cancelSession')->with('sess_abc')
+            ->willReturn(['id' => 'sess_abc', 'status' => 'cancelled', 'payment' => null]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->em->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::PROCESSING));
+        $this->purchaseFlow->expects($this->once())->method('rollback')->with($order);
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('shopping', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PROCESSING, $order->getOrderStatus()->getId());
+        $this->assertNotNull($attempt->getCanceledAt());
+    }
+
+    public function testBackFromKomojuKeepsReservationWhenCloseIsNotConfirmed()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->komojuClient->method('getSession')->willReturn(['id' => 'sess_abc', 'status' => 'pending', 'expired' => false, 'payment' => null]);
+        $this->komojuClient->method('cancelSession')->willReturn(['id' => 'sess_abc', 'status' => 'completed', 'payment' => ['status' => 'pending']]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertNull($attempt->getCanceledAt());
     }
 
     public function testStatusRecoveryRequiresBrowserBindingEvenWithCallbackToken()
@@ -586,7 +738,7 @@ class SessionReturnControllerTest extends TestCase
     // --- failed payment branch ---
 
     /** @dataProvider terminalFailureProvider */
-    public function testTerminalReturnWaitsForPaymentWebhook($sessionStatus, $paymentStatus)
+    public function testClosedSessionWithLivePaymentWaitsForPaymentWebhook($sessionStatus, $paymentStatus)
     {
         [$order] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->method('getSession')->willReturn([
@@ -610,10 +762,9 @@ class SessionReturnControllerTest extends TestCase
     public function terminalFailureProvider(): array
     {
         return [
-            'payment cancelled' => ['completed', 'cancelled'],
-            'payment expired' => ['completed', 'expired'],
-            'session cancelled' => ['cancelled', 'pending'],
-            'session failed' => ['failed', 'failed'],
+            'session cancelled, payment cancellation queued' => ['cancelled', 'pending'],
+            'konbini awaiting payment' => ['completed', 'pending'],
+            'unknown session status' => ['failed', 'failed'],
         ];
     }
 
