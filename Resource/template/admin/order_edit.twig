@@ -214,6 +214,8 @@
                                         {% elseif msg starts with 'already refunded externally' %}
                                             {% set amount = msg|split('amount=')|last|split(')')|first %}
                                             <i class="fa fa-undo text-warning me-1"></i>{{ 'komoju_payment.admin.order.timeline.refunded_externally'|trans({'%amount%': amount}) }}
+                                        {% elseif msg starts with 'order cancelled; stock and points restored' %}
+                                            <i class="fa fa-undo text-secondary me-1"></i>{{ 'komoju_payment.admin.order.timeline.refund_stock_restored'|trans }}
                                         {% elseif msg starts with 'released by shop' or msg starts with 'payment not completed' %}
                                             <i class="fa fa-undo text-secondary me-1"></i>{{ 'komoju_payment.admin.order.timeline.reservation_released'|trans }}
                                         {% elseif msg starts with 'cancellation requested' %}

@@ -356,6 +356,52 @@ class OrderControllerTest extends TestCase
 
         $this->assertSame(['komoju_payment.admin.order.error.invalid_request'], $controller->adminErrors);
     }
+
+    /** @dataProvider refundStockLogProvider */
+    public function testRefundLogsStockRestoredOnlyWhenCancelTransitionSucceeds($canCancel, $applyThrows, $expectedLogs)
+    {
+        [$order, $attempt] = $this->arrangeOrder(4080);
+        $order->setOrderStatus((new OrderStatus())->setId(OrderStatus::PAID));
+        $attempt->setCapturedAt(new \DateTime('2026-11-01 00:00:00'));
+        $attempt->setCapturedAmount(4080);
+        $this->em->method('isOpen')->willReturn(true);
+        $this->orderStatusRepo->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::CANCEL));
+        $this->orderStateMachine->method('can')->willReturn($canCancel);
+        if ($applyThrows) {
+            $this->orderStateMachine->method('apply')->willThrowException(new \RuntimeException('db error'));
+        }
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->komojuClient->method('getPayment')->willReturn(['status' => 'captured', 'refunds' => []]);
+        $this->komojuClient->method('refundPayment')->willReturn(['refunds' => [['id' => 'ref_1', 'amount' => 4080]]]);
+
+        $logs = [];
+        $this->logService->method('writeLog')->willReturnCallback(function ($api, $orderId, $msg, $protected = false) use (&$logs) {
+            $logs[] = [$api, $orderId, $msg, $protected];
+        });
+
+        $req = new Request();
+        $req->request->set('_token', 'x');
+        $req->request->set('refund_option', KomojuOrder::REFUND_FULL);
+        $this->makeController()->refund($req, 2);
+
+        $this->assertSame($expectedLogs, $logs);
+    }
+
+    public function refundStockLogProvider(): array
+    {
+        return [
+            'cancel succeeds' => [true, false, [
+                ['refund', 2, 'refund successful (amount=4080)', true],
+                ['refund', 2, 'order cancelled; stock and points restored', true],
+            ]],
+            'not cancellable (e.g. delivered)' => [false, false, [
+                ['refund', 2, 'refund successful (amount=4080)', true],
+            ]],
+            'cancel transition throws' => [true, true, [
+                ['refund', 2, 'refund successful (amount=4080)', true],
+            ]],
+        ];
+    }
 }
 
 class TestableOrderController extends OrderController

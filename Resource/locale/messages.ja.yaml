@@ -83,6 +83,7 @@ komoju_payment.admin.order.release_waiting: KOMOJUに決済の取消しを依頼
 komoju_payment.admin.order.error.release_paid: KOMOJUで決済が完了しているため、在庫は戻していません。KOMOJUからのWebhook受信時に受注が更新されます。更新されない場合はWebhook設定をご確認ください。
 komoju_payment.admin.order.error.release_failed: KOMOJUで決済状況を確認できませんでした。在庫は戻していません。時間をおいて再度お試しください。
 komoju_payment.admin.order.timeline.reservation_released: 決済未完了のため在庫・ポイントを戻しました
+komoju_payment.admin.order.timeline.refund_stock_restored: 受注をキャンセルし、在庫・ポイントを戻しました
 komoju_payment.admin.order.timeline.release_waiting: 決済の取消しを依頼済み（KOMOJUの取消し待ち）
 komoju_payment.admin.order.timeline.capture_after_release: 受注キャンセル後に決済が完了しました。KOMOJU管理画面から返金してください。
 komoju_payment.admin.order.timeline.authorized: オーソリ済み（入金待ち）

@@ -236,17 +236,14 @@ class OrderController extends AbstractController{
 
                 // If fully refunded, block further refunds
                 if($refund_amount >= $captured_basis){
-                    $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
-                    try{
-                        if ($this->orderStateMachine->can($Order, $OrderStatus)) {
-                            $this->orderStateMachine->apply($Order, $OrderStatus);
-                            $this->entityManager->flush();
-                        }
-                    } catch (\Exception $e) {
-                        log_error($e->getMessage());
-                    }
+                    $cancelled = $this->cancelOrderOnFullRefund($Order);
                     $this->addError('komoju_payment.admin.order.error.refunded', 'admin');
-                    $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)", true);
+                    if($this->entityManager->isOpen()){
+                        $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)", true);
+                        if($cancelled){
+                            $this->log_service->writeLog("refund", $Order->getId(), "order cancelled; stock and points restored", true);
+                        }
+                    }
                     return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
                 }
             }
@@ -293,17 +290,7 @@ class OrderController extends AbstractController{
                 $this->entityManager->flush();
 
                 // Only cancel order if fully refunded
-                if($total_refunded >= $captured_basis){
-                    $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
-                    try{
-                        if ($this->orderStateMachine->can($Order, $OrderStatus)) {
-                            $this->orderStateMachine->apply($Order, $OrderStatus);
-                            $this->entityManager->flush();
-                        }
-                    } catch (\Exception $e) {
-                        log_error($e->getMessage());
-                    }
-                }
+                $cancelled = $total_refunded >= $captured_basis && $this->cancelOrderOnFullRefund($Order);
 
                 $latestRefund = end($payment_obj['refunds']);
                 if(isset($latestRefund['redirect_url'])){
@@ -314,6 +301,9 @@ class OrderController extends AbstractController{
                 // the log so the success path doesn't crash.
                 if($this->entityManager->isOpen()){
                     $this->log_service->writeLog("refund", $Order->getId(), "refund successful (amount=$refund_amount)", true);
+                    if($cancelled){
+                        $this->log_service->writeLog("refund", $Order->getId(), "order cancelled; stock and points restored", true);
+                    }
                 }
                 $this->addSuccess('komoju_payment.admin.order.refund.success', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
@@ -326,6 +316,20 @@ class OrderController extends AbstractController{
             $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
             return $this->redirectToRoute('admin_order');
         }
+    }
+
+    private function cancelOrderOnFullRefund(Order $Order): bool{
+        $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
+        try{
+            if ($this->orderStateMachine->can($Order, $OrderStatus)) {
+                $this->orderStateMachine->apply($Order, $OrderStatus);
+                $this->entityManager->flush();
+                return true;
+            }
+        } catch (\Exception $e) {
+            log_error($e->getMessage());
+        }
+        return false;
     }
 
     /**

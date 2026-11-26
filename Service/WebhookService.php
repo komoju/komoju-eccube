@@ -182,7 +182,8 @@ class WebhookService{
         [$refundIds, $refundAmount] = $validated;
         $refundIdSet = KomojuOrder::canonicalRefundIds($refundIds);
 
-        $newAmount = $this->transactional(function () use ($attempt, $order, $object, $refundIdSet, $refundAmount) {
+        $cancelled = false;
+        $newAmount = $this->transactional(function () use ($attempt, $order, $object, $refundIdSet, $refundAmount, &$cancelled) {
             $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->refresh($order);
@@ -209,6 +210,7 @@ class WebhookService{
                 $cancelStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
                 if($this->order_state_machine->can($order, $cancelStatus)){
                     $this->order_state_machine->apply($order, $cancelStatus);
+                    $cancelled = true;
                 }
             }
             $this->entityManager->flush();
@@ -217,6 +219,9 @@ class WebhookService{
 
         if($newAmount > 0){
             $this->log_service->writeLog("webhook[refund]", $order->getId(), "refund confirmed (amount=$newAmount)", true);
+            if($cancelled){
+                $this->log_service->writeLog("webhook[refund]", $order->getId(), "order cancelled; stock and points restored", true);
+            }
         }
     }
     public function paymentAuthorized($object){
