@@ -75,6 +75,16 @@ komoju_payment.admin.order.refund.success: Refund completed successfully.
 komoju_payment.admin.order.capture_action: Capture Payment
 komoju_payment.admin.order.capture_action_confirm: 'Capture the KOMOJU authorized amount. Have you confirmed that it matches the order total? Continue?'
 komoju_payment.admin.order.capture_success: Payment captured successfully.
+komoju_payment.admin.order.status.pending: Awaiting payment
+komoju_payment.admin.order.release_action: Cancel KOMOJU payment and restore stock
+komoju_payment.admin.order.release_action_confirm: 'Cancel the KOMOJU payment session and cancel this order? Stock and points are restored once KOMOJU confirms that no payment can complete.'
+komoju_payment.admin.order.release_success: KOMOJU confirmed that no payment can complete. The order was cancelled and stock and points were restored.
+komoju_payment.admin.order.release_waiting: Cancellation was requested from KOMOJU. Stock and points are restored when KOMOJU confirms the payment cancellation (webhook).
+komoju_payment.admin.order.error.release_paid: The payment is complete in KOMOJU, so stock was not restored. The order is updated when the KOMOJU webhook arrives; check the webhook settings if it does not.
+komoju_payment.admin.order.error.release_failed: Could not confirm the payment status with KOMOJU. Stock was not restored; try again later.
+komoju_payment.admin.order.timeline.reservation_released: Payment not completed; stock and points restored
+komoju_payment.admin.order.timeline.release_waiting: Cancellation requested; waiting for KOMOJU to cancel the payment
+komoju_payment.admin.order.timeline.capture_after_release: Payment captured after the order was cancelled. Refund it from the KOMOJU dashboard.
 komoju_payment.admin.order.timeline.authorized: Authorized (awaiting payment)
 komoju_payment.admin.order.timeline.order_accepted: Order accepted (awaiting payment)
 komoju_payment.admin.order.timeline.purchase_completed: Purchase completed

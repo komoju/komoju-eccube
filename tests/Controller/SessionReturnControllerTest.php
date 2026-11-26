@@ -81,7 +81,11 @@ class SessionReturnControllerTest extends TestCase
             $this->requestStack,
             $this->cartService,
             $this->clientFactory,
-            $this->mailService
+            $this->mailService,
+            new \Plugin\Komoju42\Service\PendingReservationService($this->em, $this->purchaseFlow,
+                $this->createMock(\Eccube\Service\PurchaseFlow\Processor\PointProcessor::class),
+                $this->createMock(\Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor::class),
+                $this->logService)
         );
     }
     private function callbackRequest(): Request
@@ -593,6 +597,24 @@ class SessionReturnControllerTest extends TestCase
         $this->komojuClient->method('getSession')->willReturn(['id' => 'sess_abc', 'status' => 'pending', 'expired' => false, 'payment' => null]);
         $this->komojuClient->method('cancelSession')->willReturn(['id' => 'sess_abc', 'status' => 'completed', 'payment' => ['status' => 'pending']]);
         $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+
+        $controller = $this->makeController();
+        $controller->sessionReturn($this->callbackRequest());
+
+        $this->assertSame('payment_pending', $controller->lastRedirect);
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertNull($attempt->getCanceledAt());
+    }
+
+    /** The shopping flow validates against this browser's cart, so only that browser reopens checkout. */
+    public function testCallbackFromAnotherBrowserLeavesClosedSessionToShop()
+    {
+        [$order, $attempt] = $this->arrangeOrderWithStatus(OrderStatus::PENDING);
+        $this->session->remove('komoju.callback.sess_abc');
+        $this->komojuClient->method('getSession')->willReturn(['status' => 'cancelled', 'payment' => null]);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        $this->komojuClient->expects($this->never())->method('cancelSession');
         $this->purchaseFlow->expects($this->never())->method('rollback');
 
         $controller = $this->makeController();

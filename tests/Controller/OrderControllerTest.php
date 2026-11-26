@@ -49,6 +49,11 @@ class OrderControllerTest extends TestCase
         $this->mailExService = $this->createMock(MailExService::class);
         $this->clientFactory = $this->createMock(KomojuClientFactory::class);
         $this->komojuClient = $this->createMock(KomojuClient::class);
+        // The admin page has no customer cart, so the shopping flow must never run.
+        $this->purchaseFlow = $this->createMock(\Eccube\Service\PurchaseFlow\PurchaseFlow::class);
+        $this->purchaseFlow->expects($this->never())->method('rollback');
+        $this->stockProcessor = $this->createMock(\Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor::class);
+        $this->pointProcessor = $this->createMock(\Eccube\Service\PurchaseFlow\Processor\PointProcessor::class);
 
         $this->configService->method('getConfigData')->willReturn(['secret_key' => 'sk_test']);
         $this->clientFactory->method('create')->willReturn($this->komojuClient);
@@ -65,7 +70,8 @@ class OrderControllerTest extends TestCase
             $this->configService,
             $this->logService,
             $this->mailExService,
-            $this->clientFactory
+            $this->clientFactory,
+            new \Plugin\Komoju42\Service\PendingReservationService($this->em, $this->purchaseFlow, $this->pointProcessor, $this->stockProcessor, $this->logService)
         );
     }
 
@@ -224,6 +230,136 @@ class OrderControllerTest extends TestCase
         ];
     }
 
+    // --- releaseReservation(): abandoned 決済処理中 orders ---
+
+    private $purchaseFlow;
+    private $stockProcessor;
+    private $pointProcessor;
+
+    private function arrangePendingOrder(): array
+    {
+        $this->em->method('getConnection')->willReturn($this->createMock(\Doctrine\DBAL\Connection::class));
+        $this->em->method('getRepository')->willReturn($this->komojuOrderRepo);
+        $this->em->method('find')->willReturnCallback(function ($class, $id) {
+            return (new OrderStatus())->setId($id);
+        });
+        $order = new Order();
+        $order->setId(2);
+        $order->setOrderStatus((new OrderStatus())->setId(OrderStatus::PENDING));
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuSessionId('sess_1');
+        $this->orderRepo->method('find')->willReturn($order);
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+        $this->komojuClient->method('getStatusCode')->willReturn(200);
+        return [$order, $attempt];
+    }
+
+    private function release(): TestableOrderController
+    {
+        $controller = $this->makeController();
+        $controller->releaseReservation(new Request([], ['_token' => 'x']), 2);
+        return $controller;
+    }
+
+    public function testReleaseRestoresStockOfExpiredAbandonedSession()
+    {
+        [$order, $attempt] = $this->arrangePendingOrder();
+        $this->komojuClient->method('getSession')->willReturn(['id' => 'sess_1', 'status' => 'pending', 'expired' => true, 'payment' => null]);
+        $this->komojuClient->expects($this->never())->method('cancelSession');
+        $this->stockProcessor->expects($this->once())->method('rollback')->with($order);
+        $this->pointProcessor->expects($this->once())->method('rollback')->with($order);
+
+        $controller = $this->release();
+
+        $this->assertSame(OrderStatus::CANCEL, $order->getOrderStatus()->getId());
+        $this->assertNotNull($attempt->getCanceledAt());
+        $this->assertSame(['komoju_payment.admin.order.release_success'], $controller->adminSuccesses);
+    }
+
+    public function testReleaseClosesOpenSessionBeforeRestoringStock()
+    {
+        [$order] = $this->arrangePendingOrder();
+        $closed = false;
+        $this->komojuClient->expects($this->once())->method('cancelSession')->with('sess_1')
+            ->willReturnCallback(function () use (&$closed) {
+                $closed = true;
+                return ['id' => 'sess_1', 'status' => 'cancelled', 'payment' => null];
+            });
+        $this->komojuClient->method('getSession')->willReturnCallback(function () use (&$closed) {
+            return ['id' => 'sess_1', 'status' => $closed ? 'cancelled' : 'pending', 'expired' => false, 'payment' => null];
+        });
+        $this->stockProcessor->expects($this->once())->method('rollback')->with($order);
+
+        $this->release();
+
+        $this->assertSame(OrderStatus::CANCEL, $order->getOrderStatus()->getId());
+    }
+
+    public function testReleaseWaitsForWebhookWhilePaymentIsInFlight()
+    {
+        [$order, $attempt] = $this->arrangePendingOrder();
+        $this->komojuClient->method('cancelSession')->willReturn(['id' => 'sess_1', 'status' => 'cancelled', 'payment' => ['status' => 'pending']]);
+        $this->komojuClient->method('getSession')->willReturnOnConsecutiveCalls(
+            ['id' => 'sess_1', 'status' => 'pending', 'expired' => false, 'payment' => ['status' => 'pending']],
+            ['id' => 'sess_1', 'status' => 'cancelled', 'payment' => ['status' => 'pending']]
+        );
+        $this->stockProcessor->expects($this->never())->method('rollback');
+
+        $controller = $this->release();
+
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertNull($attempt->getCanceledAt());
+        $this->assertSame(['komoju_payment.admin.order.release_waiting'], $controller->adminWarnings);
+    }
+
+    /** @dataProvider moneyTakenProvider */
+    public function testReleaseNeverRestoresStockOfPaidSession($paymentStatus)
+    {
+        [$order] = $this->arrangePendingOrder();
+        $this->komojuClient->method('getSession')->willReturn(['id' => 'sess_1', 'status' => 'completed', 'payment' => ['status' => $paymentStatus]]);
+        $this->komojuClient->expects($this->never())->method('cancelSession');
+        $this->stockProcessor->expects($this->never())->method('rollback');
+
+        $controller = $this->release();
+
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertSame(['komoju_payment.admin.order.error.release_paid'], $controller->adminErrors);
+    }
+
+    public function moneyTakenProvider(): array
+    {
+        return ['captured' => ['captured'], 'authorized' => ['authorized']];
+    }
+
+    public function testReleaseKeepsStockWhenKomojuIsUnreachable()
+    {
+        [$order] = $this->arrangePendingOrder();
+        $this->komojuClient = $this->createMock(KomojuClient::class);
+        $this->clientFactory = $this->createMock(KomojuClientFactory::class);
+        $this->clientFactory->method('create')->willReturn($this->komojuClient);
+        $this->komojuClient->method('getStatusCode')->willReturn(500);
+        $this->komojuClient->method('getSession')->willReturn(null);
+        $this->komojuClient->expects($this->never())->method('cancelSession');
+        $this->stockProcessor->expects($this->never())->method('rollback');
+
+        $controller = $this->release();
+
+        $this->assertSame(OrderStatus::PENDING, $order->getOrderStatus()->getId());
+        $this->assertSame(['komoju_payment.admin.order.error.release_failed'], $controller->adminErrors);
+    }
+
+    public function testReleaseRejectsOrdersThatAreNotAwaitingPayment()
+    {
+        [$order] = $this->arrangePendingOrder();
+        $order->setOrderStatus((new OrderStatus())->setId(OrderStatus::NEW));
+        $this->komojuClient->expects($this->never())->method('getSession');
+        $this->stockProcessor->expects($this->never())->method('rollback');
+
+        $controller = $this->release();
+
+        $this->assertSame(['komoju_payment.admin.order.error.invalid_request'], $controller->adminErrors);
+    }
 }
 
 class TestableOrderController extends OrderController
@@ -235,5 +371,18 @@ class TestableOrderController extends OrderController
         if ($type === 'admin') {
             $this->adminErrors[] = $message;
         }
+    }
+
+    public array $adminSuccesses = [];
+    public array $adminWarnings = [];
+
+    public function addSuccess($message, $type = 'front')
+    {
+        $this->adminSuccesses[] = $message;
+    }
+
+    public function addWarning($message, $type = 'front')
+    {
+        $this->adminWarnings[] = $message;
     }
 }

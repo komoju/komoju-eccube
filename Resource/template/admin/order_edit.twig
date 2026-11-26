@@ -88,7 +88,7 @@
                     <div class="col-6">
                         <div class="row mb-3">
                             <div class="col-3" data-toggle="tooltip" data-placement="top" title="" data-original-title="{{ 'komoju_payment.admin.order.charge_id_tooltip'|trans}}">{{ 'komoju_payment.admin.order.charge_id'|trans}}<i class="fa fa-question-circle fa-lg ml-1"></i></div>
-                            <div class="col"> <a class="komojuPaymentID" href="{{ komoju_dashboard_link }}" target="_blank">{{ komoju_order.KomojuPaymentId }}</a></div>
+                            <div class="col">{% if komoju_order.KomojuPaymentId %} <a class="komojuPaymentID" href="{{ komoju_dashboard_link }}" target="_blank">{{ komoju_order.KomojuPaymentId }}</a>{% else %}-{% endif %}</div>
                         </div>
                     </div>
                     <div class="col-6">
@@ -125,6 +125,8 @@
                                     {% endif %}
                                 {% elseif komoju_order.canceledAt %}
                                     <span class="badge bg-secondary">{{ 'komoju_payment.admin.order.status.canceled'|trans }}</span>
+                                {% elseif komoju_releasable %}
+                                    <span class="badge bg-warning text-dark">{{ 'komoju_payment.admin.order.status.pending'|trans }}</span>
                                 {% elseif komoju_order.Captured %}
                                     <span class="badge bg-success">{{ 'komoju_payment.admin.order.status.captured'|trans({'%date%': komoju_order.capturedAt|date('Y-m-d')}) }}</span>
                                 {% else %}
@@ -140,7 +142,14 @@
                         <div class="row mb-3">
                             <div class="col-3">{{ 'komoju_payment.admin.order.actions'|trans }}</div>
                             <div class="col row ml-0">
-                                {% if komoju_order.Captured==false %}
+                                {% if komoju_releasable %}
+                                    <form method="post" action="{{ url('Komoju42_release_reservation', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_payment.admin.order.release_action_confirm'|trans|e('js') }}');">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('Komoju_release_' ~ Order.id) }}">
+                                        <button type="submit" class="btn btn-ec-regular komoju_txn_action_btn">
+                                            {{ 'komoju_payment.admin.order.release_action'|trans }}
+                                        </button>
+                                    </form>
+                                {% elseif komoju_order.Captured==false %}
                                     <form method="post" action="{{ url('Komoju42_capture_transaction', { id : Order.id }) }}" style="display:inline;" onsubmit="return confirm('{{ 'komoju_payment.admin.order.capture_action_confirm'|trans }}');">
                                         <input type="hidden" name="_token" value="{{ csrf_token('Komoju_capture_' ~ Order.id) }}">
                                         <button type="submit" class="btn btn-ec-regular komoju_txn_action_btn">
@@ -205,6 +214,12 @@
                                         {% elseif msg starts with 'already refunded externally' %}
                                             {% set amount = msg|split('amount=')|last|split(')')|first %}
                                             <i class="fa fa-undo text-warning me-1"></i>{{ 'komoju_payment.admin.order.timeline.refunded_externally'|trans({'%amount%': amount}) }}
+                                        {% elseif msg starts with 'released by shop' or msg starts with 'payment not completed' %}
+                                            <i class="fa fa-undo text-secondary me-1"></i>{{ 'komoju_payment.admin.order.timeline.reservation_released'|trans }}
+                                        {% elseif msg starts with 'cancellation requested' %}
+                                            <i class="fa fa-clock text-secondary me-1"></i>{{ 'komoju_payment.admin.order.timeline.release_waiting'|trans }}
+                                        {% elseif msg starts with 'captured payment' %}
+                                            <i class="fa fa-exclamation-triangle text-danger me-1"></i>{{ 'komoju_payment.admin.order.timeline.capture_after_release'|trans }}
                                         {% elseif msg starts with 'customer cancelled' %}
                                             <i class="fa fa-times-circle text-secondary me-1"></i>{{ 'komoju_payment.admin.order.timeline.customer_cancelled'|trans }}
                                         {% elseif msg starts with 'payment cancelled' %}

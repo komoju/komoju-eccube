@@ -58,6 +58,11 @@ class AbstractController
         // no-op stub
     }
 
+    public function addWarning($message, $type = 'front')
+    {
+        // no-op stub
+    }
+
     public function isCsrfTokenValid($id, $token)
     {
         return true;

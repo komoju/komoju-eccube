@@ -13,6 +13,7 @@ use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
 use Plugin\Komoju42\Service\PaymentAttemptTransitionTrait;
+use Plugin\Komoju42\Service\PendingReservationService;
 use Eccube\Service\MailService;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Eccube\Service\CartService;
@@ -24,9 +25,6 @@ class SessionReturnController extends AbstractController
     /** KOMOJU may already hold the customer's money; never roll these back. */
     const MONEY_TAKEN_PAYMENT_STATUSES = ['captured', 'authorized'];
 
-    /** Payment states that can never move money again. */
-    const DEAD_PAYMENT_STATUSES = ['failed', 'cancelled', 'expired'];
-
     protected $entityManager;
     protected $config_service;
     protected $log_service;
@@ -35,6 +33,7 @@ class SessionReturnController extends AbstractController
     protected $cartService;
     protected $client_factory;
     protected $mailService;
+    protected $reservations;
 
     private $pendingSessionId;
     private $canResumePayment = false;
@@ -48,7 +47,8 @@ class SessionReturnController extends AbstractController
         RequestStack $requestStack,
         CartService $cartService,
         KomojuClientFactory $clientFactory,
-        MailService $mailService
+        MailService $mailService,
+        PendingReservationService $pendingReservationService
     ){
         $this->entityManager = $entityManager;
         $this->config_service = $configService;
@@ -58,6 +58,7 @@ class SessionReturnController extends AbstractController
         $this->cartService = $cartService;
         $this->client_factory = $clientFactory;
         $this->mailService = $mailService;
+        $this->reservations = $pendingReservationService;
     }
 
 
@@ -95,7 +96,7 @@ class SessionReturnController extends AbstractController
             && $this->isCurrentAttempt($attempt, $Order)){
             try {
                 $config_data = $this->config_service->getConfigData($Order);
-                $this->closeSession($this->client_factory->create($config_data['secret_key']), $session_id, $Order);
+                $this->reservations->closeSession($this->client_factory->create($config_data['secret_key']), $session_id, $Order->getId());
             } catch (\Throwable $e) {
                 log_error($e);
                 $this->log_service->writeLog("sessionAbandon", $Order->getId(), "session cancel failed: " . $e->getMessage());
@@ -192,7 +193,7 @@ class SessionReturnController extends AbstractController
         if(!$browserOnly && $browserAuthorized && ($session['status'] ?? null) === 'pending'
             && array_key_exists('payment', $session) && $session['payment'] === null
             && $Order->getOrderStatus()->getId() == OrderStatus::PENDING){
-            $closed = $this->closeSession($komoju_client, $session_id, $Order);
+            $closed = $this->reservations->closeSession($komoju_client, $session_id, $Order->getId());
             if(is_array($closed) && ($closed['id'] ?? null) === $session_id){
                 $session = $closed;
             }
@@ -210,9 +211,10 @@ class SessionReturnController extends AbstractController
                 return $this->renderPending();
             }
             $currentStatus = $Order->getOrderStatus()->getId();
-            if($currentStatus == OrderStatus::PENDING && $this->isReleasable($session)){
+            // Reopening checkout runs the shopping flow, which needs this browser's cart.
+            if($currentStatus == OrderStatus::PENDING && $browserAuthorized && $this->reservations->isReleasable($session)){
                 try {
-                    $released = $this->releaseReservation($komoju_order, $Order);
+                    $released = $this->reservations->reopenForCheckout($komoju_order, $Order);
                 } catch (\Throwable $e) {
                     log_error($e);
                     $this->log_service->writeLog("sessionReturn", $Order->getId(), "reservation release failed: " . $e->getMessage());
@@ -343,22 +345,6 @@ class SessionReturnController extends AbstractController
         return $this->sessionReturn($request);
     }
 
-    /** Ask KOMOJU to close the session; returns the closed session, or null if not confirmed. */
-    private function closeSession($komoju_client, $sessionId, $Order){
-        try {
-            $closed = $komoju_client->cancelSession($sessionId);
-        } catch (\Throwable $e) {
-            log_error($e);
-            $closed = null;
-        }
-        if($komoju_client->getStatusCode() != 200 || !is_array($closed) || ($closed['status'] ?? null) !== 'cancelled'){
-            // Usually the session completed or closed meanwhile; the status check decides.
-            $this->log_service->writeLog("cancelSession", $Order->getId(), "session cancel not confirmed: code=" . $komoju_client->getStatusCode());
-            return null;
-        }
-        return $closed;
-    }
-
     private function isBrowserBound($attempt, $sessionId){
         $storedStateHash = $attempt->getCallbackTokenHash();
         $browserStateHash = $this->requestStack->getSession()->get('komoju.callback.' . $sessionId);
@@ -366,53 +352,8 @@ class SessionReturnController extends AbstractController
             && is_string($browserStateHash) && hash_equals($storedStateHash, $browserStateHash);
     }
 
-    /**
-     * True when nothing on this session can still take money: the session is
-     * closed (cancelled, completed, or expired) and its payment is absent or dead.
-     * KOMOJU only ever replaces a session payment, so a null payment means none exists.
-     */
-    private function isReleasable(array $session){
-        $status = $session['status'] ?? null;
-        $closed = in_array($status, ['cancelled', 'completed'], true)
-            || ($status === 'pending' && ($session['expired'] ?? false) === true);
-        if(!$closed || !array_key_exists('payment', $session)){
-            return false;
-        }
-        $payment = $session['payment'];
-        return $payment === null
-            || (is_array($payment) && in_array($payment['status'] ?? null, self::DEAD_PAYMENT_STATUSES, true));
-    }
-
-    /**
-     * Restore stock/points reserved by apply() and reopen the order for checkout,
-     * exactly once. Marking the attempt cancelled makes any late webhook for it inert.
-     */
-    private function releaseReservation($komoju_order, $Order){
-        return $this->transactional(function () use ($komoju_order, $Order) {
-            $this->entityManager->lock($Order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
-            $this->entityManager->lock($komoju_order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
-            $this->entityManager->refresh($Order);
-            $this->entityManager->refresh($komoju_order);
-            if($Order->getOrderStatus()->getId() != OrderStatus::PENDING
-                || !$this->isCurrentAttempt($komoju_order, $Order)
-                || !$this->claimCancellation($komoju_order)){
-                return false;
-            }
-            $this->purchase_flow->rollback($Order, new PurchaseContext());
-            $Order->setOrderStatus($this->entityManager->find(OrderStatus::class, OrderStatus::PROCESSING));
-            $this->entityManager->persist($komoju_order);
-            $this->entityManager->flush();
-            return true;
-        });
-    }
-
     private function isCurrentAttempt($attempt, $Order){
-        $current = $this->entityManager->getRepository(KomojuOrder::class)
-            ->findOneBy(['Order' => $Order], ['id' => 'DESC']);
-        if($current === $attempt){
-            return true;
-        }
-        return $current && $current->getId() && $current->getId() === $attempt->getId();
+        return $this->reservations->isCurrentAttempt($attempt, $Order);
     }
 
     private function sessionMatchesAttempt($komojuOrder, $Order, array $session){

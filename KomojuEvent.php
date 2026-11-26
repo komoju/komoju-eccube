@@ -139,9 +139,15 @@ class KomojuEvent implements EventSubscriberInterface{
                 ['Order' => $Order],
                 ['id' => 'DESC']
             );
-            if(empty($komoju_order)
-                || empty($komoju_order->getKomojuPaymentId())
-                ){
+            if(empty($komoju_order)){
+                return ;
+            }
+            // An abandoned 決済処理中 order has no payment yet but still holds stock.
+            $releasable = $Order->getOrderStatus()->getId() == OrderStatus::PENDING
+                && !empty($komoju_order->getKomojuSessionId())
+                && !$komoju_order->getCanceledAt() && !$komoju_order->isCaptured();
+            // Keep showing released attempts so the event log explains the cancellation.
+            if(empty($komoju_order->getKomojuPaymentId()) && !$releasable && !$komoju_order->getCanceledAt()){
                 return ;
             }
             $refund_full_option = KomojuOrder::REFUND_FULL;
@@ -156,6 +162,7 @@ class KomojuEvent implements EventSubscriberInterface{
             $event->setParameter("komoju_order", $komoju_order);
             $event->setParameter("komoju_captured_basis", $captured_basis);
             $event->setParameter("order_canceled", $order_canceled);
+            $event->setParameter("komoju_releasable", $releasable);
 
             $event->setParameter("komoju_dashboard_link", $this->getKomojuDashboardLink($komoju_order->getKomojuPaymentId()));
             $event->setParameter('REFUND_FULL_OPTION',  $refund_full_option);
