@@ -107,8 +107,9 @@ class SessionReturnController extends AbstractController
         $this->canResumePayment = false;
         $this->canCancelPayment = false;
         $session_id = $request->query->get('session_id');
+        // Until the callback state is verified, the caller is anonymous: never write
+        // to the plugin's DB log here (unbounded rows, caller-chosen text).
         if(empty($session_id)){
-            $this->log_service->writeLog("sessionReturn", 0, "no session_id in request");
             return $this->redirectToShopping('komoju_payment.shopping.payment_failed');
         }
 
@@ -116,20 +117,18 @@ class SessionReturnController extends AbstractController
             ->findOneBy(['komoju_session_id' => $session_id]);
 
         if(empty($komoju_order)){
-            $this->log_service->writeLog("sessionReturn", 0, "no komoju_order found for session: $session_id");
             return $this->redirectToShopping('komoju_payment.shopping.payment_failed');
         }
 
         $Order = $komoju_order->getOrder();
         if(empty($Order)){
-            $this->log_service->writeLog("sessionReturn", 0, "no EC-CUBE order for session: $session_id");
             return $this->redirectToShopping('komoju_payment.shopping.payment_failed');
         }
         $state = (string)$request->query->get('state');
         $stateHash = hash('sha256', $state);
         $storedStateHash = $komoju_order->getCallbackTokenHash();
         if(!$browserOnly && (empty($state) || empty($storedStateHash) || !hash_equals($storedStateHash, $stateHash))){
-            $this->log_service->writeLog("sessionReturn", $Order->getId(), "callback state rejected");
+            log_info('[KOMOJU] session return rejected: callback state mismatch');
             return $this->redirectToShopping('komoju_payment.shopping.payment_pending');
         }
 
