@@ -16,6 +16,9 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 /** Keep core cart validation from consuming stock reserved by this very cart. */
 class PendingCheckoutListener implements EventSubscriberInterface
 {
+    /** Statuses whose order was accepted, so its cart holds already-purchased items. */
+    private const ACCEPTED_STATUSES = [OrderStatus::NEW, OrderStatus::PAID, OrderStatus::IN_PROGRESS, OrderStatus::DELIVERED];
+
     private $entityManager;
     private $cartService;
     private $router;
@@ -62,6 +65,13 @@ class PendingCheckoutListener implements EventSubscriberInterface
             if (!$attempt || !$attempt->getKomojuSessionId()) {
                 continue;
             }
+            // The order was accepted elsewhere (e.g. paid in another browser), so
+            // this cart's items are already purchased. Clear it as core checkout
+            // completion would; never release it with the items still in it.
+            if (in_array($order->getOrderStatus()->getId(), self::ACCEPTED_STATUSES, true)
+                && $this->clearAcceptedCart($cart)) {
+                continue;
+            }
 
             if (!$request->isXmlHttpRequest()) {
                 $this->cartService->setPrimary($cart->getCartKey());
@@ -75,6 +85,20 @@ class PendingCheckoutListener implements EventSubscriberInterface
             $response->headers->set('Cache-Control', 'no-store, private');
             $event->setController(static function () use ($response) { return $response; });
             return;
+        }
+    }
+
+    private function clearAcceptedCart($cart): bool
+    {
+        try {
+            // CartService::clear() removes the primary cart.
+            $this->cartService->setPrimary($cart->getCartKey());
+            $this->cartService->clear();
+            return true;
+        } catch (\Throwable $e) {
+            // Keep the cart held rather than let checkout reuse purchased items.
+            log_error($e);
+            return false;
         }
     }
 }
