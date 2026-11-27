@@ -1,0 +1,32 @@
+{% extends 'default_frame.twig' %}
+
+{% block main %}
+    <div class="ec-role">
+        <div class="ec-pageHeader">
+            <h1>{{ 'komoju_payment.shopping.pending_title'|trans }}</h1>
+        </div>
+        <div class="ec-off1Grid">
+            <div class="ec-off1Grid__cell">
+                <p>{{ 'komoju_payment.shopping.pending_help'|trans }}</p>
+                <p>{{ 'komoju_payment.shopping.pending_contact'|trans }}</p>
+                <div class="ec-off4Grid">
+                    <div class="ec-off4Grid__cell">
+                        {% if session_id %}
+                            <a class="ec-blockBtn--action" href="{{ path('Komoju42_session_status', {session_id: session_id}) }}">{{ 'komoju_payment.shopping.check_status'|trans }}</a>
+                        {% endif %}
+                        {% if resume_url %}
+                            <a class="ec-blockBtn" href="{{ resume_url }}" rel="noreferrer">{{ 'komoju_payment.shopping.resume_payment'|trans }}</a>
+                        {% endif %}
+                        {% if can_cancel %}
+                            <form method="post" action="{{ path('Komoju42_session_abandon', {session_id: session_id}) }}" onsubmit="return confirm('{{ 'komoju_payment.shopping.cancel_payment_confirm'|trans|e('js') }}');">
+                                <input type="hidden" name="_token" value="{{ csrf_token('komoju_abandon_' ~ session_id) }}">
+                                <button type="submit" class="ec-blockBtn">{{ 'komoju_payment.shopping.cancel_payment'|trans }}</button>
+                            </form>
+                        {% endif %}
+                        <a class="ec-blockBtn" href="{{ path('contact') }}">{{ 'komoju_payment.shopping.contact_shop'|trans }}</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

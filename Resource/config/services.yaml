@@ -58,6 +58,9 @@ services:
         arguments:
             - '@Doctrine\ORM\EntityManagerInterface'
             - '@Eccube\Common\EccubeConfig'
+    Plugin\Komoju42\EventListener\PendingCheckoutListener:
+        class: Plugin\Komoju42\EventListener\PendingCheckoutListener
+
     Plugin\Komoju42\EventListener\SqliteBusyTimeoutListener:
         tags:
             - { name: doctrine.middleware }

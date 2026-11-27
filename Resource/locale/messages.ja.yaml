@@ -75,6 +75,17 @@ komoju_payment.admin.order.refund.success: 正常に返金されました
 komoju_payment.admin.order.capture_action: 支払いを受け取る
 komoju_payment.admin.order.capture_action_confirm: 'KOMOJUのオーソリ金額を請求します。受注金額と一致することを確認しましたか？よろしいですか？'
 komoju_payment.admin.order.capture_success: 支払いが正常に取得されました
+komoju_payment.admin.order.status.pending: 決済待ち
+komoju_payment.admin.order.release_action: KOMOJU決済を取消して在庫を戻す
+komoju_payment.admin.order.release_action_confirm: 'KOMOJUの決済セッションを取り消し、この受注をキャンセルしますか？決済が完了しないことをKOMOJUで確認でき次第、在庫とポイントを戻します。'
+komoju_payment.admin.order.release_success: 決済が完了しないことをKOMOJUで確認し、受注をキャンセルして在庫とポイントを戻しました。
+komoju_payment.admin.order.release_waiting: KOMOJUに決済の取消しを依頼しました。KOMOJUから決済取消しの通知（Webhook）を受信すると在庫とポイントが戻ります。
+komoju_payment.admin.order.error.release_paid: KOMOJUで決済が完了しているため、在庫は戻していません。KOMOJUからのWebhook受信時に受注が更新されます。更新されない場合はWebhook設定をご確認ください。
+komoju_payment.admin.order.error.release_failed: KOMOJUで決済状況を確認できませんでした。在庫は戻していません。時間をおいて再度お試しください。
+komoju_payment.admin.order.timeline.reservation_released: 決済未完了のため在庫・ポイントを戻しました
+komoju_payment.admin.order.timeline.refund_stock_restored: 受注をキャンセルし、在庫・ポイントを戻しました
+komoju_payment.admin.order.timeline.release_waiting: 決済の取消しを依頼済み（KOMOJUの取消し待ち）
+komoju_payment.admin.order.timeline.capture_after_release: 受注キャンセル後に決済が完了しました。KOMOJU管理画面から返金してください。
 komoju_payment.admin.order.timeline.authorized: オーソリ済み（入金待ち）
 komoju_payment.admin.order.timeline.order_accepted: 注文受付済み（入金待ち）
 komoju_payment.admin.order.timeline.purchase_completed: 購入完了
@@ -126,6 +137,15 @@ komoju_payment.shopping.verify.error.payment_total.too_much: 支払額が多す�
 komoju_payment.shopping.payment_failed: KOMOJU支払いが失敗しました
 komoju_payment.shopping.payment_cancelled: お支払いがキャンセルされました。
 komoju_payment.shopping.payment_pending: お支払いを確認しています。完了までしばらくお待ちください。
+komoju_payment.shopping.pending_title: お支払い状況の確認
+komoju_payment.shopping.pending_help: お支払いの完了または取消しを確認できていません。重複注文を防ぐため、確認が完了するまでカートの変更と新しいご注文を停止しています。カートの商品と確保済みの在庫は維持されます。
+komoju_payment.shopping.pending_contact: お支払いを続ける場合は、下の決済画面へのボタンをご利用ください。カートを変更する場合はお支払いを取り消してください。決済が完了しないことをKOMOJUで確認でき次第、カートに戻ります。状況が変わらない場合は店舗へお問い合わせください。別のご注文としてお支払いをやり直さないでください。
+komoju_payment.shopping.check_status: 支払い状況を再確認
+komoju_payment.shopping.resume_payment: KOMOJUの決済画面に戻る
+komoju_payment.shopping.cancel_payment: お支払いを取り消してカートに戻る
+komoju_payment.shopping.cancel_payment_confirm: このお支払いを取り消しますか？お支払い済み、または別の画面でお支払い中の場合は取り消さないでください。
+komoju_payment.shopping.contact_shop: 店舗に問い合わせる
+komoju_payment.shopping.checkout_locked: 確認中のお支払いがあります。カートを開いて支払い状況をご確認ください。重複注文を防ぐため、カートは変更していません。
 komoju_payment.shopping.komoju_method_label: KOMOJU決済
 komoju_payment.shopping.not_enough_error: 残高が不足です。
 

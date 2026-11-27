@@ -407,7 +407,11 @@ class KomojuPaymentTest extends TestCase
         $mailService = $this->createMock(MailService::class);
         $mailService->expects($this->never())->method('sendOrderMail');
         $controller = new SessionReturnController($this->entityManager, $this->configService, $this->logService,
-            $this->purchaseFlow, $this->requestStack, $cartService, $this->clientFactory, $mailService);
+            $this->purchaseFlow, $this->requestStack, $cartService, $this->clientFactory, $mailService,
+            new \Plugin\Komoju42\Service\PendingReservationService($this->entityManager, $this->purchaseFlow,
+                $this->createMock(\Eccube\Service\PurchaseFlow\Processor\PointProcessor::class),
+                $this->createMock(\Eccube\Service\PurchaseFlow\Processor\StockReduceProcessor::class),
+                $this->logService));
 
         $response = $controller->sessionReturn(new Request(['session_id' => 'session-bound-cart', 'state' => $state]));
 

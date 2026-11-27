@@ -421,8 +421,10 @@ class WebhookServiceTest extends TestCase
         $this->orderStateMachine->expects($cancel ? $this->once() : $this->never())->method('apply')
             ->with($order, $cancelled)->willReturnCallback(function ($order, $status) { $order->setOrderStatus($status); });
         $this->connection->expects($expectedTotal > 0 ? $this->once() : $this->never())->method('executeStatement');
-        $this->logService->expects($expectedTotal > 0 ? $this->once() : $this->never())->method('writeLog')
-            ->with('webhook[refund]', 72, "refund confirmed (amount=$expectedTotal)", true);
+        $logs = [];
+        $this->logService->method('writeLog')->willReturnCallback(function ($api, $orderId, $msg, $protected = false) use (&$logs) {
+            $logs[] = [$api, $orderId, $msg, $protected];
+        });
 
         $refunds = [];
         foreach ($amounts as $id => $amount) {
@@ -438,6 +440,14 @@ class WebhookServiceTest extends TestCase
         if ($expectedTotal > 0) {
             $this->assertSame(KomojuOrder::canonicalRefundIds(array_keys($amounts)), $attempt->getRefundId());
         }
+        $expectedLogs = [];
+        if ($expectedTotal > 0) {
+            $expectedLogs[] = ['webhook[refund]', 72, "refund confirmed (amount=$expectedTotal)", true];
+            if ($cancel) {
+                $expectedLogs[] = ['webhook[refund]', 72, 'order cancelled; stock and points restored', true];
+            }
+        }
+        $this->assertSame($expectedLogs, $logs);
     }
 
     public function compatibleRefundProvider(): array
@@ -1652,5 +1662,42 @@ class WebhookServiceTest extends TestCase
 
         $this->assertSame('aaa_early,zzz_late', $komojuOrder->getRefundId(),
             'refund_id must be stored in canonical (sorted) order');
+    }
+
+    /** @dataProvider refundWebhookStockLogProvider */
+    public function testRefundWebhookLogsStockRestoredOnlyWhenCancelTransitionSucceeds($canCancel, $expectedLogs)
+    {
+        $orderStatus = (new OrderStatus())->setId(OrderStatus::PAID);
+        $eccubeOrder = (new Order())->setId(126)->setPaymentTotal(4080)->setOrderStatus($orderStatus);
+        $komojuOrder = new KomojuOrder();
+        $komojuOrder->setOrder($eccubeOrder);
+        $komojuOrder->setKomojuPaymentId('pay_ref_log');
+        $komojuOrder->setCapturedAmount(4080);
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($komojuOrder);
+        $this->orderStateMachine->method('can')->willReturn($canCancel);
+
+        $logs = [];
+        $this->logService->method('writeLog')->willReturnCallback(function ($api, $orderId, $msg, $protected = false) use (&$logs) {
+            $logs[] = [$api, $orderId, $msg, $protected];
+        });
+
+        $this->service->paymentRefunded($this->refundEvent('pay_ref_log', [
+            (object)['id' => 'ref_1', 'amount' => 4080],
+        ]));
+
+        $this->assertSame($expectedLogs, $logs);
+    }
+
+    public function refundWebhookStockLogProvider(): array
+    {
+        return [
+            'cancel succeeds' => [true, [
+                ['webhook[refund]', 126, 'refund confirmed (amount=4080)', true],
+                ['webhook[refund]', 126, 'order cancelled; stock and points restored', true],
+            ]],
+            'not cancellable (e.g. delivered)' => [false, [
+                ['webhook[refund]', 126, 'refund confirmed (amount=4080)', true],
+            ]],
+        ];
     }
 }

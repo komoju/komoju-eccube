@@ -15,6 +15,7 @@ use Plugin\Komoju42\Service\ConfigService;
 use Plugin\Komoju42\Service\LogService;
 use Plugin\Komoju42\Service\MailExService;
 use Plugin\Komoju42\Service\KomojuClientFactory;
+use Plugin\Komoju42\Service\PendingReservationService;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -31,6 +32,7 @@ class OrderController extends AbstractController{
     protected $order_status_repo;
     protected $mail_ex_service;
     protected $client_factory;
+    protected $reservations;
     /**
      * @var OrderStateMachine
      */
@@ -45,7 +47,8 @@ class OrderController extends AbstractController{
         ConfigService $configService,
         LogService $logService,
         MailExService $mailExService,
-        KomojuClientFactory $clientFactory
+        KomojuClientFactory $clientFactory,
+        PendingReservationService $pendingReservationService
     ){
         $this->entityManager = $entityManager;
         $this->orderStateMachine = $orderStateMachine;
@@ -56,6 +59,7 @@ class OrderController extends AbstractController{
         $this->log_service = $logService;
         $this->mail_ex_service = $mailExService;
         $this->client_factory = $clientFactory;
+        $this->reservations = $pendingReservationService;
     }
     /**
      * @Route("/%eccube_admin_route%/Komoju42/payment/{id}/capture_transaction", requirements={"id" = "\d+"}, name="Komoju42_capture_transaction", methods={"POST"})
@@ -232,17 +236,14 @@ class OrderController extends AbstractController{
 
                 // If fully refunded, block further refunds
                 if($refund_amount >= $captured_basis){
-                    $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
-                    try{
-                        if ($this->orderStateMachine->can($Order, $OrderStatus)) {
-                            $this->orderStateMachine->apply($Order, $OrderStatus);
-                            $this->entityManager->flush();
-                        }
-                    } catch (\Exception $e) {
-                        log_error($e->getMessage());
-                    }
+                    $cancelled = $this->cancelOrderOnFullRefund($Order);
                     $this->addError('komoju_payment.admin.order.error.refunded', 'admin');
-                    $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)", true);
+                    if($this->entityManager->isOpen()){
+                        $this->log_service->writeLog("refund", $Order->getId(), "already refunded externally (amount=$refund_amount)", true);
+                        if($cancelled){
+                            $this->log_service->writeLog("refund", $Order->getId(), "order cancelled; stock and points restored", true);
+                        }
+                    }
                     return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
                 }
             }
@@ -289,17 +290,7 @@ class OrderController extends AbstractController{
                 $this->entityManager->flush();
 
                 // Only cancel order if fully refunded
-                if($total_refunded >= $captured_basis){
-                    $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
-                    try{
-                        if ($this->orderStateMachine->can($Order, $OrderStatus)) {
-                            $this->orderStateMachine->apply($Order, $OrderStatus);
-                            $this->entityManager->flush();
-                        }
-                    } catch (\Exception $e) {
-                        log_error($e->getMessage());
-                    }
-                }
+                $cancelled = $total_refunded >= $captured_basis && $this->cancelOrderOnFullRefund($Order);
 
                 $latestRefund = end($payment_obj['refunds']);
                 if(isset($latestRefund['redirect_url'])){
@@ -310,6 +301,9 @@ class OrderController extends AbstractController{
                 // the log so the success path doesn't crash.
                 if($this->entityManager->isOpen()){
                     $this->log_service->writeLog("refund", $Order->getId(), "refund successful (amount=$refund_amount)", true);
+                    if($cancelled){
+                        $this->log_service->writeLog("refund", $Order->getId(), "order cancelled; stock and points restored", true);
+                    }
                 }
                 $this->addSuccess('komoju_payment.admin.order.refund.success', 'admin');
                 return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
@@ -323,6 +317,84 @@ class OrderController extends AbstractController{
             return $this->redirectToRoute('admin_order');
         }
     }
+
+    private function cancelOrderOnFullRefund(Order $Order): bool{
+        $OrderStatus = $this->order_status_repo->find(OrderStatus::CANCEL);
+        try{
+            if ($this->orderStateMachine->can($Order, $OrderStatus)) {
+                $this->orderStateMachine->apply($Order, $OrderStatus);
+                $this->entityManager->flush();
+                return true;
+            }
+        } catch (\Exception $e) {
+            log_error($e->getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Release an abandoned 決済処理中 order: close its KOMOJU session, then restore
+     * stock/points and cancel the order once KOMOJU shows nothing on it can still be
+     * paid. A payment still in flight is left to its payment.cancelled webhook.
+     * @Route("/%eccube_admin_route%/Komoju42/payment/{id}/release_reservation", requirements={"id" = "\d+"}, name="Komoju42_release_reservation", methods={"POST"})
+     */
+    public function releaseReservation(Request $request, $id){
+        $Order = $this->isCsrfTokenValid('Komoju_release_' . $id, $request->request->get('_token'))
+            ? $this->order_repo->find($id) : null;
+        if(empty($Order)){
+            $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
+            return $this->redirectToRoute('admin_order');
+        }
+        $attempt = $this->komoju_order_repo->findOneBy(['Order' => $Order], ['id' => 'DESC']);
+        if(empty($attempt) || !$this->reservations->isOpen($attempt, $Order)){
+            $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
+            return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
+        }
+
+        $sessionId = $attempt->getKomojuSessionId();
+        try {
+            $config = $this->config_service->getConfigData($Order);
+            $client = $this->client_factory->create($config['secret_key']);
+            $session = $this->fetchSession($client, $sessionId);
+            if(($session['status'] ?? null) === 'pending' && ($session['expired'] ?? false) !== true
+                && !$this->paymentTaken($session)){
+                $session = $this->reservations->closeSession($client, $sessionId, $Order->getId())
+                    ?? $this->fetchSession($client, $sessionId);
+            }
+            if($this->paymentTaken($session)){
+                $this->log_service->writeLog("releaseReservation", $Order->getId(), "not released: KOMOJU payment is " . $session['payment']['status'], true);
+                $this->addError('komoju_payment.admin.order.error.release_paid', 'admin');
+            }elseif(!$this->reservations->isReleasable($session)){
+                $this->log_service->writeLog("releaseReservation", $Order->getId(), "cancellation requested; waiting for KOMOJU to cancel the payment", true);
+                $this->addWarning('komoju_payment.admin.order.release_waiting', 'admin');
+            }elseif($this->reservations->cancel($attempt, $Order)){
+                $this->log_service->writeLog("releaseReservation", $Order->getId(), "released by shop: stock and points restored", true);
+                $this->addSuccess('komoju_payment.admin.order.release_success', 'admin');
+            }else{
+                // Another request finalized or released the order first.
+                $this->addError('komoju_payment.admin.order.error.invalid_request', 'admin');
+            }
+        } catch (\Throwable $e) {
+            log_error($e);
+            $this->log_service->writeLog("releaseReservation", $Order->getId(), "failed: " . $e->getMessage());
+            $this->addError('komoju_payment.admin.order.error.release_failed', 'admin');
+        }
+        return $this->redirectToRoute('admin_order_edit', ['id' => $Order->getId()]);
+    }
+
+    private function fetchSession($client, $sessionId){
+        $session = $client->getSession($sessionId);
+        if($client->getStatusCode() != 200 || !is_array($session)
+            || (isset($session['id']) && $session['id'] !== $sessionId)){
+            throw new \RuntimeException('KOMOJU session lookup failed: code=' . $client->getStatusCode());
+        }
+        return $session;
+    }
+
+    private function paymentTaken(array $session){
+        return in_array($session['payment']['status'] ?? null, ['captured', 'authorized'], true);
+    }
+
     public function setOrderStatus(Order $order, $status){
         $order->setPaymentDate(new \DateTime());
         $order_status = $this->order_status_repo->find($status);

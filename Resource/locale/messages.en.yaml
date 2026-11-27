@@ -75,6 +75,17 @@ komoju_payment.admin.order.refund.success: Refund completed successfully.
 komoju_payment.admin.order.capture_action: Capture Payment
 komoju_payment.admin.order.capture_action_confirm: 'Capture the KOMOJU authorized amount. Have you confirmed that it matches the order total? Continue?'
 komoju_payment.admin.order.capture_success: Payment captured successfully.
+komoju_payment.admin.order.status.pending: Awaiting payment
+komoju_payment.admin.order.release_action: Cancel KOMOJU payment and restore stock
+komoju_payment.admin.order.release_action_confirm: 'Cancel the KOMOJU payment session and cancel this order? Stock and points are restored once KOMOJU confirms that no payment can complete.'
+komoju_payment.admin.order.release_success: KOMOJU confirmed that no payment can complete. The order was cancelled and stock and points were restored.
+komoju_payment.admin.order.release_waiting: Cancellation was requested from KOMOJU. Stock and points are restored when KOMOJU confirms the payment cancellation (webhook).
+komoju_payment.admin.order.error.release_paid: The payment is complete in KOMOJU, so stock was not restored. The order is updated when the KOMOJU webhook arrives; check the webhook settings if it does not.
+komoju_payment.admin.order.error.release_failed: Could not confirm the payment status with KOMOJU. Stock was not restored; try again later.
+komoju_payment.admin.order.timeline.reservation_released: Payment not completed; stock and points restored
+komoju_payment.admin.order.timeline.refund_stock_restored: Order cancelled; stock and points restored
+komoju_payment.admin.order.timeline.release_waiting: Cancellation requested; waiting for KOMOJU to cancel the payment
+komoju_payment.admin.order.timeline.capture_after_release: Payment captured after the order was cancelled. Refund it from the KOMOJU dashboard.
 komoju_payment.admin.order.timeline.authorized: Authorized (awaiting payment)
 komoju_payment.admin.order.timeline.order_accepted: Order accepted (awaiting payment)
 komoju_payment.admin.order.timeline.purchase_completed: Purchase completed
@@ -126,6 +137,15 @@ komoju_payment.shopping.verify.error.payment_total.too_much: The payment amount 
 komoju_payment.shopping.payment_failed: KOMOJU payment failed.
 komoju_payment.shopping.payment_cancelled: Payment was cancelled.
 komoju_payment.shopping.payment_pending: We are confirming your payment. Please wait a moment for it to complete.
+komoju_payment.shopping.pending_title: Check payment status
+komoju_payment.shopping.pending_help: We cannot yet confirm completion or cancellation. To prevent duplicate orders, cart changes and new checkouts are paused. Your cart items and reserved inventory are preserved.
+komoju_payment.shopping.pending_contact: To continue paying, use the payment-page button below. To change your cart instead, cancel the payment; your cart returns once KOMOJU confirms that no payment can complete. If the status does not change, contact the shop. Do not pay again through a new order.
+komoju_payment.shopping.check_status: Check payment status again
+komoju_payment.shopping.resume_payment: Return to KOMOJU payment page
+komoju_payment.shopping.cancel_payment: Cancel payment and return to cart
+komoju_payment.shopping.cancel_payment_confirm: Cancel this payment? Do not cancel if you have already paid or are paying in another window.
+komoju_payment.shopping.contact_shop: Contact the shop
+komoju_payment.shopping.checkout_locked: A payment is awaiting confirmation. Open your cart to check its status. Your cart was not changed, to prevent duplicate orders.
 komoju_payment.shopping.komoju_method_label: KOMOJU Payment
 komoju_payment.shopping.not_enough_error: Insufficient balance.
 
