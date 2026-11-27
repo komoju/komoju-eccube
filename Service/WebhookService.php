@@ -266,8 +266,8 @@ class WebhookService{
         if ($sendConfirmation) {
             $this->mailService->sendOrderMail($order);
             $this->entityManager->flush();
+            $this->log_service->writeLog("webhook[authorized]", $order->getId(), "payment authorized", true);
         }
-        $this->log_service->writeLog("webhook[authorized]", $order->getId(), "payment authorized", true);
     }
 
     public function paymentCaptured($object){
@@ -290,7 +290,7 @@ class WebhookService{
             : ($attempt->getCapturedAt() ?: new \DateTime());
         $capturedAmount = isset($object->data->amount) ? (int)$object->data->amount : null;
         $sendConfirmation = false;
-        $processed = $this->transactional(function () use ($attempt, $object, $order, $paymentId, $capturedAt, $capturedAmount, &$sendConfirmation) {
+        $result = $this->transactional(function () use ($attempt, $object, $order, $paymentId, $capturedAt, $capturedAmount, &$sendConfirmation) {
             if($order){
                 $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             }
@@ -303,7 +303,7 @@ class WebhookService{
                 $status = $order->getOrderStatus()->getId();
                 if($attempt->isCaptured()
                     && !in_array($status, [OrderStatus::PENDING, OrderStatus::PROCESSING, OrderStatus::NEW])){
-                    return true;
+                    return 'noop';
                 }
                 if($status == OrderStatus::CANCEL){
                     return false;
@@ -331,10 +331,13 @@ class WebhookService{
                 }
             }
             $this->entityManager->flush();
-            return true;
+            return 'captured';
         });
 
-        if(!$processed){
+        if($result === 'noop'){
+            return;
+        }
+        if(!$result){
             // The order was cancelled or its stock released before this capture
             // (e.g. a payment racing a session cancellation). Surface it for refund.
             $this->log_service->writeLog("webhook[captured]", $order ? $order->getId() : 0,
@@ -385,8 +388,9 @@ class WebhookService{
             $this->log_service->writeLog("webhook[$tag]", 0, "no EC-CUBE order for payment: $paymentId");
             return;
         }
-        $this->log_service->writeLog("webhook[$tag]", $order->getId(), $message, true);
-        $this->cancelOrder($attempt, $paymentId);
+        if($this->cancelOrder($attempt, $paymentId)){
+            $this->log_service->writeLog("webhook[$tag]", $order->getId(), $message, true);
+        }
     }
     public function paymentUpdated($object){
         // Multi-key lookup so an expired/cancelled change is not missed when
@@ -400,20 +404,18 @@ class WebhookService{
         }
         $status = $object->data->status;
         if(in_array($status, ["expired", "cancelled"])){
-            $order = $komoju_order->getOrder();
-            if($order){
+            if($this->cancelOrder($komoju_order, (string)$object->data->id) && ($order = $komoju_order->getOrder())){
                 $this->log_service->writeLog("webhook[updated]", $order->getId(), "payment status changed to $status", true);
             }
-            $this->cancelOrder($komoju_order, (string)$object->data->id);
         }
     }
-    private function cancelOrder($attempt, $paymentId){
+    private function cancelOrder($attempt, $paymentId): bool{
         if($attempt->getCanceledAt()){
-            return;
+            return false;
         }
         $order = $attempt->getOrder();
         if(!$order){
-            return;
+            return false;
         }
 
         $result = $this->transactional(function () use ($attempt, $order, $paymentId) {
@@ -470,6 +472,7 @@ class WebhookService{
         }elseif($result === 'payment_mismatch'){
             $this->rejectAttempt('cancel', $order->getId(), 'payment');
         }
+        return $result === 'cancelled';
     }
 
 

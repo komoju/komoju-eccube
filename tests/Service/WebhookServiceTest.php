@@ -1700,4 +1700,97 @@ class WebhookServiceTest extends TestCase
             ]],
         ];
     }
+
+    /** Resent payment.captured on a PAID or refunded-CANCEL order must not append another timeline entry. */
+    /** @dataProvider capturedReplayStatusProvider */
+    public function testCapturedReplayDoesNotDuplicateTimelineLog(int $statusId)
+    {
+        $order = (new Order())->setId(127)->setOrderStatus((new OrderStatus())->setId($statusId));
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_cap_replay');
+        $attempt->setCapturedAt(new \DateTime('2026-11-01 00:00:00'));
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+        $this->logService->expects($this->never())->method('writeLog');
+        $this->mailService->expects($this->never())->method('sendOrderMail');
+
+        $this->service->paymentCaptured($this->makeWebhookObject('pay_cap_replay', [
+            'captured_at' => '2026-11-01T00:00:00Z',
+        ]));
+    }
+
+    public function capturedReplayStatusProvider(): array
+    {
+        return [
+            'already paid' => [OrderStatus::PAID],
+            'refunded and cancelled' => [OrderStatus::CANCEL],
+        ];
+    }
+
+    public function testAuthorizedReplayDoesNotDuplicateTimelineLog()
+    {
+        $order = (new Order())->setId(128)->setOrderStatus((new OrderStatus())->setId(OrderStatus::NEW));
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_auth_replay');
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+        $this->connection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $this->connection->method('executeStatement')->willReturn(0); // order already finalized
+        $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $this->entityManager->method('getConnection')->willReturn($this->connection);
+        $this->entityManager->method('getRepository')->willReturn($this->komojuOrderRepo);
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+
+        $this->logService->expects($this->never())->method('writeLog');
+        $this->mailService->expects($this->never())->method('sendOrderMail');
+
+        $this->service->paymentAuthorized($this->makeWebhookObject('pay_auth_replay'));
+    }
+
+    public function testCancelAndUpdatedWebhooksLogTimelineOnlyOnce()
+    {
+        $order = (new Order())->setId(129)->setOrderStatus((new OrderStatus())->setId(OrderStatus::PENDING));
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_cancel_replay');
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+        $this->entityManager->method('find')->willReturn((new OrderStatus())->setId(OrderStatus::CANCEL));
+
+        $logs = [];
+        $this->logService->method('writeLog')->willReturnCallback(function ($api, $orderId, $msg, $protected = false) use (&$logs) {
+            $logs[] = [$api, $orderId, $msg, $protected];
+        });
+
+        // First event claims cancellation and logs; companion + replays are silent no-ops.
+        $this->service->paymentUpdated($this->makeWebhookObject('pay_cancel_replay', ['status' => 'cancelled']));
+        $this->service->paymentCanceled($this->makeWebhookObject('pay_cancel_replay'));
+        $this->service->paymentExpired($this->makeWebhookObject('pay_cancel_replay'));
+        $this->service->paymentUpdated($this->makeWebhookObject('pay_cancel_replay', ['status' => 'cancelled']));
+
+        $this->assertSame([
+            ['webhook[updated]', 129, 'payment status changed to cancelled', true],
+        ], $logs);
+    }
+
+    public function testCancelOnPaidOrderDoesNotWriteProtectedTimelineLog()
+    {
+        $order = (new Order())->setId(130)->setOrderStatus((new OrderStatus())->setId(OrderStatus::PAID));
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_paid_cancel');
+        $attempt->setCapturedAt(new \DateTime('2026-11-01 00:00:00'));
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+
+        $protectedLogs = [];
+        $this->logService->method('writeLog')->willReturnCallback(function ($api, $orderId, $msg, $protected = false) use (&$protectedLogs) {
+            if ($protected) {
+                $protectedLogs[] = [$api, $orderId, $msg];
+            }
+        });
+
+        $this->service->paymentCanceled($this->makeWebhookObject('pay_paid_cancel'));
+        $this->service->paymentUpdated($this->makeWebhookObject('pay_paid_cancel', ['status' => 'cancelled']));
+
+        $this->assertSame([], $protectedLogs);
+    }
 }
