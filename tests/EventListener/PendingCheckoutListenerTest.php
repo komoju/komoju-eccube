@@ -25,6 +25,7 @@ class PendingCheckoutListenerTest extends TestCase
         $event = new ControllerEvent(null, static function () { throw new \LogicException('Core must not mutate the reserved cart'); }, $request, 1);
         [$listener, $order, $cartService] = $this->listener(OrderStatus::PENDING);
         $cartService->expects($ajax ? $this->never() : $this->once())->method('setPrimary')->with('held-cart');
+        $cartService->expects($this->never())->method('clear');
         $listener->onController($event);
         $response = ($event->getController())();
         if ($ajax) {
@@ -68,24 +69,60 @@ class PendingCheckoutListenerTest extends TestCase
     }
 
     /** @dataProvider orderStates */
-    public function testNormalAndRecoveredOrdersCanCheckoutButAcceptedOrdersCannotRepay($status, $guarded, $hasAttempt)
+    public function testNormalAndRecoveredOrdersCanCheckoutWithoutClearing($status, $hasAttempt)
     {
         $request = new Request();
         $request->attributes->set('_route', 'shopping_checkout');
         $original = static function () { return 'original'; };
         $event = new ControllerEvent(null, $original, $request, 1);
-        [$listener] = $this->listener($status, $hasAttempt);
+        [$listener, , $cartService] = $this->listener($status, $hasAttempt);
+        $cartService->expects($this->never())->method('clear');
         $listener->onController($event);
-        $this->assertSame($guarded, $event->getController() !== $original);
+        $this->assertSame($original, $event->getController());
     }
 
     public function orderStates(): array
     {
         return [
-            [OrderStatus::PROCESSING, false, true], [OrderStatus::CANCEL, false, true],
-            [OrderStatus::NEW, true, true], [OrderStatus::PAID, true, true],
-            [OrderStatus::PENDING, false, false],
+            [OrderStatus::PROCESSING, true], [OrderStatus::CANCEL, true],
+            [OrderStatus::NEW, false], [OrderStatus::PENDING, false],
         ];
+    }
+
+    /** @dataProvider acceptedStates */
+    public function testCartOfOrderAcceptedElsewhereIsClearedInsteadOfLocked($status, $ajax)
+    {
+        $request = new Request([], $ajax ? ['X-Requested-With' => 'XMLHttpRequest'] : []);
+        $request->attributes->set('_route', $ajax ? 'product_add_cart' : 'shopping_checkout');
+        $original = static function () { return 'original'; };
+        $event = new ControllerEvent(null, $original, $request, 1);
+        [$listener, , $cartService] = $this->listener($status);
+        $cartService->expects($this->once())->method('setPrimary')->with('held-cart');
+        $cartService->expects($this->once())->method('clear');
+        $listener->onController($event);
+        $this->assertSame($original, $event->getController());
+    }
+
+    public function acceptedStates(): array
+    {
+        return [
+            [OrderStatus::NEW, false], [OrderStatus::PAID, false],
+            [OrderStatus::IN_PROGRESS, false], [OrderStatus::DELIVERED, true],
+        ];
+    }
+
+    public function testAcceptedOrderCartStaysLockedWhenClearingFails()
+    {
+        $request = new Request();
+        $request->attributes->set('_route', 'shopping_checkout');
+        $original = static function () { return 'original'; };
+        $event = new ControllerEvent(null, $original, $request, 1);
+        [$listener, , $cartService] = $this->listener(OrderStatus::PAID);
+        $cartService->method('clear')->willThrowException(new \RuntimeException('db down'));
+        $listener->onController($event);
+        $response = ($event->getController())();
+        $this->assertSame(303, $response->getStatusCode());
+        $this->assertSame('/status?session_id=session-held', $response->getTargetUrl());
     }
 
     private function listener($status, $hasAttempt = true): array
@@ -96,7 +133,6 @@ class PendingCheckoutListenerTest extends TestCase
         $heldCart = (new Cart())->setPreOrderId('pre-held')->setCartKey('held-cart');
         $cartService = $this->createMock(CartService::class);
         $cartService->method('getCarts')->willReturn([$ordinaryCart, $heldCart]);
-        $cartService->expects($this->never())->method('clear');
         $orders = $this->createMock(StubRepository::class);
         $orders->method('findOneBy')->with(['pre_order_id' => 'pre-held'])->willReturn($order);
         $attempts = $this->createMock(StubRepository::class);
