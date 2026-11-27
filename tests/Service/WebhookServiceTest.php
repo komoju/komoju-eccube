@@ -332,7 +332,6 @@ class WebhookServiceTest extends TestCase
                 $data->refunds[0]->amount = 500;
                 $data->refunds[] = clone $data->refunds[0];
             }, $invalid],
-            'zero amount' => [$setRefund('amount', 0), $invalid],
             'negative amount' => [$setRefund('amount', -1000), $invalid],
             'string amount' => [$setRefund('amount', '1000'), $invalid],
             'fractional amount' => [$setRefund('amount', 1000.5), $invalid],
@@ -343,15 +342,23 @@ class WebhookServiceTest extends TestCase
             'amount_refunded disagrees with refunds' => [function ($data) { $data->amount_refunded = 300; }, 'rejected: amount_refunded mismatch'],
             'amount_refunded missing' => [function ($data) { unset($data->amount_refunded); }, 'rejected: amount_refunded mismatch'],
             'string amount_refunded' => [function ($data) { $data->amount_refunded = '1000'; }, 'rejected: amount_refunded mismatch'],
+            'synthetic refund does not hide inconsistent total' => [function ($data) {
+                $data->refunds[] = (object)['id' => 'CA12', 'amount' => 100, 'payment' => $data->id, 'currency' => 'JPY'];
+                $data->amount_refunded = 900;
+            }, 'rejected: amount_refunded mismatch'],
+            'non-capture id cannot explain difference' => [function ($data) {
+                $data->refunds[0]->id = 'CA12invalid';
+                $data->amount_refunded = 0;
+            }, 'rejected: amount_refunded mismatch'],
         ];
     }
 
     /**
-     * The cap is the captured amount when it is stored, else the order total.
+     * Stored capture amounts take precedence; legacy rows use the payment amount.
      *
      * @dataProvider refundCapProvider
      */
-    public function testRefundedRejectsTotalAboveCapturedBasis($capturedAmount, int $paymentTotal, int $expectedCap)
+    public function testRefundedRejectsTotalAboveCapturedBasis($capturedAmount, int $paymentTotal, int $expectedCap, $paymentAmount)
     {
         $orderStatus = new OrderStatus();
         $orderStatus->setId(OrderStatus::PAID);
@@ -371,7 +378,7 @@ class WebhookServiceTest extends TestCase
         $this->logService->expects($this->once())->method('writeLog')
             ->with('webhook[refund]', 71, 'rejected: refund total 1500 exceeds captured amount ' . $expectedCap);
 
-        $this->service->paymentRefunded($this->refundEvent('pay_cap', [(object)['id' => 'ref_1', 'amount' => 1500]]));
+        $this->service->paymentRefunded($this->refundEvent('pay_cap', [(object)['id' => 'ref_1', 'amount' => 1500]], ['amount' => $paymentAmount]));
 
         $this->assertEquals(0, $komojuOrder->getRefundedAmount());
     }
@@ -379,8 +386,74 @@ class WebhookServiceTest extends TestCase
     public function refundCapProvider(): array
     {
         return [
-            'order edited up after capture: captured amount caps' => [1000, 2000, 1000],
-            'no captured amount stored: order total caps' => [null, 1000, 1000],
+            'stored capture caps even when order and payload are higher' => [1000, 2000, 1000, 2000],
+            'legacy edited order: payment amount caps' => [null, 500, 1000, 1000],
+            'legacy payload without amount: retain order fallback' => [null, 1000, 1000, null],
+        ];
+    }
+
+    /** @dataProvider compatibleRefundProvider */
+    public function testRefundedCompatiblePayloads($capturedAmount, int $orderTotal, array $amounts, int $reportedAmount, int $expectedTotal, bool $cancel)
+    {
+        $paid = new OrderStatus();
+        $paid->setId(OrderStatus::PAID);
+        $cancelled = new OrderStatus();
+        $cancelled->setId(OrderStatus::CANCEL);
+        $order = new Order();
+        $order->setId(72);
+        $order->setPaymentTotal($orderTotal);
+        $order->setOrderStatus($paid);
+        $attempt = new KomojuOrder();
+        $attempt->setOrder($order);
+        $attempt->setKomojuPaymentId('pay_compatible');
+        $attempt->setCapturedAmount($capturedAmount);
+        $this->komojuOrderRepo->method('findOneBy')->willReturn($attempt);
+
+        $statusRepo = $this->createMock(StubRepository::class);
+        $statusRepo->method('find')->willReturn($cancelled);
+        $this->entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $this->entityManager->method('getConnection')->willReturn($this->connection);
+        $this->entityManager->method('getRepository')->willReturnCallback(function ($class) use ($statusRepo) {
+            return $class === KomojuOrder::class ? $this->komojuOrderRepo : $statusRepo;
+        });
+        $this->service = new WebhookService($this->entityManager, $this->orderStateMachine, $this->logService, $this->purchaseFlow, $this->pointProcessor, $this->stockReduceProcessor, $this->mailService);
+        $this->orderStateMachine->method('can')->willReturn(true);
+        $this->orderStateMachine->expects($cancel ? $this->once() : $this->never())->method('apply')
+            ->with($order, $cancelled)->willReturnCallback(function ($order, $status) { $order->setOrderStatus($status); });
+        $this->connection->expects($expectedTotal > 0 ? $this->once() : $this->never())->method('executeStatement');
+        $this->logService->expects($expectedTotal > 0 ? $this->once() : $this->never())->method('writeLog')
+            ->with('webhook[refund]', 72, "refund confirmed (amount=$expectedTotal)", true);
+
+        $refunds = [];
+        foreach ($amounts as $id => $amount) {
+            $refunds[] = (object)['id' => $id, 'amount' => $amount];
+        }
+        $event = $this->refundEvent('pay_compatible', $refunds, ['amount' => 1000, 'amount_refunded' => $reportedAmount]);
+        $this->service->paymentRefunded($event);
+        // Duplicate deliveries must not log, update, or cancel twice.
+        $this->service->paymentRefunded($event);
+
+        $this->assertEquals($expectedTotal, $attempt->getRefundedAmount());
+        $this->assertSame($cancel ? OrderStatus::CANCEL : OrderStatus::PAID, $order->getOrderStatus()->getId());
+        if ($expectedTotal > 0) {
+            $this->assertSame(KomojuOrder::canonicalRefundIds(array_keys($amounts)), $attempt->getRefundId());
+        }
+    }
+
+    public function compatibleRefundProvider(): array
+    {
+        return [
+            'legacy edited down, full refund' => [null, 800, ['ref_1' => 1000], 1000, 1000, true],
+            'legacy edited up, full refund' => [null, 1200, ['ref_1' => 1000], 1000, 1000, true],
+            'legacy zero order total, partial refund' => [null, 0, ['ref_1' => 300], 300, 300, false],
+            'legacy edited down, partial refund above order total' => [null, 200, ['ref_1' => 300], 300, 300, false],
+            'fee only' => [1000, 1000, ['ref_fee' => 0], 0, 0, false],
+            'fee then partial principal refund' => [1000, 1000, ['ref_fee' => 0, 'ref_1' => 300], 300, 300, false],
+            'fee then full principal refund' => [1000, 1000, ['ref_fee' => 0, 'ref_1' => 1000], 1000, 1000, true],
+            'partial capture without cash refund' => [1000, 1000, ['CA12' => 400], 0, 400, false],
+            'partial capture, partial refund' => [1000, 1000, ['CA12' => 400, 'ref_1' => 300], 300, 700, false],
+            'partial capture, full refund' => [1000, 1000, ['CA12' => 400, 'ref_1' => 300, 'ref_2' => 300], 600, 1000, true],
+            'legacy partial capture, full refund' => [null, 800, ['CA12' => 400, 'ref_1' => 600], 600, 1000, true],
         ];
     }
 

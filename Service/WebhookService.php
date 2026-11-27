@@ -102,10 +102,10 @@ class WebhookService{
             && $current->getKomojuSessionId() === $komoju_order->getKomojuSessionId();
     }
 
-    private function capturedBasis($attempt, $order){
-        return $attempt->getCapturedAmount() !== null
-            ? (int)$attempt->getCapturedAmount()
-            : (int)$order->getPaymentTotal();
+    private function capturedBasis($attempt, $data){
+        // Signed payment data preserves the original amount on legacy, edited orders.
+        return (int)($attempt->getCapturedAmount() ?? $data->amount
+            ?? $attempt->getExpectedAmount() ?? $attempt->getOrder()->getPaymentTotal());
     }
 
     /**
@@ -120,11 +120,12 @@ class WebhookService{
         $refundIds = [];
         $seen = [];
         $total = 0;
+        $uncaptured = 0;
         foreach($data->refunds as $refund){
             if(!is_object($refund)
                 || !isset($refund->id) || !is_string($refund->id) || $refund->id === ''
                 || isset($seen[$refund->id])
-                || !isset($refund->amount) || !is_int($refund->amount) || $refund->amount <= 0){
+                || !isset($refund->amount) || !is_int($refund->amount) || $refund->amount < 0){
                 $this->log_service->writeLog("webhook[refund]", $orderId, "rejected: invalid refund entry");
                 return null;
             }
@@ -139,12 +140,17 @@ class WebhookService{
             $seen[$refund->id] = true;
             $refundIds[] = $refund->id;
             $total += $refund->amount;
+            // API 2024-07-15 includes uncaptured funds as CA<id> refunds, but
+            // excludes them from amount_refunded. Keep them in our legacy total.
+            if(preg_match('/\ACA[0-9]+\z/', $refund->id)){
+                $uncaptured += $refund->amount;
+            }
         }
-        if(!isset($data->amount_refunded) || !is_int($data->amount_refunded) || $data->amount_refunded !== $total){
+        if(!isset($data->amount_refunded) || !is_int($data->amount_refunded) || $data->amount_refunded !== $total - $uncaptured){
             $this->rejectAttempt('refund', $orderId, 'amount_refunded');
             return null;
         }
-        $captured = $this->capturedBasis($attempt, $order);
+        $captured = $this->capturedBasis($attempt, $data);
         if($total > $captured){
             $this->log_service->writeLog("webhook[refund]", $orderId, "rejected: refund total $total exceeds captured amount $captured");
             return null;
@@ -176,7 +182,7 @@ class WebhookService{
         [$refundIds, $refundAmount] = $validated;
         $refundIdSet = KomojuOrder::canonicalRefundIds($refundIds);
 
-        $newAmount = $this->transactional(function () use ($attempt, $order, $refundIdSet, $refundAmount) {
+        $newAmount = $this->transactional(function () use ($attempt, $order, $object, $refundIdSet, $refundAmount) {
             $this->entityManager->lock($order, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->lock($attempt, \Doctrine\DBAL\LockMode::PESSIMISTIC_WRITE);
             $this->entityManager->refresh($order);
@@ -198,7 +204,7 @@ class WebhookService{
             $attempt->setRefundId($refundIdSet);
             $attempt->setRefundedAmount($refundAmount);
             $this->entityManager->persist($attempt);
-            $capturedAmount = $this->capturedBasis($attempt, $order);
+            $capturedAmount = $this->capturedBasis($attempt, $object->data);
             if($refundAmount >= $capturedAmount){
                 $cancelStatus = $this->entityManager->getRepository(OrderStatus::class)->find(OrderStatus::CANCEL);
                 if($this->order_state_machine->can($order, $cancelStatus)){
