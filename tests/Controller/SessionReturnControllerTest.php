@@ -152,13 +152,11 @@ class SessionReturnControllerTest extends TestCase
 
     // --- early-exit branches ---
 
-    public function testEmptySessionIdRedirectsToShoppingAndLogs()
+    public function testEmptySessionIdRedirectsToShoppingWithoutDbLog()
     {
         $controller = $this->makeController();
 
-        $this->logService->expects($this->once())
-            ->method('writeLog')
-            ->with('sessionReturn', 0, $this->stringContains('no session_id'));
+        $this->logService->expects($this->never())->method('writeLog');
 
         $req = new Request([] /* no session_id */);
         $resp = $controller->sessionReturn($req);
@@ -168,15 +166,13 @@ class SessionReturnControllerTest extends TestCase
         $this->assertInstanceOf(RedirectResponse::class, $resp);
     }
 
-    public function testUnknownSessionIdRedirectsToShoppingAndLogs()
+    public function testUnknownSessionIdRedirectsToShoppingWithoutDbLog()
     {
         $this->komojuOrderRepo->method('findOneBy')->willReturn(null);
 
         $controller = $this->makeController();
 
-        $this->logService->expects($this->once())
-            ->method('writeLog')
-            ->with('sessionReturn', 0, $this->stringContains('no komoju_order'));
+        $this->logService->expects($this->never())->method('writeLog');
 
         $req = new Request(['session_id' => 'sess_unknown']);
         $resp = $controller->sessionReturn($req);
@@ -193,9 +189,7 @@ class SessionReturnControllerTest extends TestCase
 
         $controller = $this->makeController();
 
-        $this->logService->expects($this->once())
-            ->method('writeLog')
-            ->with('sessionReturn', 0, $this->stringContains('no EC-CUBE order'));
+        $this->logService->expects($this->never())->method('writeLog');
 
         $req = new Request(['session_id' => 'sess_orphan']);
         $controller->sessionReturn($req);
@@ -220,6 +214,7 @@ class SessionReturnControllerTest extends TestCase
     {
         $this->arrangeOrderWithStatus(OrderStatus::PENDING);
         $this->komojuClient->expects($this->never())->method('getSession');
+        $this->logService->expects($this->never())->method('writeLog');
         $this->mailService->expects($this->never())->method('sendOrderMail');
 
         $controller = $this->makeController();

@@ -58,6 +58,8 @@ class LogController extends AbstractController
 
         $page_count = $this->eccubeConfig->get('eccube_default_page_count');
         $session = $request->getSession();
+        // An invalid search keeps the last valid filters instead of dropping them.
+        $searchData = $session->get('komoju_log_search');
 
         $searchForm = $this->createForm(KomojuLogSearchType::class);
 
@@ -68,11 +70,8 @@ class LogController extends AbstractController
                 $session->set('komoju_log_search', $searchData);
                 $page_no = 1;
             }
-        } else {
-            $searchData = $session->get('komoju_log_search');
-            if ($searchData) {
-                $searchForm->setData($searchData);
-            }
+        } elseif ($searchData) {
+            $searchForm->setData($searchData);
         }
 
         if (!$page_no) {
@@ -155,7 +154,7 @@ class LogController extends AbstractController
             $handle = fopen('php://output', 'w');
             fprintf($handle, "\xEF\xBB\xBF");
 
-            fputcsv($handle, [
+            $this->writeCsvRow($handle, [
                 trans('komoju_payment.admin.log.label.create_at'),
                 trans('komoju_payment.admin.log.label.api'),
                 trans('komoju_payment.admin.log.label.order_id'),
@@ -169,7 +168,7 @@ class LogController extends AbstractController
             // entity directly.
             $results = $qb->setMaxResults(50000)->getQuery()->toIterable();
             foreach ($results as $log) {
-                fputcsv($handle, [
+                $this->writeCsvRow($handle, [
                     $log->getCreatedAt()->format('Y-m-d H:i:s'),
                     $log->getApi(),
                     $log->getOrderId(),
@@ -186,6 +185,21 @@ class LogController extends AbstractController
         $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
 
         return $response;
+    }
+
+    /**
+     * Prefix cells a spreadsheet would run as a formula. Log text can carry
+     * outside input (exception messages, IDs), so never emit it raw.
+     */
+    private function writeCsvRow($handle, array $values): void
+    {
+        foreach ($values as $index => $value) {
+            // /u fails on invalid UTF-8; !== 0 escapes that case too.
+            if (is_string($value) && preg_match('/\A[\p{Z}\p{C}]*[=+\-@\t\r\n]/u', $value) !== 0) {
+                $values[$index] = "'" . $value;
+            }
+        }
+        fputcsv($handle, $values, ',', '"', '');
     }
 
     private function buildSearchQuery($searchData = null)
@@ -212,9 +226,11 @@ class LogController extends AbstractController
                 $qb->andWhere('s.created_at < :date_to')
                     ->setParameter('date_to', $dateTo);
             }
-            if (!empty($searchData['keyword'])) {
-                $qb->andWhere('s.msg LIKE :keyword')
-                    ->setParameter('keyword', '%' . $searchData['keyword'] . '%');
+            if (isset($searchData['keyword']) && $searchData['keyword'] !== '') {
+                // Match % and _ literally.
+                $keyword = strtr($searchData['keyword'], ['!' => '!!', '%' => '!%', '_' => '!_']);
+                $qb->andWhere("s.msg LIKE :keyword ESCAPE '!'")
+                    ->setParameter('keyword', '%' . $keyword . '%');
             }
         }
 

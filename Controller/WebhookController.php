@@ -31,16 +31,17 @@ class WebhookController extends AbstractController
         // Config/infrastructure failures are NOT the caller's fault. Answering 400
         // would tell KOMOJU the event is permanently invalid and stop retries,
         // losing the event; 500 keeps it in the retry queue.
+        // Nothing before signature verification is written to the plugin's DB log:
+        // anyone can reach this endpoint, so use the rotated file log instead.
         try{
             $config_data = $this->config_service->getConfigData();
             $webhook_secret = $config_data['webhook_secret'] ?? null;
         }catch(\Throwable $ex){
             log_error($ex);
-            $this->log_service->writeLog("webhook", "", "config unavailable: " . $ex->getMessage());
             return $this->json(['status' => 'error', 'message' => 'config unavailable'], 500);
         }
         if(!is_string($webhook_secret) || trim($webhook_secret) === ''){
-            $this->log_service->writeLog("webhook", "", "webhook secret is not configured");
+            log_warning('[KOMOJU] webhook rejected: webhook secret is not configured');
             return $this->json(['status' => 'error', 'message' => 'webhook unavailable'], 503);
         }
 
@@ -50,7 +51,7 @@ class WebhookController extends AbstractController
                 $request->headers->get('X-Komoju-Signature'),
                 $webhook_secret);
         }catch(\Throwable $ex){
-            $this->log_service->writeLog("webhook", "", "verification failed: " . $ex->getMessage());
+            log_warning('[KOMOJU] webhook rejected: signature verification failed');
             return $this->json(['status' => 'error'], 400);
         }
         $type = $data->type ?? 'unknown';
